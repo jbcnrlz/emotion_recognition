@@ -5,11 +5,6 @@ from matplotlib import pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from scipy.signal import savgol_filter
 
-def generateListFromData(originalList,maxFrame):
-    output = []
-    for i in range(maxFrame):
-        pass
-
 def cropVideo(video,centerMoments,momentSize=2):
     codecVideo = int(video.get(cv2.CAP_PROP_FOURCC))
     fps = math.floor(video.get(cv2.CAP_PROP_FPS))

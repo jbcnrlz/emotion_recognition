@@ -1,0 +1,49 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Join File",
+            "type": "python",
+            "request": "launch",
+            "program": "datasetProcessing/joinToVideo.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Extract Features",
+            "type": "python",
+            "request": "launch",
+            "program": "mimamo/extractFeatures.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Extract faces",
+            "type": "python",
+            "request": "launch",
+            "program": "datasetProcessing/extractFacesFromVideo.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Track landmarks",
+            "type": "python",
+            "request": "launch",
+            "program": "datasetProcessing/defineVideoRegions.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Separate video in chuncks",
+            "type": "python",
+            "request": "launch",
+            "program": "datasetProcessing/separateVideo.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:/data_sep_videos",
+                "--sizeClip",
+                "5"
+            ]
+        }
+    ]
+}
