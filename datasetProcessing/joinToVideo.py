@@ -23,13 +23,17 @@ def main():
     '''
     for rN in maxImSize:    
         out = cv2.VideoWriter('clip1_%d.avi' % (rN),cv2.VideoWriter_fourcc('M','J','P','G'), 20, (80,100))
+        lastFound = None
         for i in range(maxImSize[rN]):
             faceImage = "D:/PycharmProjects/emotion_recognition/clipe1/roi_%d_frame_%d.jpg" % (rN,i)
             if os.path.exists(faceImage):
                 imFile = cv2.imread(faceImage)
-            else:
+                lastFound = faceImage
+            elif lastFound is None:
                 print(faceImage + " Not found")
                 imFile = np.zeros((100,80,3), np.uint8)
+            else:
+                imFile = cv2.imread(lastFound)
             nImFile = cv2.resize(imFile,(80,100))
             out.write(nImFile)
 

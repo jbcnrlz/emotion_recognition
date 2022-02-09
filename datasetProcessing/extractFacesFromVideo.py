@@ -57,6 +57,8 @@ def main():
                 rois[r] = landmarks[idx,33]
 
             for fnum, b in enumerate(faces):
+                if roins[fnum] > 1:
+                    continue
                 print("Extraindo face %d" % (roins[fnum]))
 
                 b = list(map(int,b))
