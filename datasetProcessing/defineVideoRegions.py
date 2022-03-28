@@ -1,11 +1,11 @@
-import cv2, face_alignment, numpy as np, math, matplotlib.pyplot as plt
+import cv2, face_alignment, numpy as np, math, matplotlib.pyplot as plt, argparse, os
 from scipy.spatial.distance import euclidean
 import pandas as pd
 from matplotlib import pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from scipy.signal import savgol_filter
 
-def cropVideo(video,centerMoments,momentSize=2):
+def cropVideo(video,centerMoments,momentSize=2,fileName='teste_%d.mp4'):
     codecVideo = int(video.get(cv2.CAP_PROP_FOURCC))
     fps = math.floor(video.get(cv2.CAP_PROP_FPS))
     size = (int(video.get(cv2.CAP_PROP_FRAME_WIDTH)),int(video.get(cv2.CAP_PROP_FRAME_HEIGHT)))
@@ -24,7 +24,7 @@ def cropVideo(video,centerMoments,momentSize=2):
         
         if cFrame == endingFrame:
             saveFrame = 0
-            out = cv2.VideoWriter('teste_%d.mp4' % (currPoint),codecVideo, fps, size)
+            out = cv2.VideoWriter(fileName % (currPoint),codecVideo, fps, size)
             for oc in outputClip:
                 out.write(oc)
             outputClip = []
@@ -42,9 +42,9 @@ def cropVideo(video,centerMoments,momentSize=2):
 
         cFrame += 1
 
-def extractMoments(windowSize=500,momentSize=2400):
+def extractMoments(windowSize=500,momentSize=2400,fileName='output.csv'):
 
-    csvMarkup = pd.read_csv('ouput.csv')
+    csvMarkup = pd.read_csv(fileName)
     output = {}
     for j in range(csvMarkup['subject'].max()+1):
         output[j] = {}
@@ -124,19 +124,21 @@ def isNewROI(currRoi,foundFaces):
 
     return returnData
 
-def generateROIList(videoFeed,thres=7):
+def generateROIList(videoFeed,thres=7,fileNameOutputCSV='output.csv'):
     fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=False)
     rois = []
     measures = []
-
-    with open('ouput.csv','w') as mfl:
+    frameNumber = 0
+    with open(fileNameOutputCSV,'w') as mfl:
         mfl.write('frame,subject,distance,angle\n')
         while (videoFeed.isOpened()):
+            print("Doing frame number %d" % (frameNumber))
             ret, frame = videoFeed.read()
             if not ret:
                 break
             pred = fa.get_landmarks(frame)
-            if pred:
+            frameNumber += 1
+            if pred:                
                 measures.append({})
                 pred = np.array(pred)
                 newROIs = isNewROI(rois, pred[:,33])
@@ -154,11 +156,23 @@ def generateROIList(videoFeed,thres=7):
 
             else:
                 measures.append([])
-        
+
+def main():
+    parser = argparse.ArgumentParser(description='Separate videos')
+    parser.add_argument('--pathBase', help='Path for video', required=True)
+    args = parser.parse_args()  
+    vCap = cv2.VideoCapture(args.pathBase)
+    fileNameCSV = args.pathBase.split(os.path.sep)[-1].split('.')[0] + '.csv'
+    generateROIList(vCap,2,fileNameCSV)
+    a, b = extractMoments(momentSize=12000,fileName=fileNameCSV)
+    fileClipSave = args.pathBase.split(os.path.sep)[-1].split('.')[0] + '_%d.mp4'
+    cropVideo(vCap,a,momentSize=5,fileName=fileClipSave)
+
 if __name__ == '__main__':
-    vCap = cv2.VideoCapture("D:/data_sep_videos/2GRAV1qua1.mp4")
+    #main()
+    vCap = cv2.VideoCapture("02GRAV13ter2_1.mp4")
     #generateROIList(vCap)
-    a, b = extractMoments(momentSize=12000)
+    a, b = extractMoments(momentSize=12000,fileName="02GRAV13ter2_1.csv")
     cropVideo(vCap,a,momentSize=5)
     print('oi')
     '''

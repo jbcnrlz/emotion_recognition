@@ -108,3 +108,9 @@ def saveStatePytorch(fName, stateDict, optmizerStateDict, epoch, arch='VGG'):
         'state_dict': stateDict,
         'optimizer': optmizerStateDict,
     }, fName)
+
+def ccc(x,y):
+    ''' Concordance Correlation Coefficient'''
+    sxy = np.sum((x - x.mean())*(y - y.mean()))/x.shape[0]
+    rhoc = 2*sxy / (np.var(x) + np.var(y) + (x.mean() - y.mean())**2)
+    return rhoc

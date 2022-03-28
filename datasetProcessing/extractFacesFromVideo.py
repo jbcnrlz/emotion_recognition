@@ -1,5 +1,11 @@
-import cv2, shutil, os, face_alignment
+import cv2, shutil, os, face_alignment, argparse, sys
 import numpy as np
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+
+from helper.function import getFilesInPath
+
 
 def findROI(rois,areas):
     returnData = []
@@ -28,43 +34,57 @@ def isNewROI(currRoi,foundFaces):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Extract faces from videos')
+    parser.add_argument('--pathBase', help='Path for videos', required=True)
+    args = parser.parse_args()    
     fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=False)
 
-    if os.path.exists('clipe1'):
-        shutil.rmtree('clipe1')
+    videos = getFilesInPath(args.pathBase)
 
-    os.makedirs('clipe1')
-    sucs = 1
-    vcap = cv2.VideoCapture("teste_0.mp4")
-    frame_number=0
-    rois = []
-    while sucs:
-        sucs, imgv = vcap.read()
-        if not sucs:
-            break
+    for v in videos:
 
-        faces = fa.face_detector.detect_from_image(imgv)        
-        landmarks = fa.get_landmarks(imgv)
-        if landmarks:
-            landmarks = np.array(landmarks)
-            newROIs = isNewROI(rois, landmarks[:,33])
-            for nt in newROIs:
-                rois.append(nt)
+        if v[-3:] == 'txt':
+            continue
 
-            roins = findROI(rois, landmarks[:,33])   
+        fileVideoName = v.split(os.path.sep)[-1][:-4]        
 
-            for idx, r in enumerate(roins):
-                rois[r] = landmarks[idx,33]
+        print("Doing videos %s" % (fileVideoName))
 
-            for fnum, b in enumerate(faces):
-                if roins[fnum] > 1:
-                    continue
-                print("Extraindo face %d" % (roins[fnum]))
+        if os.path.exists(fileVideoName):
+            shutil.rmtree(fileVideoName)
 
-                b = list(map(int,b))
-                fImage = imgv[b[1]:b[3],b[0]:b[2]]
-                cv2.imwrite(os.path.join('clipe1',"roi_" + str(roins[fnum]) + "_frame_"+str(frame_number)+".jpg"),fImage)
-        frame_number+=1
+        os.makedirs(fileVideoName)
+        sucs = 1
+        vcap = cv2.VideoCapture(v)
+        frame_number=0
+        rois = []
+        while sucs:
+            sucs, imgv = vcap.read()
+            if not sucs:
+                break
+
+            faces = fa.face_detector.detect_from_image(imgv)        
+            landmarks = fa.get_landmarks(imgv)
+            if landmarks:
+                landmarks = np.array(landmarks)
+                newROIs = isNewROI(rois, landmarks[:,33])
+                for nt in newROIs:
+                    rois.append(nt)
+
+                roins = findROI(rois, landmarks[:,33])   
+
+                for idx, r in enumerate(roins):
+                    rois[r] = landmarks[idx,33]
+
+                for fnum, b in enumerate(faces):
+                    #if roins[fnum] > 1:
+                    #    continue
+                    print("Extraindo face %d" % (roins[fnum]))
+
+                    b = list(map(int,b))
+                    fImage = imgv[b[1]:b[3],b[0]:b[2]]
+                    cv2.imwrite(os.path.join(fileVideoName,"roi_" + str(roins[fnum]) + "_frame_"+str(frame_number)+".jpg"),fImage)
+            frame_number+=1
 
 
 

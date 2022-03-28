@@ -135,3 +135,4 @@ clipe1/
 *.pth
 
 mimamo/
+.vscode/launch.json

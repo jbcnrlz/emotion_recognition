@@ -6,37 +6,121 @@ from sklearn.preprocessing import MinMaxScaler
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from torchvision import transforms
 from matplotlib.figure import Figure
-
-def calcDeriv(subject1,subject2=None):
-    if subject2 is None:
-        subject2 = list(range(len(subject1)))
-
+from scipy.spatial.distance import euclidean
+def calcDeriv(subject1):
     return np.gradient(subject1)
 
+def avgSignal(signal,window,step):
+    outAvgSig = []
+    outStdSig = []
+    currStep = 0
+    while currStep < len(signal):
+        if (currStep+window >= len(signal)):
+            outAvgSig.append(np.mean(signal[currStep:-1]))
+            outStdSig.append(np.std(signal[currStep:-1]))
+        else:
+            outAvgSig.append(np.mean(signal[currStep:currStep+window]))
+            outStdSig.append(np.std(signal[currStep:currStep+window]))
+        currStep += step
+
+    return outAvgSig, outStdSig
+
+def genDataFromCSV(csvs):
+    dataCsv = []
+    for i, c in enumerate(csvs):
+        dataCsv.append(pd.read_csv(c))
+    return (savgol_filter(list(dataCsv[0]['valence']),51,3),savgol_filter(list(dataCsv[0]['arousal']),51,3)), (savgol_filter(list(dataCsv[1]['valence']),51,3),savgol_filter(list(dataCsv[1]['arousal']),51,3))
+
 def genGraph(csvs):
-    fig, axs = plt.subplots(2,1)
+    fig, axs = plt.subplots(2,2)
     dataCsv = []
     a = MinMaxScaler(feature_range=(-1,1))
     for i, c in enumerate(csvs):
         dataCsv.append(pd.read_csv(c))
-        axs[0].plot(savgol_filter(list(dataCsv[-1]['valence']),51,3))
-        axs[1].plot(savgol_filter(list(dataCsv[-1]['arousal']),51,3))
-    
+        axs[0][0].plot(savgol_filter(list(dataCsv[-1]['valence']),51,3))
+        axs[0][1].plot(avgSignal(list(dataCsv[-1]['valence']),10,5))
+        axs[1][0].plot(savgol_filter(list(dataCsv[-1]['arousal']),51,3))
+        axs[1][1].plot(avgSignal(list(dataCsv[-1]['arousal']),10,5))
+
     dydx = calcDeriv(savgol_filter(list(dataCsv[0]['valence']),51,3))
     dydx = [0]+list(a.fit_transform(dydx.reshape(-1,1)).flatten())
-    axs[0].plot(dydx)
+    #axs[0].plot(dydx)
     dydx = calcDeriv(savgol_filter(list(dataCsv[1]['valence']),51,3))
     dydx = [0]+list(a.fit_transform(dydx.reshape(-1,1)).flatten())
-    axs[0].plot(dydx)
-    dydx = calcDeriv(savgol_filter(list(dataCsv[0]['arousal']),51,3),savgol_filter(list(dataCsv[1]['arousal']),51,3))
+    #axs[0].plot(dydx)
+    dydx = calcDeriv(savgol_filter(list(dataCsv[0]['arousal']),51,3))
     dydx = [0]+list(a.fit_transform(dydx.reshape(-1,1)).flatten())
-    axs[1].plot(dydx)
+    #axs[1].plot(dydx)
     plt.show()
     return (savgol_filter(list(dataCsv[0]['valence']),51,3),savgol_filter(list(dataCsv[0]['arousal']),51,3)), (savgol_filter(list(dataCsv[1]['valence']),51,3),savgol_filter(list(dataCsv[1]['arousal']),51,3))
 
-if __name__ == "__main__":
-    va1, va2 = genGraph(['clip1_0.csv','clip1_1.csv'])
+def outputWithAnnotation(videoPath,outputVideo,points):
+    vcap = cv2.VideoCapture(videoPath)
+    fourcc = cv2.VideoWriter_fourcc('F', 'M', 'P', '4')
+    width  = int(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out = cv2.VideoWriter(outputVideo, fourcc, 20.0, (width, height))
+    drawRect = 0
+    cFrame = 0
+    while (vcap.isOpened()):
+        sucs, imgv = vcap.read()
+        if sucs:
+            if drawRect or cFrame in points:
+                cv2.rectangle(imgv,(0,0),(width,height),(255,0,0),2)
+                if drawRect == 0:
+                    drawRect = 100
+                else:
+                    drawRect -= 1
+            out.write(imgv)
 
+            cFrame += 1
+        else:
+            break
+
+    vcap.release()
+    out.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    windowSize = 10
+    va1, va2 = genDataFromCSV(['oc_clip1_0.csv','oc_clip1_1.csv'])
+    avgV1, stdV1 = avgSignal(va1[0][:min(len(va1[0]),len(va2[0]))],windowSize,windowSize)
+    avgV2, stdV2 = avgSignal(va2[0][:min(len(va1[0]),len(va2[0]))],windowSize,windowSize)
+
+    maxAvgStd = np.max([np.mean(stdV1),np.mean(stdV2)])
+    dists = np.absolute(np.array(avgV1) - np.array(avgV2))
+    indexes = (-dists).argsort()
+
+    quantitySizes = 1000
+    pointsChoosed = []
+    for i in indexes:
+        if (np.max([stdV1[i],stdV2[i]]) >= maxAvgStd):
+            startingFrame = (i*windowSize)
+            pointsChoosed.append(startingFrame)
+            endingFrame = (startingFrame + windowSize)
+            startingFrame = startingFrame/20
+            endingFrame = endingFrame/20
+            print("Between %d and %d frames" % (startingFrame,endingFrame))            
+            quantitySizes -= 1
+        
+        if quantitySizes == 0:
+            break
+    
+    outputWithAnnotation("D:/PycharmProjects/emotion_recognition/selectedClips/10-60-1280x720.mp4","out.avi",pointsChoosed)
+
+    '''
+    fig, axs = plt.subplots(2,1)
+    axs[0].plot(va1[0][:min(len(va1[0]),len(va2[0]))])
+    axs[0].plot(va2[0][:min(len(va1[0]),len(va2[0]))])    
+    axs[1].plot(stdV1)
+    axs[1].plot(stdV2)
+    
+    for c in pointsChoosed:
+        axs[0].plot([c,c],[-0.5,0.5])
+        axs[1].plot([c,c],[-0.5,0.5])
+    
+    plt.show()
+    '''
     '''
     a = MinMaxScaler(feature_range=(-1,1))
     dydx = calcDeriv(savgol_filter(list(va1[0]),51,3),savgol_filter(list(va2[0]),51,3))
