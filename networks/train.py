@@ -1,5 +1,4 @@
 import argparse, torch, os, sys
-from black import out
 from torchvision import transforms
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -115,21 +114,21 @@ def train():
 
         if bestForFoldTLoss > tLoss:
             ibtl = 'X'
-            fName = '%s_best_val_loss.pth.tar' % (args.network)
+            fName = '%s_best_val_loss.pth.tar' % ('DAN')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFoldTLoss = tLoss
 
         if bestForFold > lossAvg:
             ibl = 'X'
-            fName = '%s_best_loss.pth.tar' % (args.network)
+            fName = '%s_best_loss.pth.tar' % ('DAN')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFold = lossAvg
 
         if bestRankForFold < max(cccAV,cccVV):
             ibr = 'X'
-            fName = '%s_best_ccc.pth.tar' % (args.network)
+            fName = '%s_best_ccc.pth.tar' % ('DAN')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestRankForFold = max(cccAV,cccVV)
