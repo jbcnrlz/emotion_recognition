@@ -1,5 +1,4 @@
 import argparse, torch, os, sys
-from black import out
 from torchvision import transforms
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
