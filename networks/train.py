@@ -1,4 +1,4 @@
-import argparse, torch, os, sys
+import argparse, torch, os, sys, numpy as np
 from torchvision import transforms
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -18,6 +18,7 @@ def train():
     parser.add_argument('--learningRate', help='Learning Rate', required=False, default=0.01, type=float)
     parser.add_argument('--tensorboardname', help='Learning Rate', required=False, default='DANVA')
     parser.add_argument('--optimizer', help='Optimizer', required=False, default="sgd")
+    parser.add_argument('--freeze', help='Freeze weights', required=False, type=int, default=0)
     args = parser.parse_args()
 
     if not os.path.exists(args.output):
@@ -28,6 +29,10 @@ def train():
     model = DANVA(num_class=8, num_head=4,pretrained=args.resnetPretrained)
     checkpoint = torch.load(args.originalWeights)
     model.load_state_dict(checkpoint['model_state_dict'],strict=True)
+    if args.freeze:
+        print("Freezing weights")
+        for param in model.parameters():
+            param.requires_grad = bool(args.freeze)
     model.convertToVA()
     model.to(device)    
     print("Model loaded")
@@ -68,6 +73,7 @@ def train():
         lossAcc = []
         totalImages = 0
         cccVT = cccAT = cccVV = cccAV = 0 
+        prediction = gt = None
         for currBatch, currTargetBatch in gal_loader:
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
@@ -80,13 +86,15 @@ def train():
             optimizer.step()
 
             lossAcc.append(loss.item())
+            if prediction is None:
+                prediction = output.cpu().detach().numpy()
+                gt = currTargetBatch.cpu().detach().numpy()
+            else:
+                prediction = np.concatenate((prediction,output.cpu().detach().numpy()))
+                gt = np.concatenate((gt,currTargetBatch.cpu().detach().numpy()))
 
-            prediction = output.cpu().detach().numpy()
-            gt = currTargetBatch.cpu().detach().numpy()
-
-            cccVT = ccc(prediction[:,0],gt[:,0])
-            cccAT = ccc(prediction[:,1],gt[:,1])
-
+        cccVT = ccc(prediction[:,0],gt[:,0])
+        cccAT = ccc(prediction[:,1],gt[:,1])
         lossAvg = sum(lossAcc) / len(lossAcc)
         scheduler.step()
         model.eval()
