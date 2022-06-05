@@ -46,7 +46,7 @@ def main():
         if v[-3:] == 'txt':
             continue
 
-        fileVideoName = v.split(os.path.sep)[-1][:-4]        
+        fileVideoName = v[:-4]        
 
         print("Doing videos %s" % (fileVideoName))
 

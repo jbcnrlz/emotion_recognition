@@ -1,9 +1,12 @@
-import cv2, face_alignment, numpy as np, math, matplotlib.pyplot as plt, argparse, os
+import cv2, face_alignment, numpy as np, math, matplotlib.pyplot as plt, argparse, os, sys
 from scipy.spatial.distance import euclidean
 import pandas as pd
 from matplotlib import pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from scipy.signal import savgol_filter
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from helper.function import getFilesInPath
 
 def cropVideo(video,centerMoments,momentSize=2,fileName='teste_%d.mp4'):
     codecVideo = int(video.get(cv2.CAP_PROP_FOURCC))
@@ -159,22 +162,24 @@ def generateROIList(videoFeed,thres=7,fileNameOutputCSV='output.csv'):
 
 def main():
     parser = argparse.ArgumentParser(description='Separate videos')
-    parser.add_argument('--pathBase', help='Path for video', required=True)
-    args = parser.parse_args()  
-    vCap = cv2.VideoCapture(args.pathBase)
-    fileNameCSV = args.pathBase.split(os.path.sep)[-1].split('.')[0] + '.csv'
-    generateROIList(vCap,2,fileNameCSV)
-    a, b = extractMoments(momentSize=12000,fileName=fileNameCSV)
-    fileClipSave = args.pathBase.split(os.path.sep)[-1].split('.')[0] + '_%d.mp4'
-    cropVideo(vCap,a,momentSize=5,fileName=fileClipSave)
+    parser.add_argument('--pathBase', help='Path for video', required=True)    
+    args = parser.parse_args()
+    for v in getFilesInPath(args.pathBase):
+        vCap = cv2.VideoCapture(v)
+        fileNameCSV = v.split('.')[0] + '.csv'
+        if not os.path.exists(fileNameCSV):
+            generateROIList(vCap,2,fileNameCSV)
+        #a, b = extractMoments(momentSize=12000,fileName=fileNameCSV)
+        #fileClipSave = args.pathBase.split(os.path.sep)[-1].split('.')[0] + '_%d.mp4'
+        #cropVideo(vCap,a,momentSize=5,fileName=fileClipSave)
 
 if __name__ == '__main__':
-    #main()
-    vCap = cv2.VideoCapture("02GRAV13ter2_1.mp4")
+    main()
+    #vCap = cv2.VideoCapture("02GRAV13ter2_1.mp4")
     #generateROIList(vCap)
-    a, b = extractMoments(momentSize=12000,fileName="02GRAV13ter2_1.csv")
-    cropVideo(vCap,a,momentSize=5)
-    print('oi')
+    #a, b = extractMoments(momentSize=12000,fileName="02GRAV13ter2_1.csv")
+    #cropVideo(vCap,a,momentSize=5)
+    #print('oi')
     '''
     vCap = cv2.VideoCapture("D:/data_sep_videos/clips/2GRAV1qua1_5.mp4")
     a = generateROIList(vCap,2)
