@@ -1,6 +1,10 @@
 import argparse, pandas as pd, numpy as np, os, sys
 from sklearn.mixture import BayesianGaussianMixture, GaussianMixture
 import matplotlib.pyplot as plt
+from scipy.stats import multivariate_normal
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from helper.function import saveCSV
 
 def outputTXT(clusters,classes,file):
     with open(file,'w') as fterms:
@@ -12,17 +16,23 @@ def getDistribution(mean,std,size=2000):
     covPt1 = np.zeros((2,2))
     covPt1[0,0] = std[0]
     covPt1[1,1] = std[1]
-    rng = np.random.default_rng()
-    return rng.multivariate_normal(mean,covPt1,size)
+    rng = multivariate_normal(mean=mean,cov=covPt1)
+    return np.array([rng.rvs() for i in range(size)])
 
 
 def generateGMM():
     parser = argparse.ArgumentParser(description='Generate GMM')
     parser.add_argument('--termsCSV', help='Path for the terms file', required=True)
+    parser.add_argument('--components', help='Quantity of components', required=True, type=int)
     args = parser.parse_args()
     tFiles = np.array(pd.read_csv(args.termsCSV))
     classesLabel = tFiles[:,0]
-    vaValues = tFiles[:,[1,2,3,4]].astype(np.float32)
+    vaValues = tFiles[:,[1,3,2,4]].astype(np.float32)
+    dists = []
+    for i in range(151):
+        dists += [getDistribution(vaValues[i,[0,1]],vaValues[i,[2,3]])]
+    dists = np.array(dists)
+    dists = dists.reshape((dists.shape[0] * dists.shape[1],2))
     '''
     minaic = minbic = None
     mcpmaic = mcmpbic = 0
@@ -40,26 +50,26 @@ def generateGMM():
             #mean_precision_prior=0.8,            
         )
         #estimator.weight_concentration_prior = 2000
-        estimator.fit(vaValues)
-        if (minbic is None) or (minbic < estimator.bic(vaValues)):
-            minbic = estimator.bic(vaValues)
+        estimator.fit(dists)
+        if (minbic is None) or (minbic > estimator.bic(dists)):
+            minbic = estimator.bic(dists)
             mcmpbic = i
 
-        if (minaic is None) or (minaic < estimator.aic(vaValues)):
-            minaic = estimator.aic(vaValues)
+        if (minaic is None) or (minaic > estimator.aic(dists)):
+            minaic = estimator.aic(dists)
             mcpmaic = i
 
         models.append(estimator)
 
-    plt.plot(list(range(1,151)), [m.bic(vaValues) for m in models], label='BIC')
-    plt.plot(list(range(1,151)), [m.aic(vaValues) for m in models], label='AIC')
+    plt.plot(list(range(1,151)), [m.bic(dists) for m in models], label='BIC')
+    plt.plot(list(range(1,151)), [m.aic(dists) for m in models], label='AIC')
     plt.legend(loc='best')
     plt.xlabel('n_components')
     plt.show()
     print(mcpmaic, " ", mcmpbic)
     '''
     estimator = GaussianMixture(            
-        n_components=94,
+        n_components=args.components,
         covariance_type='full',
         random_state=0
         #weight_concentration_prior_type="dirichlet_distribution",
@@ -69,10 +79,20 @@ def generateGMM():
         #mean_precision_prior=0.8,            
     )
 
-    a = estimator.fit_predict(vaValues)
-    outputTXT(a,classesLabel,'clustering.csv')
-    
+    estimator.fit(vaValues[:,[0,1]])
+    a = estimator.predict(vaValues[:,[0,1]])
 
+    labelsJoined = [''] * args.components
+    for idx, cluster in enumerate(a):
+        if labelsJoined[cluster] == '':
+            labelsJoined[cluster] = classesLabel[idx]
+        else:
+            labelsJoined[cluster] += ' + %s' % (classesLabel[idx])
+
+    #outputTXT(a,classesLabel,'clustering.csv')
+    saveCSV('joinedWithGMM.csv',labelsJoined,np.concatenate((estimator.means_,estimator.means_),axis=1))
+    
+    
 if __name__ == '__main__':
     generateGMM()
 

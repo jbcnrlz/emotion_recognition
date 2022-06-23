@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import ccc
 from networks.DANVA import DANVA
 from DatasetClasses.OMG import OMGData
+from DatasetClasses.TeachingDataset import TeachingDataset
 
 def saveToCSV(preds,files,pathCSV):
     with open(pathCSV,'w') as pcsv:
@@ -21,6 +22,8 @@ def test():
     parser.add_argument('--batch', type=int, help='Size of the batch', required=True)
     parser.add_argument('--output', default=None, help='File to save csv', required=True)
     parser.add_argument('--annotationFile', help='Path for annotation file', required=False)
+    parser.add_argument('--dataset', help='Dataset for feature extractoin', required=False, default="OMG")
+    parser.add_argument('--rawData', help='Should save raw data?', required=False, default=None)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,8 +42,11 @@ def test():
                                  std=[0.229, 0.224, 0.225]),
     ])
     print("Loading test set")
-    omgdata = OMGData(omgData=args.pathBase,annotationFile=args.annotationFile,transform=data_transforms)
-    val_loader = torch.utils.data.DataLoader(omgdata, batch_size=args.batch, shuffle=False)
+    if args.dataset == 'OMG':
+        dataset = OMGData(omgData=args.pathBase,annotationFile=args.annotationFile,transform=data_transforms)
+    else:
+        dataset = TeachingDataset(teachingData=args.pathBase,transform=data_transforms)
+    val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)
 
     model.eval()
     predictions = None
@@ -56,13 +62,26 @@ def test():
 
             pathFile = pathFile + list(pathsForFiles)
 
+    if not args.rawData is None:
+        with open(args.rawData,'w') as rd:
+            for idxF, file in enumerate(pathFile):
+                rd.write("%f,%f,%s \n" % (predictions[idxF][0],predictions[idxF][1],file))
+
     vaPerUtt = {}
-    for idxF, file in enumerate(pathFile):
-        dirUtt = int(file.split(os.path.sep)[-2].split('_')[1])
-        if dirUtt not in vaPerUtt.keys():
-            vaPerUtt[dirUtt] = [predictions[idxF]]
-        else:
-            vaPerUtt[dirUtt].append(predictions[idxF])
+    if args.dataset == 'OMG':
+        for idxF, file in enumerate(pathFile):
+            dirUtt = int(file.split(os.path.sep)[-2].split('_')[1])
+            if dirUtt not in vaPerUtt.keys():
+                vaPerUtt[dirUtt] = [predictions[idxF]]
+            else:
+                vaPerUtt[dirUtt].append(predictions[idxF])
+    else:
+        for idxF, file in enumerate(pathFile):
+            dirUtt = file.split(os.path.sep)[-2]
+            if dirUtt not in vaPerUtt.keys():
+                vaPerUtt[dirUtt] = [predictions[idxF]]
+            else:
+                vaPerUtt[dirUtt].append(predictions[idxF])
 
     print('Generating CSV')
     means = [np.mean(np.array(vaPerUtt[k]),axis=0) for k in vaPerUtt]

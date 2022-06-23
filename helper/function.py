@@ -1,4 +1,6 @@
 import os, torch, numpy as np, torch.nn.functional as F, matplotlib.pyplot as plt, cv2
+from shapely.geometry.polygon import Point
+from shapely import affinity
 
 def saveLandmarks(ldns,filepath):
     with open(filepath,'w') as fp:
@@ -114,3 +116,19 @@ def ccc(x,y):
     sxy = np.sum((x - x.mean())*(y - y.mean()))/x.shape[0]
     rhoc = 2*sxy / (np.var(x) + np.var(y) + (x.mean() - y.mean())**2)
     return rhoc
+
+def saveCSV(pathFile,header,data):
+    with open(pathFile,'w') as pf:
+        pf.write('class,valence mean,valence std,arousal mean,arousal std,dominance mean,dominance std\n')
+        for idxF, d in enumerate(data):
+            pf.write(header[idxF]+','+','.join(list(map(str,d)))+'\n')
+
+def create_ellipse(center, lengths, angle=0):
+    """
+    create a shapely ellipse. adapted from
+    https://gis.stackexchange.com/a/243462
+    """
+    circ = Point(center).buffer(1)
+    ell = affinity.scale(circ, lengths[0], lengths[1])
+    ellr = affinity.rotate(ell, angle)
+    return ellr

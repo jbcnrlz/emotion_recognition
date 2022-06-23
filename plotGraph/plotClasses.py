@@ -1,11 +1,16 @@
+import pandas as pd,  matplotlib.pyplot as plt, numpy as np, re, itertools, os, sys
 from cProfile import label
-import pandas as pd,  matplotlib.pyplot as plt, numpy as np, re, itertools
 from matplotlib import patches
 from sklearn.cluster import KMeans
 from yellowbrick.cluster import KElbowVisualizer
 from shapely.geometry.polygon import LinearRing, Point
 from shapely import affinity
 from textwrap import wrap
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from helper.function import create_ellipse
+
+
 
 def ellipse_polyline(ellipses, n=100):
     t = np.linspace(0, 2*np.pi, n, endpoint=False)
@@ -21,16 +26,6 @@ def ellipse_polyline(ellipses, n=100):
         p[:, 1] = y0 + a * sa * ct + b * ca * st
         result.append(p)
     return result
-
-def create_ellipse(center, lengths, angle=0):
-    """
-    create a shapely ellipse. adapted from
-    https://gis.stackexchange.com/a/243462
-    """
-    circ = Point(center).buffer(1)
-    ell = affinity.scale(circ, lengths[0], lengths[1])
-    ellr = affinity.rotate(ell, angle)
-    return ellr
 
 def intersections(a, b):
     ea = LinearRing(a)
