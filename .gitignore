@@ -136,3 +136,13 @@ clipe1/
 
 mimamo/
 .vscode/launch.json
+ffmpeg.exe
+intersections.txt
+.vscode/launch.json
+finetunedDAN/DAN_best_ccc.pth.tar
+finetunedDAN/DAN_best_loss.pth.tar
+finetunedDAN/DAN_best_val_loss.pth.tar
+selectedClips/10-60-1280x720.txt
+selectedClips/30-30-1920x1080.txt
+selectedClips/46-30-484x360.txt
+selectedClips/52-30-1280x720.txt
