@@ -6,13 +6,14 @@ from matplotlib import patches
 
 def main():
     parser = argparse.ArgumentParser(description='Plot Terms Files')
-    parser.add_argument('--termFiles', help='CSV file with terms', required=True)
+    parser.add_argument('--termFiles', help='CSV file with terms', required=True, nargs='+')
     args = parser.parse_args()
-
-    csvTerms = pd.read_csv(args.termFiles)
-    plt.scatter(csvTerms['valence mean'],csvTerms['arousal mean'])
-    for c in range(len(csvTerms)):
-        plt.annotate(csvTerms['class'][c],(csvTerms['valence mean'][c],csvTerms['arousal mean'][c]))
+    colors = ['red', 'blue', 'green', 'yellow']
+    for idx, ft in enumerate(args.termFiles):
+        csvTerms = pd.read_csv(ft)
+        plt.scatter(csvTerms['valence mean'],csvTerms['arousal mean'],c=colors[idx])
+        for c in range(len(csvTerms)):
+            plt.annotate(csvTerms['class'][c],(csvTerms['valence mean'][c],csvTerms['arousal mean'][c]))
     plt.show()
     '''
     elipses = list(zip(csvTerms['valence mean'],csvTerms['arousal mean'],csvTerms['valence std'],csvTerms['arousal std'],[0] * len(csvTerms)))

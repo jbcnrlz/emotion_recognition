@@ -33,41 +33,6 @@ def generateGMM():
         dists += [getDistribution(vaValues[i,[0,1]],vaValues[i,[2,3]])]
     dists = np.array(dists)
     dists = dists.reshape((dists.shape[0] * dists.shape[1],2))
-    '''
-    minaic = minbic = None
-    mcpmaic = mcmpbic = 0
-    models = []
-    for i in range(1,151):
-        print("Testing with %d components" % (i))
-        estimator = GaussianMixture(            
-            n_components=i,
-            covariance_type='full',
-            random_state=0
-            #weight_concentration_prior_type="dirichlet_distribution",
-            #reg_covar=0,
-            #init_params="random",
-            #max_iter=1500,
-            #mean_precision_prior=0.8,            
-        )
-        #estimator.weight_concentration_prior = 2000
-        estimator.fit(dists)
-        if (minbic is None) or (minbic > estimator.bic(dists)):
-            minbic = estimator.bic(dists)
-            mcmpbic = i
-
-        if (minaic is None) or (minaic > estimator.aic(dists)):
-            minaic = estimator.aic(dists)
-            mcpmaic = i
-
-        models.append(estimator)
-
-    plt.plot(list(range(1,151)), [m.bic(dists) for m in models], label='BIC')
-    plt.plot(list(range(1,151)), [m.aic(dists) for m in models], label='AIC')
-    plt.legend(loc='best')
-    plt.xlabel('n_components')
-    plt.show()
-    print(mcpmaic, " ", mcmpbic)
-    '''
     estimator = GaussianMixture(            
         n_components=args.components,
         covariance_type='full',
@@ -89,7 +54,6 @@ def generateGMM():
         else:
             labelsJoined[cluster] += ' + %s' % (classesLabel[idx])
 
-    #outputTXT(a,classesLabel,'clustering.csv')
     saveCSV('joinedWithGMM.csv',labelsJoined,np.concatenate((estimator.means_,estimator.means_),axis=1))
     
     

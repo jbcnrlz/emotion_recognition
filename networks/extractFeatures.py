@@ -6,7 +6,9 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import ccc
 from networks.DANVA import DANVA
 from DatasetClasses.OMG import OMGData
+from DatasetClasses.AFEWVA import AFEWVA
 from DatasetClasses.TeachingDataset import TeachingDataset
+from DatasetClasses.AffectNet import AffectNet
 
 def saveToCSV(preds,files,pathCSV):
     with open(pathCSV,'w') as pcsv:
@@ -24,6 +26,7 @@ def test():
     parser.add_argument('--annotationFile', help='Path for annotation file', required=False)
     parser.add_argument('--dataset', help='Dataset for feature extractoin', required=False, default="OMG")
     parser.add_argument('--rawData', help='Should save raw data?', required=False, default=None)
+    parser.add_argument('--typeOutput', help='Average ou VS per frame', required=False, default="average")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -44,6 +47,10 @@ def test():
     print("Loading test set")
     if args.dataset == 'OMG':
         dataset = OMGData(omgData=args.pathBase,annotationFile=args.annotationFile,transform=data_transforms)
+    elif args.dataset == 'AFEWVA':
+        dataset = AFEWVA(afewdata=args.pathBase,transform=data_transforms)
+    elif args.dataset == 'AFFECTNET':
+        dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms)
     else:
         dataset = TeachingDataset(teachingData=args.pathBase,transform=data_transforms)
     val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)
@@ -53,7 +60,8 @@ def test():
     pathFile = []
     gtsComp = None
     with torch.no_grad():
-        for data in val_loader:
+        for idxBtc, data in enumerate(val_loader):
+            print("Extraction Batch %d" % (idxBtc))
             images, labels, pathsForFiles = data
             outputs, _, _ = model(images.to(device))
 
@@ -76,17 +84,27 @@ def test():
             else:
                 vaPerUtt[dirUtt].append(predictions[idxF])
     else:
-        for idxF, file in enumerate(pathFile):
-            dirUtt = file.split(os.path.sep)[-2]
+        for idxF, file in enumerate(pathFile):            
+            dirUtt = file
             if dirUtt not in vaPerUtt.keys():
                 vaPerUtt[dirUtt] = [predictions[idxF]]
             else:
                 vaPerUtt[dirUtt].append(predictions[idxF])
 
     print('Generating CSV')
-    means = [np.mean(np.array(vaPerUtt[k]),axis=0) for k in vaPerUtt]
-    utt = list(map(str,vaPerUtt.keys()))
-    saveToCSV(means,utt,args.output)
+    if args.typeOutput == 'average':
+        means = [np.mean(np.array(vaPerUtt[k]),axis=0) for k in vaPerUtt]
+        utt = list(map(str,vaPerUtt.keys()))
+        saveToCSV(means,utt,args.output)
+    else:
+        values = []
+        utt = []
+        for k in vaPerUtt:
+            for i in vaPerUtt[k]:
+                values.append(i)
+                utt.append(k)
+        saveToCSV(values,utt,args.output)
+        print('oi')
 
 if __name__ == '__main__':
     test()
