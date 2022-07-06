@@ -9,3 +9,7 @@ class DANVA(DAN):
     def convertToVA(self):
         self.fc = nn.Linear(512, 2)
         self.bn = nn.BatchNorm1d(2)
+
+    def convertToTerms(self,numberTerms):
+        self.fc = nn.Linear(512, numberTerms)
+        self.bn = nn.BatchNorm1d(numberTerms)
