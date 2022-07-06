@@ -1,5 +1,5 @@
 from fileinput import filename
-import torch.utils.data as data, os, re, torch, numpy as np, sys
+import torch.utils.data as data, os, re, torch, numpy as np, sys, pandas as pd
 from PIL import Image as im
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -9,6 +9,7 @@ from helper.function import getDirectoriesInPath, getFilesInPath
 class AFF2Data(data.Dataset):    
     def __init__(self, affData, phase, type='VA', transform=None):
         typeData = {"VA" : 'VA_Set','AU' : 'AU_Set', 'EXPR' : 'EXPR_Set', 'TERMS' : 'TERMS_Set'}
+        self.terms = None if typeData[type] != 'TERMS_Set' else self.loadTermsFile()
         self.dataType = typeData[type]
         self.transform = transform
         self.label = []
@@ -21,27 +22,37 @@ class AFF2Data(data.Dataset):
                 continue
 
             videoName = os.path.join(imagePath,fileName.split('.')[0])
+            if '_terms' in videoName:
+                videoName = videoName[:-len('_terms')]
             frames = getFilesInPath(videoName,imagesOnly=True)            
             if not phase == 'AffWild1_Set':
                 labelsForImage = self.loadLabels(r)
                 for frm in frames:
                     frameName = int(frm.split(os.path.sep)[-1][:-4]) - 1
-                    if frameName > len(labelsForImage) or labelsForImage[frameName][0] < -1:
+                    if (self.dataType != 'TERMS_Set') and (frameName > len(labelsForImage) or labelsForImage[frameName][0] < -1):
+                        continue
+                    elif len(labelsForImage) <= frameName:
                         continue
                     self.filesPath.append(frm)
-                    self.label.append(labelsForImage[frameName])
+                    self.label.append(np.where(self.terms == labelsForImage[frameName])[0][0])
             else:
                 for frm in frames:
                     frameName = int(frm.split(os.path.sep)[-1][:-4]) - 1
                     self.filesPath.append(frm)
                     self.label.append([-10,-10])
 
+    def loadTermsFile(self):
+        return np.array(pd.read_csv('hajer_categ.CSV'))[:,0]
+
     def loadLabels(self,path):
         van = []
         with open(path,'r') as fp:
             fp.readline()
             for f in fp:
-               van.append(list(map(float,f.split(','))))
+                if self.dataType == 'TERMS_Set':
+                    van.append(f.strip())
+                else:
+                    van.append(list(map(float,f.split(','))))
 
         return van
 
