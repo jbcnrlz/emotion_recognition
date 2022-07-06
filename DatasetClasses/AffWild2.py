@@ -8,7 +8,7 @@ from helper.function import getDirectoriesInPath, getFilesInPath
 
 class AFF2Data(data.Dataset):    
     def __init__(self, affData, phase, type='VA', transform=None):
-        typeData = {"VA" : 'VA_Set','AU' : 'AU_Set', 'EXPR' : 'EXPR_Set'}
+        typeData = {"VA" : 'VA_Set','AU' : 'AU_Set', 'EXPR' : 'EXPR_Set', 'TERMS' : 'TERMS_Set'}
         self.dataType = typeData[type]
         self.transform = transform
         self.label = []
