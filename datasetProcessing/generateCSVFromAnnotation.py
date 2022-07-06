@@ -9,7 +9,7 @@ def main():
     parser = argparse.ArgumentParser(description='Generate CSV')
     parser.add_argument('--basePath', help='Path for the terms file', required=True)
     parser.add_argument('--lastClass', help='Path for the terms file', required=True, type=int)
-    parser.add_argument('--outputFile', help='Path for the terms file', required=True)
+    parser.add_argument('--outputFile', help='Path for the terms file', required=True)    
     args = parser.parse_args()
     
     outputData = []

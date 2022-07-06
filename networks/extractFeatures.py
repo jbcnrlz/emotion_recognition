@@ -8,6 +8,7 @@ from networks.DANVA import DANVA
 from DatasetClasses.OMG import OMGData
 from DatasetClasses.AFEWVA import AFEWVA
 from DatasetClasses.TeachingDataset import TeachingDataset
+from DatasetClasses.AffWild2 import AFF2Data
 from DatasetClasses.AffectNet import AffectNet
 
 def saveToCSV(preds,files,pathCSV):
@@ -27,6 +28,7 @@ def test():
     parser.add_argument('--dataset', help='Dataset for feature extractoin', required=False, default="OMG")
     parser.add_argument('--rawData', help='Should save raw data?', required=False, default=None)
     parser.add_argument('--typeOutput', help='Average ou VS per frame', required=False, default="average")
+    parser.add_argument('--datasetPart', help='Only for AffWild - train or validation', required=False, default="Validation_Set")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -51,6 +53,8 @@ def test():
         dataset = AFEWVA(afewdata=args.pathBase,transform=data_transforms)
     elif args.dataset == 'AFFECTNET':
         dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms)
+    elif args.dataset == 'AFFWILD2':
+        dataset = AFF2Data(args.pathBase,args.datasetPart,transform=data_transforms)    
     else:
         dataset = TeachingDataset(teachingData=args.pathBase,transform=data_transforms)
     val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)

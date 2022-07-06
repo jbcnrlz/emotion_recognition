@@ -2,6 +2,7 @@ import argparse, pandas as pd, numpy as np, os, sys
 from sklearn.mixture import BayesianGaussianMixture, GaussianMixture
 import matplotlib.pyplot as plt
 from scipy.stats import multivariate_normal
+from scipy.stats import norm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import saveCSV
@@ -13,11 +14,13 @@ def outputTXT(clusters,classes,file):
             fterms.write("%s,%d\n" % (c,clusters[idxC]))
 
 def getDistribution(mean,std,size=2000):
-    covPt1 = np.zeros((2,2))
-    covPt1[0,0] = std[0]
-    covPt1[1,1] = std[1]
-    rng = multivariate_normal(mean=mean,cov=covPt1)
-    return np.array([rng.rvs() for i in range(size)])
+    valNorm = norm(loc=mean[0],scale=std[0])
+    aroNorm = norm(loc=mean[1],scale=std[1])
+    #covPt1 = np.zeros((2,2))
+    #covPt1[0,0] = std[0]
+    #covPt1[1,1] = std[1]
+    #rng = multivariate_normal(mean=mean,cov=covPt1)
+    return np.array([valNorm.rvs(size=size),aroNorm.rvs(size=size)]).T
 
 
 def generateGMM():
@@ -33,9 +36,9 @@ def generateGMM():
         dists += [getDistribution(vaValues[i,[0,1]],vaValues[i,[2,3]])]
     dists = np.array(dists)
     dists = dists.reshape((dists.shape[0] * dists.shape[1],2))
-    estimator = GaussianMixture(            
+    estimator = GaussianMixture(
         n_components=args.components,
-        covariance_type='full',
+        covariance_type='spherical',
         random_state=0
         #weight_concentration_prior_type="dirichlet_distribution",
         #reg_covar=0,
@@ -44,7 +47,7 @@ def generateGMM():
         #mean_precision_prior=0.8,            
     )
 
-    estimator.fit(vaValues[:,[0,1]])
+    estimator.fit(dists)
     a = estimator.predict(vaValues[:,[0,1]])
 
     labelsJoined = [''] * args.components
@@ -54,7 +57,7 @@ def generateGMM():
         else:
             labelsJoined[cluster] += ' + %s' % (classesLabel[idx])
 
-    saveCSV('joinedWithGMM.csv',labelsJoined,np.concatenate((estimator.means_,estimator.means_),axis=1))
+    saveCSV('joinedWithGMM.csv',labelsJoined,np.concatenate((estimator.means_,estimator.means_[:,[1,0]]),axis=1))
     
     
 if __name__ == '__main__':

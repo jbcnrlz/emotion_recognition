@@ -19,16 +19,22 @@ class AFF2Data(data.Dataset):
             fileName = r.split(os.path.sep)[-1]            
             if fileName[-3:] != 'txt':                
                 continue
-            
-            labelsForImage = self.loadLabels(r)
+
             videoName = os.path.join(imagePath,fileName.split('.')[0])
-            frames = getFilesInPath(videoName,imagesOnly=True)
-            for frm in frames:
-                frameName = int(frm.split(os.path.sep)[-1][:-4]) - 1
-                if frameName > len(labelsForImage) or labelsForImage[frameName][0] < -1:
-                    continue
-                self.filesPath.append(frm)
-                self.label.append(labelsForImage[frameName])
+            frames = getFilesInPath(videoName,imagesOnly=True)            
+            if not phase == 'AffWild1_Set':
+                labelsForImage = self.loadLabels(r)
+                for frm in frames:
+                    frameName = int(frm.split(os.path.sep)[-1][:-4]) - 1
+                    if frameName > len(labelsForImage) or labelsForImage[frameName][0] < -1:
+                        continue
+                    self.filesPath.append(frm)
+                    self.label.append(labelsForImage[frameName])
+            else:
+                for frm in frames:
+                    frameName = int(frm.split(os.path.sep)[-1][:-4]) - 1
+                    self.filesPath.append(frm)
+                    self.label.append([-10,-10])
 
     def loadLabels(self,path):
         van = []
@@ -49,4 +55,4 @@ class AFF2Data(data.Dataset):
         if self.transform is not None:
             image = self.transform(image)
 
-        return image, label
+        return image, label, self.filesPath[idx]

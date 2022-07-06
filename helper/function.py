@@ -119,9 +119,10 @@ def ccc(x,y):
 
 def saveCSV(pathFile,header,data):
     with open(pathFile,'w') as pf:
-        pf.write('class,valence mean,valence std,arousal mean,arousal std,dominance mean,dominance std\n')
+        pf.write('class,valence mean,valence std,arousal mean,arousal std\n')
         for idxF, d in enumerate(data):
-            pf.write(header[idxF]+','+','.join(list(map(str,d)))+'\n')
+            if header[idxF] != '':
+                pf.write(header[idxF]+','+','.join(list(map(str,d)))+'\n')
 
 def create_ellipse(center, lengths, angle=0):
     """
