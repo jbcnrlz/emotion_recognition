@@ -106,7 +106,7 @@ def train():
                 loss_val.append(loss)
                 total += labels.size(0)
 
-                _, predicted = torch.max(output.data, 1)
+                _, predicted = torch.max(outputs.data, 1)
                 correct += (predicted == labels.to(device)).sum().item()
 
 
