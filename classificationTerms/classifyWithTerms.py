@@ -3,7 +3,6 @@ from scipy.spatial.distance import euclidean
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import getFilesInPath
-from multiprocessing import Pool
 from sklearn.metrics.pairwise import euclidean_distances
 
 def outputClassificationFile(pathToFile,result,blockSize):    
@@ -15,7 +14,10 @@ def outputClassificationFile(pathToFile,result,blockSize):
                     ptf.write('%s,%d,%s\n' % (result[r][i],i,r))
         else:        
             for r in result:
-                ptf.write(r + '\n')
+                if type(r) is str:
+                    ptf.write("%s\n" % (r))
+                else:
+                    ptf.write(','.join(r) + '\n')
 
 def sortVideoFrames(features,dataset):
     featuresOrdered = {}
@@ -40,7 +42,7 @@ def sortVideoFrames(features,dataset):
 
             initialFrame += 1
 
-        featuresOrdered[subjectVideo][frameNo] = [f[0],f[1]]
+        featuresOrdered[subjectVideo][frameNo] = [float(f[0]),float(f[1])]
 
     return featuresOrdered
 
@@ -54,16 +56,10 @@ def doOneFile(parameters):
     print("Doing file %s" % (pathToResult))
     distances = euclidean_distances(vas,vaValues)
     classificationValue = classesLabel[distances.argsort()[:,0]]
-    '''
-    distances = np.zeros((len(vas),len(vaValues)))
-    for idxAv, i in enumerate(vas):
-        for idxVa, j in enumerate(vaValues):
-            print("Calculating distance from sample %d to Class %s" % (idxAv,classesLabel[idxVa]))
-            distances[idxAv,idxVa] = euclidean(i,j)
-    
-    classificationValue = classesLabel[distances.argsort()[:,0]]
-    '''
-    outputClassificationFile(pathToResult,classificationValue,sizeBlock)
+    if not parameters['files'] is None:
+        outputClassificationFile(pathToResult,np.stack((classificationValue,parameters['files'])).T,sizeBlock)
+    else:
+        outputClassificationFile(pathToResult,classificationValue,sizeBlock)
     
 def unwrap_self_f(**kwarg):
     doOneFile(**kwarg)
@@ -87,8 +83,6 @@ def main():
         else:
             filesToProcess += getFilesInPath(c)
 
-    pool = Pool(processes=6)
-    outputAsync = []
     for c in filesToProcess:
         classFiles = np.array(pd.read_csv(c))
         if args.sizeBlock == 1 and args.forceBlock == False:
@@ -96,7 +90,10 @@ def main():
             if not os.path.exists(pathToResult) and ('terms' not in c):
                 #pool.map(doOneFile,[{'vas':classFiles[:,[0,1]],'vaValues' : vaValues,  'classesLabel' : classesLabel,'sizeBlock' : args.sizeBlock,'pathToResult' : pathToResult}])
                 #outputAsync.append({'vas':classFiles[:,[0,1]],'vaValues' : vaValues,  'classesLabel' : classesLabel,'sizeBlock' : args.sizeBlock,'pathToResult' : pathToResult})
-                doOneFile({'vas':classFiles[:,[0,1]],'vaValues' : vaValues,  'classesLabel' : classesLabel,'sizeBlock' : args.sizeBlock,'pathToResult' : pathToResult})
+                if classFiles.shape[1] < 3:
+                    doOneFile({'vas':classFiles[:,[0,1]],'vaValues' : vaValues,  'classesLabel' : classesLabel,'sizeBlock' : args.sizeBlock,'pathToResult' : pathToResult,"files" : None})
+                else:
+                    doOneFile({'vas':classFiles[:,[0,1]],'vaValues' : vaValues,  'classesLabel' : classesLabel,'sizeBlock' : args.sizeBlock,'pathToResult' : pathToResult,"files" : classFiles[:,2]})
             else:
                 print("Skipped " + pathToResult)
         else:

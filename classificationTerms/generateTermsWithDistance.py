@@ -1,4 +1,5 @@
 import argparse, pandas as pd, numpy as np, os, sys, itertools
+import enum
 from sklearn.mixture import BayesianGaussianMixture
 from scipy.stats import norm, multivariate_normal
 from scipy.special import kl_div
@@ -8,27 +9,33 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from helper.function import saveCSV
 
-def joinProbability(simProbs,pDist,probsNames):
-    newJoined = []
-    alreadyWent = []
-    names = []
-    for i in range(simProbs.shape[0]):
-        if probsNames[i] not in alreadyWent:
-            alreadyWent.append(probsNames[i])
-            currProb = simProbs[i]
-            indexesJoin = currProb.argsort()
-            pToJoin = 1
-            while ((probsNames[indexesJoin[pToJoin]] in alreadyWent) or (probsNames[indexesJoin[pToJoin]] == probsNames[i])):
-                pToJoin += 1
-                if pToJoin >= len(probsNames):
-                    break
-            
-            if pToJoin < len(probsNames):
-                newJoined.append((pDist[i] + pDist[indexesJoin[pToJoin]]) / 2)                
-                alreadyWent.append(probsNames[indexesJoin[pToJoin]])
-                names.append("%s + %s" % (probsNames[i],probsNames[indexesJoin[pToJoin]]))
+def joinProbability(simProbs,originalNames,originalValues,limitJoin=0):
 
-    return np.array(newJoined), names
+    outputName = []
+    outputProb = []
+    originalDists = np.copy(simProbs)
+    simProbs[simProbs == 0] = 1000
+    while True:
+        joinedProb = np.where(simProbs == simProbs.min())
+        toBeJoined = originalNames[joinedProb[1][0]]
+        mainClass = originalNames[joinedProb[0][0]]
+        if (toBeJoined.count('+') >  limitJoin) or (mainClass.count('+') >  limitJoin):
+            simProbs[joinedProb[1][0]][joinedProb[0][0]] = simProbs[joinedProb[0][0]][joinedProb[1][0]] = 1000
+        else:
+            break
+
+        if (simProbs.min() == 1000):
+            return joinProbability(originalDists,originalNames,originalValues,limitJoin+1)
+
+    joinedProb = (originalValues[joinedProb[1][0]] + originalValues[joinedProb[0][0]]) / 2
+    outputName.append(toBeJoined + ' + ' + mainClass)
+    outputProb.append(joinedProb)
+    for idxN, name in enumerate(originalNames):
+        if name != toBeJoined and name != mainClass:
+            outputName.append(name)
+            outputProb.append(originalValues[idxN])
+
+    return np.array(outputProb), outputName
 
 def bhattacharyya_distance(distribution1,distribution2):
     """ Estimate Bhattacharyya Distance (between General Distributions)
@@ -80,40 +87,28 @@ def outputTXT(clusters,classes,file):
 def joinDistributions():
     parser = argparse.ArgumentParser(description='Generate GMM')
     parser.add_argument('--termsCSV', help='Path for the terms file', required=True)
+    parser.add_argument('--quantityClusters', help='Path for the terms file', required=True, type=int)
     args = parser.parse_args()
     tFiles = np.array(pd.read_csv(args.termsCSV))
     classesLabel = tFiles[:,0]
-    vaValues = tFiles[:,[1,3,2,4]].astype(np.float32)    
-    for k in range(2):
-        '''
+    vaValues = tFiles[:,[1,3,2,4]].astype(np.float32)
+    while len(vaValues) > args.quantityClusters:
+        print("%d clusters - still %d to go" % (len(vaValues),len(vaValues) - args.quantityClusters))
         dists = []
-        for i in range(len(classesLabel)):
+        for i in range(len(vaValues)):
             dists += [getDistribution(vaValues[i,[0,1]],vaValues[i,[2,3]])]
-
-        dists = np.array(dists)
-        '''
+        dists = np.array(dists)        
+        
         klMatrix = np.zeros((len(classesLabel),len(classesLabel)))
         for i in range(len(classesLabel)):
             for j in range(len(classesLabel)):
-                #print("KL de %s para %s" % (classesLabel[i],classesLabel[j]))
-                #klMatrix[i,j] = bhattacharyya_distance(dists[i],dists[j])
-                
-                covPt1 = np.zeros((2,2))
-                covPt1[0,0] = vaValues[i][2]
-                covPt1[1,1] = vaValues[i][3]
-                pt1 = multivariate_normal(mean=vaValues[i,0:2],cov=covPt1)
-                #pt1 = np.array([pt1.rvs() for i in range(4000)])
-                covPt2 = np.zeros((2,2))
-                covPt2[0,0] = vaValues[j][2]
-                covPt2[1,1] = vaValues[j][3]
-                pt2 = multivariate_normal(mean=vaValues[j,0:2],cov=covPt2)
-                #pt2 = np.array([pt2.rvs() for i in range(4000)])            
-                klMatrix[i,j] = bhattacharyya_gaussian_distance(vaValues[i,0:2],covPt1,vaValues[j,0:2],covPt2)
+                klMatrix[i,j] = bhattacharyya_gaussian_distance(vaValues[i,0:2],np.cov(dists[i].T),vaValues[j,0:2],np.cov(dists[j].T))
                 #klMatrix[i,j] = klDivergence(pt1,pt2)
                 
-        vaValues, classesLabel = joinProbability(klMatrix,vaValues,classesLabel)
+        vaValues, classesLabel = joinProbability(klMatrix,classesLabel,vaValues)
+
     print('oi')
-    saveCSV('joinedWithDistance.csv',classesLabel,vaValues[:,[0,2,1,3]])
+    saveCSV('joinedWithDistance_%d.csv' % (args.quantityClusters),classesLabel,vaValues[:,[0,2,1,3]])
 
     #outputTXT(a,classesLabel,'clustering.csv')
 
