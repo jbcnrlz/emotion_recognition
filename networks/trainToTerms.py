@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import ccc, saveStatePytorch
 from networks.DANVA import DANVA
 from DatasetClasses.AffWild2 import AFF2Data
+from DatasetClasses.AffectNet import AffectNet
 from torch import nn, optim
 
 def train():
@@ -19,6 +20,7 @@ def train():
     parser.add_argument('--tensorboardname', help='Learning Rate', required=False, default='DANVA')
     parser.add_argument('--optimizer', help='Optimizer', required=False, default="sgd")
     parser.add_argument('--freeze', help='Freeze weights', required=False, type=int, default=0)
+    parser.add_argument('--dataset', help='Freeze weights', required=False, default="AFFWILD2")
     args = parser.parse_args()
 
     if not os.path.exists(args.output):
@@ -50,10 +52,13 @@ def train():
         transforms.RandomErasing(),
     ])
     print("Loading trainig set")
-    afw2Train = AFF2Data(args.pathBase,'Train_Set',transform=data_transforms,type='TERMS')
+    if args.dataset == "AFFWILD2":
+        afw2Train = AFF2Data(args.pathBase,'Train_Set',transform=data_transforms,type='TERMS')    
+        afw2Val = AFF2Data(args.pathBase,'Validation_Set',transform=data_transforms,type='TERMS')
+    elif args.dataset == "AFFECTNET":
+        afw2Val = AffectNet(os.path.join(args.pathBase,'val_set'),'TERMS',transform=data_transforms)
+        afw2Train = AffectNet(os.path.join(args.pathBase,'train_set'),'TERMS',transform=data_transforms)            
     gal_loader = torch.utils.data.DataLoader(afw2Train, batch_size=args.batch, shuffle=True)
-    print("Loading validation set")
-    afw2Val = AFF2Data(args.pathBase,'Validation_Set',transform=data_transforms,type='TERMS')
     val_loader = torch.utils.data.DataLoader(afw2Val, batch_size=args.batch, shuffle=False)
     criterion = nn.CrossEntropyLoss().to(device)
 

@@ -34,7 +34,10 @@ class AFF2Data(data.Dataset):
                     elif len(labelsForImage) <= frameName:
                         continue
                     self.filesPath.append(frm)
-                    self.label.append(np.where(self.terms == labelsForImage[frameName])[0][0])
+                    if self.dataType == 'TERMS_Set':
+                        self.label.append(np.where(self.terms == labelsForImage[frameName])[0][0])
+                    else:
+                        self.label.append(labelsForImage[frameName])
             else:
                 for frm in frames:
                     frameName = int(frm.split(os.path.sep)[-1][:-4]) - 1

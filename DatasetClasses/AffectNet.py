@@ -6,7 +6,8 @@ from helper.function import getDirectoriesInPath, getFilesInPath
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
-    def __init__(self, afectdata, transform=None):
+    def __init__(self, afectdata, type="VA", transform=None):
+        self.terms = None if type != 'TERMS' else self.loadTermsFile()
         self.transform = transform
         self.label = []
         self.filesPath = []
@@ -15,13 +16,28 @@ class AffectNet(data.Dataset):
         for f in faces:
             print("Loading face %s" % (f))
             imageNumber = f.split(os.path.sep)[-1][:-4]
-            valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
-            aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+            if type == "VA":
+                valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
+                aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+                self.label.append([valValue,aroValue])
+            else:
+                currLabel = self.loadTermData(os.path.join(afectdata,'annotations','%d_term.txt' % (int(imageNumber))))
+                self.label.append(np.where(self.terms == currLabel)[0][0])
             self.filesPath.append(f)
-            self.label.append([valValue,aroValue])
+            
+    def loadTermsFile(self):
+        return np.array(pd.read_csv('hajer_categ.CSV'))[:,0]
 
     def __len__(self):
         return len(self.filesPath)
+
+    def loadTermData(self,pathData):
+        returnData = ""
+        with open(pathData,'r') as pd:
+            for p in pd:
+                returnData = p
+
+        return returnData
 
     def __getitem__(self, idx):
         path = self.filesPath[idx]
