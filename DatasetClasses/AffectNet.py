@@ -6,27 +6,27 @@ from helper.function import getDirectoriesInPath, getFilesInPath
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
-    def __init__(self, afectdata, type="VA", transform=None):
-        self.terms = None if type != 'TERMS' else self.loadTermsFile()
+    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151):
+        self.terms = None if typeExperiment != 'TERMS' else self.loadTermsFile(termsQuantity)
         self.transform = transform
         self.label = []
         self.filesPath = []
-
+        self.typeExperiment = typeExperiment
         faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
         for f in faces:
             print("Loading face %s" % (f))
             imageNumber = f.split(os.path.sep)[-1][:-4]
-            if type == "VA":
+            if typeExperiment == "VA":
                 valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
                 aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
                 self.label.append([valValue,aroValue])
             else:
-                currLabel = self.loadTermData(os.path.join(afectdata,'annotations','%d_term.txt' % (int(imageNumber))))
+                currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_term.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
             self.filesPath.append(f)
             
-    def loadTermsFile(self):
-        return np.array(pd.read_csv('joinedWithDistance_8.csv'))[:,0]
+    def loadTermsFile(self,termsQuantity):
+        return np.array(pd.read_csv('joinedWithDistance_%d.csv' % (termsQuantity)))[:,0]
 
     def __len__(self):
         return len(self.filesPath)
@@ -42,7 +42,10 @@ class AffectNet(data.Dataset):
     def __getitem__(self, idx):
         path = self.filesPath[idx]
         image = im.open(path)
-        label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
+        if self.typeExperiment == 'TERMS':
+            label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
+        else:
+            label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:
             image = self.transform(image)
 
