@@ -26,7 +26,7 @@ class AffectNet(data.Dataset):
             self.filesPath.append(f)
             
     def loadTermsFile(self):
-        return np.array(pd.read_csv('hajer_categ.CSV'))[:,0]
+        return np.array(pd.read_csv('joinedWithDistance_8.csv'))[:,0]
 
     def __len__(self):
         return len(self.filesPath)
