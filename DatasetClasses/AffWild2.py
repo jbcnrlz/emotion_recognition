@@ -7,9 +7,9 @@ from helper.function import getDirectoriesInPath, getFilesInPath
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AFF2Data(data.Dataset):    
-    def __init__(self, affData, phase, type='VA', transform=None):
+    def __init__(self, affData, phase, type='VA', transform=None, termsQuantity=151):
         typeData = {"VA" : 'VA_Set','AU' : 'AU_Set', 'EXPR' : 'EXPR_Set', 'TERMS' : 'TERMS_Set'}
-        self.terms = None if typeData[type] != 'TERMS_Set' else self.loadTermsFile()
+        self.terms = None if typeData[type] != 'TERMS_Set' else self.loadTermsFile(termsQuantity)
         self.dataType = typeData[type]
         self.transform = transform
         self.label = []
@@ -44,8 +44,8 @@ class AFF2Data(data.Dataset):
                     self.filesPath.append(frm)
                     self.label.append([-10,-10])
 
-    def loadTermsFile(self):
-        return np.array(pd.read_csv('hajer_categ.CSV'))[:,0]
+    def loadTermsFile(self,termsQuantity):
+        return np.array(pd.read_csv('joinedWithDistance_%d.csv' % (termsQuantity)))[:,0]
 
     def loadLabels(self,path):
         van = []

@@ -21,7 +21,7 @@ class AffectNet(data.Dataset):
                 aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
                 self.label.append([valValue,aroValue])
             else:
-                currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_term.txt' % (int(imageNumber))))
+                currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
             self.filesPath.append(f)
             

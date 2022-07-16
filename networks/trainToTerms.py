@@ -21,6 +21,7 @@ def train():
     parser.add_argument('--optimizer', help='Optimizer', required=False, default="sgd")
     parser.add_argument('--freeze', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--dataset', help='Freeze weights', required=False, default="AFFWILD2")
+    parser.add_argument('--quantityOfTerms', help='Quantity of terms to use', required=False, default=151,type=int)
     args = parser.parse_args()
 
     if not os.path.exists(args.output):
@@ -35,11 +36,11 @@ def train():
         print("Freezing weights")
         for param in model.parameters():
             param.requires_grad = bool(args.freeze)
-    model.convertToTerms(151)
+    model.convertToTerms(args.quantityOfTerms)
     model.to(device)
     print("Model loaded")
     print(model)
-    data_transforms = transforms.Compose([
+    data_transforms_train = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomApply([
@@ -51,13 +52,21 @@ def train():
                                  std=[0.229, 0.224, 0.225]),
         transforms.RandomErasing(),
     ])
+
+    data_transforms_val = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+    ])
+
     print("Loading trainig set")
     if args.dataset == "AFFWILD2":
-        afw2Train = AFF2Data(args.pathBase,'Train_Set',transform=data_transforms,type='TERMS')    
-        afw2Val = AFF2Data(args.pathBase,'Validation_Set',transform=data_transforms,type='TERMS')
+        afw2Train = AFF2Data(args.pathBase,'Train_Set',transform=data_transforms_train,type='TERMS',termsQuantity=args.quantityOfTerms)    
+        afw2Val = AFF2Data(args.pathBase,'Validation_Set',transform=data_transforms_val,type='TERMS',termsQuantity=args.quantityOfTerms)
     elif args.dataset == "AFFECTNET":
-        afw2Val = AffectNet(os.path.join(args.pathBase,'val_set'),'TERMS',transform=data_transforms)
-        afw2Train = AffectNet(os.path.join(args.pathBase,'train_set'),'TERMS',transform=data_transforms)            
+        afw2Val = AffectNet(os.path.join(args.pathBase,'val_set'),'TERMS',transform=data_transforms_val,termsQuantity=args.quantityOfTerms)
+        afw2Train = AffectNet(os.path.join(args.pathBase,'train_set'),'TERMS',transform=data_transforms_train,termsQuantity=args.quantityOfTerms)            
     gal_loader = torch.utils.data.DataLoader(afw2Train, batch_size=args.batch, shuffle=True)
     val_loader = torch.utils.data.DataLoader(afw2Val, batch_size=args.batch, shuffle=False)
     criterion = nn.CrossEntropyLoss().to(device)
@@ -100,11 +109,11 @@ def train():
         scheduler.step()
         model.eval()
         total = 0
+        correct = 0
         loss_val = []
         with torch.no_grad():
             for data in val_loader:
-                images, labels, _ = data
-                totalImages += labels.shape[0]
+                images, labels, _ = data                
                 outputs, _, _ = model(images.to(device))
 
                 loss = criterion(outputs, labels.type(torch.LongTensor).to(device))
@@ -116,7 +125,7 @@ def train():
 
 
         tLoss = sum(loss_val) / len(loss_val)
-        vResult = correct / totalImages
+        vResult = correct / total
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
 
