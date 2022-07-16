@@ -146,4 +146,14 @@ selectedClips/10-60-1280x720.txt
 selectedClips/30-30-1920x1080.txt
 selectedClips/46-30-484x360.txt
 selectedClips/52-30-1280x720.txt
-finetunedDAN.zip
+.vscode/launch.json
+finetunedTermsDAN/DANTERM_best_loss.pth.tar
+finetunedTermsDAN/DANTERM_best_val_loss.pth.tar
+finetunedTermsDANAffect_151/DANTERM_best_loss.pth.tar
+finetunedTermsDANAffect_151/DANTERM_best_val_loss.pth.tar
+finetunedTermsDANAffect_30/DANTERM_best_loss.pth.tar
+finetunedTermsDANAffect_30/DANTERM_best_val_loss.pth.tar
+finetunedTermsDANAffect_70/DANTERM_best_loss.pth.tar
+finetunedTermsDANAffect_70/DANTERM_best_val_loss.pth.tar
+finetunedTermsDANAffect_8/DANTERM_best_loss.pth.tar
+finetunedTermsDANAffect_8/DANTERM_best_val_loss.pth.tar
