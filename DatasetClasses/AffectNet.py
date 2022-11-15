@@ -20,6 +20,9 @@ class AffectNet(data.Dataset):
                 valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
                 aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
                 self.label.append([valValue,aroValue])
+            elif typeExperiment == "EXP":
+                currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
+                self.label.append(int(currLabel))
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
@@ -43,6 +46,8 @@ class AffectNet(data.Dataset):
         path = self.filesPath[idx]
         image = im.open(path)
         if self.typeExperiment == 'TERMS':
+            label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
+        elif self.typeExperiment == 'EXP':
             label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)

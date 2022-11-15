@@ -157,3 +157,5 @@ finetunedTermsDANAffect_70/DANTERM_best_loss.pth.tar
 finetunedTermsDANAffect_70/DANTERM_best_val_loss.pth.tar
 finetunedTermsDANAffect_8/DANTERM_best_loss.pth.tar
 finetunedTermsDANAffect_8/DANTERM_best_val_loss.pth.tar
+DAN.rar
+.vscode/launch.json
