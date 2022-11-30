@@ -26,9 +26,10 @@ def train():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
-    model = models.resnet50(pretrained=False)
+    model = models.resnet18(pretrained=True)
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, args.quantityOfTerms)
+    model.to(device)
     print("Model loaded")
     print(model)
     data_transforms_train = transforms.Compose([
@@ -81,7 +82,7 @@ def train():
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.type(torch.LongTensor).to(device), currBatch.to(device)
 
-            output, _, _ = model(currBatch)
+            output = model(currBatch)
             loss = criterion(output, currTargetBatch)
 
             optimizer.zero_grad()
@@ -103,7 +104,7 @@ def train():
         with torch.no_grad():
             for data in val_loader:
                 images, labels, _ = data                
-                outputs, _, _ = model(images.to(device))
+                outputs = model(images.to(device))
 
                 loss = criterion(outputs, labels.type(torch.LongTensor).to(device))
                 loss_val.append(loss)

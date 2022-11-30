@@ -29,7 +29,7 @@ def test():
     parser.add_argument('--termsCSV', help='Path for the terms file', required=True)
     args = parser.parse_args()
 
-    tFiles = ['neutral', 'happy', 'sad', 'surprise', 'fear', 'disgust', 'anger', 'contempt']
+    tFiles = ['neutral', 'joy', 'sadness', 'surprise', 'fear', 'disgust', 'anger', 'contempt']
     classesLabel = np.array(tFiles)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

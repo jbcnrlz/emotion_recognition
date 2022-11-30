@@ -38,18 +38,17 @@ if __name__ == '__main__':
         transforms.RandomApply([
                 transforms.RandomAffine(20, scale=(0.8, 1), translate=(0.2, 0.2)),
             ], p=0.7),
-
+        transforms.Grayscale(),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.5],std=[0.5]),
         transforms.RandomErasing(),
     ])
 
     data_transforms_val = transforms.Compose([
         transforms.Resize((224, 224)),
+        transforms.Grayscale(),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.5],std=[0.5]),
     ])
 
     print("Loading trainig set")
@@ -79,7 +78,7 @@ if __name__ == '__main__':
     cc = SummaryWriter()
 
     print('####### Creating model #######')
-    imLearning = UNet(n_channels=3,n_classes=3)
+    imLearning = UNet(n_channels=1,n_classes=1)
     print(imLearning)
     imLearning.to(device)
 
