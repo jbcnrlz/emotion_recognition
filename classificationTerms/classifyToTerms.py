@@ -31,7 +31,6 @@ def test():
 
     tFiles = np.array(pd.read_csv(args.termsCSV))
     classesLabel = tFiles[:,0]
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
     model = DANVA(num_class=8, num_head=4,pretrained=args.resnetPretrained)

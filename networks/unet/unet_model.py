@@ -12,11 +12,18 @@ class UNet(nn.Module):
         self.down2 = down(128, 256)
         self.down3 = down(256, 512)
         self.down4 = down(512, 512)
+        self.maxpool = nn.MaxPool2d(kernel_size=3,stride=2)
+        self.featuresLearned = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(18432,1024),
+            nn.ReLU(inplace=True)
+        )
         self.up1 = up(1024, 256)
         self.up2 = up(512, 128)
         self.up3 = up(256, 64)
         self.up4 = up(128, 64)
         self.outc = outconv(64, n_classes)
+
 
     def forward(self, x):
         x1 = self.inc(x)
@@ -24,9 +31,11 @@ class UNet(nn.Module):
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
+        fe = self.maxpool(x5)
+        fe = self.featuresLearned(fe.view(fe.size(0),-1))
         x = self.up1(x5, x4)
         x = self.up2(x, x3)
         x = self.up3(x, x2)
         x = self.up4(x, x1)
         x = self.outc(x)
-        return x, x5.view(x5.size(0),-1)
+        return x, fe

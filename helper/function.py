@@ -133,3 +133,17 @@ def create_ellipse(center, lengths, angle=0):
     ell = affinity.scale(circ, lengths[0], lengths[1])
     ellr = affinity.rotate(ell, angle)
     return ellr
+
+def separatedSecondLevel(firstLevel,emotions):
+    found = 0
+    output = []
+    for e in emotions:
+        if firstLevel == e[0]:
+            found = 1
+        else:
+            if found == 1 and e[1] != 0:
+                output.append(e)
+            elif found == 1:
+                break
+
+    return np.array(output)

@@ -159,4 +159,16 @@ finetunedTermsDANAffect_8/DANTERM_best_loss.pth.tar
 finetunedTermsDANAffect_8/DANTERM_best_val_loss.pth.tar
 DAN.rar
 .vscode/launch.json
-reconstructed_from_learned/
+finetunedTermsDANAffect_.zip
+hajer_categ.CSV
+matched.CSV
+.vscode/launch.json
+finetunedAffWildTermsDAN/DANTERM_best_loss.pth.tar
+finetunedAffWildTermsDAN/DANTERM_best_val_loss.pth.tar
+finetunedTermsRESNET/DANTERM_best_loss.pth.tar
+finetunedTermsRESNET/DANTERM_best_val_loss.pth.tar
+reconstructed_from_extraction/
+reconstructed_from_training/
+reconstructed_from_validation/
+runs/
+trainPytorch/reconstructed_from_learned/
