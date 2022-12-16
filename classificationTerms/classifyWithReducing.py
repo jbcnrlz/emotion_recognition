@@ -1,7 +1,7 @@
 import argparse, torch, os, sys, numpy as np, pandas as pd
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from helper.function import separatedSecondLevel           
+from helper.function import separatedSecondLevel
 
 def main():
     parser = argparse.ArgumentParser(description='Extract VA with DAN')

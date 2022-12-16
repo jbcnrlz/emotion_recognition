@@ -147,3 +147,11 @@ def separatedSecondLevel(firstLevel,emotions):
                 break
 
     return np.array(output)
+
+def getFeatureFromText(filePath):
+    returnClass= ''
+    with open(filePath,'r') as fp:
+        for f in fp:
+            returnClass = f.strip()
+
+    return returnClass
