@@ -1,18 +1,7 @@
 import argparse, torch, os, sys, numpy as np, pandas as pd
-
-def separatedSecondLevel(firstLevel,emotions):
-    found = 0
-    output = []
-    for e in emotions:
-        if firstLevel == e[0]:
-            found = 1
-        else:
-            if found == 1 and e[1] != 0:
-                output.append(e)
-            elif found == 1:
-                break
-
-    return np.array(output)            
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from helper.function import separatedSecondLevel
 
 def main():
     parser = argparse.ArgumentParser(description='Extract VA with DAN')
