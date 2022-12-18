@@ -172,3 +172,4 @@ reconstructed_from_training/
 reconstructed_from_validation/
 runs/
 trainPytorch/
+ALAE/
