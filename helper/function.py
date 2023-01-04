@@ -134,6 +134,22 @@ def create_ellipse(center, lengths, angle=0):
     ellr = affinity.rotate(ell, angle)
     return ellr
 
+def getFirstLevel(emotions):
+    returnData = []
+    for e in emotions:
+        if e[-1] == 1:
+            returnData.append(e)
+
+    return np.array(returnData)
+
+def getSecondLevelFromVA(firsLevelVA,emotions):
+    flvl = getFirstLevel(emotions)
+    resultFinal = np.array([ np.linalg.norm(firsLevelVA-s[[1,3]]) for s in flvl]).argmin()
+    fLevel = flvl[resultFinal][0]
+    secondLevel = separatedSecondLevel(fLevel,emotions)
+    resultFinal = np.array([ np.linalg.norm(firsLevelVA-s[[1,3]]) for s in secondLevel]).argmin()
+    return fLevel, secondLevel[resultFinal][0]
+
 def separatedSecondLevel(firstLevel,emotions):
     found = 0
     output = []
@@ -153,5 +169,4 @@ def getFeatureFromText(filePath):
     with open(filePath,'r') as fp:
         for f in fp:
             returnClass = f.strip()
-
-    return returnClass
+            return returnClass.lower()
