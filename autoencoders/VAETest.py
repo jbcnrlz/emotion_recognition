@@ -7,9 +7,9 @@ from DatasetClasses.AffectNet import AffectNet
 
 def generateCSVFile(filePath,features):
     with open(filePath,'w') as fp:
-        fp.write(','.join(list(map(str,list(range(features[0][0].shape[1])))))+',%s\n' % ('filePath'))
+        fp.write(','.join(list(map(str,list(range(features[0][0].shape[0])))))+',%s\n' % ('filePath'))
         for f in features:
-            fp.write(','.join(list(map(str,f[0].tolist()[0]))) + ',%s\n' % (f[1]))
+            fp.write(','.join(list(map(str,f[0].tolist()))) + ',%s\n' % (f[1]))
 
 def main():
     parser = argparse.ArgumentParser(description='Extract latent features with AutoencoderKL')
@@ -24,12 +24,13 @@ def main():
         transforms.ToTensor(),
     ])
     dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms,termsQuantity=151)
-    val_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False)
-    outputFile = [] 
-    for img,label,pathfile in val_loader:
-        img = img.to(device)
-        encodedFeature = vae.encode(img).latent_dist.mode().view((1,-1)).cpu()
-        outputFile.append((encodedFeature,pathfile[0]))
+    val_loader = torch.utils.data.DataLoader(dataset, batch_size=5, shuffle=False)
+    outputFile = []
+    with torch.no_grad():
+        for img,label,pathfile in val_loader:
+            img = img.to(device)
+            encodedFeature = vae.encode(img).latent_dist.mode().view((img.shape[0],-1)).cpu()
+            outputFile += list(zip(encodedFeature,pathfile))
         
     generateCSVFile(args.outputCSVLatent,outputFile)
 

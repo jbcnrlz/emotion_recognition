@@ -6,6 +6,7 @@ def main():
     parser.add_argument('--latentCSV', help='Path for the terms file', required=True)
     parser.add_argument('--components', help='Quantity of components', required=True, type=int)
     parser.add_argument('--type', help='Quantity of components', required=False, default='predict')
+    parser.add_argument('--dirCluster', help='Quantity of components', required=False, default='predict')    
     args = parser.parse_args()
     tFiles = np.array(pd.read_csv(args.latentCSV))
     classesLabel = tFiles[:,-1]
@@ -15,23 +16,21 @@ def main():
         covariance_type='spherical',
         random_state=0
     )
+
+    if os.path.exists(args.dirCluster):
+        shutil.rmtree(args.dirCluster)
+    os.makedirs(args.dirCluster)
+
     if (args.type == 'predict'):
         clusters = estimator.fit_predict(vaValues)
-
-        if os.path.exists('clusterLatent'):
-            shutil.rmtree('clusterLatent')
-        os.makedirs('clusterLatent')
-
         for imgN, c in enumerate(clusters):
-            if ( not os.path.exists(os.path.join('clusterLatent',str(c)))):
-                os.makedirs(os.path.join('clusterLatent',str(c)))
+            if ( not os.path.exists(os.path.join(args.dirCluster,str(c)))):
+                os.makedirs(os.path.join(args.dirCluster,str(c)))
 
             fileName = classesLabel[imgN].split(os.path.sep)[-1]
-            shutil.copy(classesLabel[imgN],os.path.join('clusterLatent',str(c),fileName))
+            shutil.copy(classesLabel[imgN],os.path.join(args.dirCluster,str(c),fileName))
     else:
-        if os.path.exists('clusterLatent_probs'):
-            shutil.rmtree('clusterLatent_probs')
-        os.makedirs('clusterLatent_probs')
+
         clusters = estimator.fit(vaValues)
         probsForClasses = clusters.predict_proba(vaValues)
         clustersProbability = (-probsForClasses).argsort()
@@ -39,11 +38,11 @@ def main():
         for imgN, probsC in enumerate(clustersProbability):
             for c in probsC:
                 if probsForClasses[imgN][c] > 0.1e-5:
-                    if ( not os.path.exists(os.path.join('clusterLatent_probs',str(c)))):
-                        os.makedirs(os.path.join('clusterLatent_probs',str(c)))
+                    if ( not os.path.exists(os.path.join(args.dirCluster,str(c)))):
+                        os.makedirs(os.path.join(args.dirCluster,str(c)))
 
                     fileName = classesLabel[imgN].split(os.path.sep)[-1]
-                    shutil.copy(classesLabel[imgN],os.path.join('clusterLatent_probs',str(c),fileName))
+                    shutil.copy(classesLabel[imgN],os.path.join(args.dirCluster,str(c),fileName))
                 else:
                     break
 
