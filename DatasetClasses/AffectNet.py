@@ -6,7 +6,7 @@ from helper.function import getDirectoriesInPath, getFilesInPath
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
-    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151):
+    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151, fixLabel=None):
         self.terms = None if typeExperiment != 'TERMS' else self.loadTermsFile(termsQuantity)
         self.transform = transform
         self.label = []
@@ -22,6 +22,8 @@ class AffectNet(data.Dataset):
                 self.label.append([valValue,aroValue])
             elif typeExperiment == "EXP":
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
+                if fixLabel is not None and int(currLabel) not in fixLabel:
+                    continue
                 self.label.append(int(currLabel))
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
@@ -48,7 +50,7 @@ class AffectNet(data.Dataset):
         if self.typeExperiment == 'TERMS':
             label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
         elif self.typeExperiment == 'EXP':
-            label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
+            label = torch.from_numpy(np.array(self.label[idx])).to(torch.long)
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:
