@@ -16,7 +16,6 @@ def saveImageNetwork(data,imageFilename,extesion='png'):
         pilImage = pilTrans(d[id].cpu())
         pilImage.save(imageFilename[id].split(os.path.sep)[-1][:-3]+extesion)
 
-
 def main():
     parser = argparse.ArgumentParser(description='Extract latent features with AutoencoderKL')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
@@ -58,9 +57,6 @@ def main():
             img = img.to(device)
             label = label.to(device)
             img_recon, mu, sigma, sample = model(img)
-            
-
-
             
             loss_mse = reconstruction(img_recon, img)
             loss_cls = criterion(sample, label)
