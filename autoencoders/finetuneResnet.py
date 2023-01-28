@@ -15,7 +15,8 @@ def main():
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--epochs', help='Path for valence and arousal dataset', required=False, default=20)
     parser.add_argument('--output', help='Path for valence and arousal dataset', required=False, default='resnetEmotion')
-    parser.add_argument('--batchSize', help='Path for valence and arousal dataset', required=True)
+    parser.add_argument('--batchSize', help='Path for valence and arousal dataset', required=True, type=int)
+    parser.add_argument('--learningRate', help='Learning Rate', required=False, default=0.01, type=float)
     args = parser.parse_args()
 
     if not os.path.exists(args.output):
@@ -28,13 +29,13 @@ def main():
         transforms.ToTensor(),
     ])
     dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='EXP')
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
 
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='EXP')
-    val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=2, shuffle=False)
+    val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    model = ResnetEmotionHead(2,'resnet18')
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
+    model = ResnetEmotionHead(2,'resnet18').to(device)
+    optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
     criterion = nn.CrossEntropyLoss().to(device)
     bestForFoldTLoss = bestForFold = 5000
     for ep in range(args.epochs):
@@ -64,6 +65,7 @@ def main():
         model.eval()
         iteration = 0
         loss_val = []
+        correct = 0
         with torch.no_grad():
             for img,label,pathfile in val_loader:
                 printProgressBar(iteration,len(datasetVal.filesPath),length=50,prefix='Procesing face - testing')
@@ -72,12 +74,15 @@ def main():
                 label[label > 1] = 1
                 features, classes = model(img)
                 loss = criterion(classes, label)
-
+                _, predicted = torch.max(classes.data, 1)
+                correct += (predicted == label).sum().item()
                 loss_val.append(loss)
                 iteration += img.shape[0]
 
             lossAvgVal = sum(loss_val) / len(loss_val)
+            correct = correct / iteration
             writer.add_scalar('RESNETEmo/Loss/val', lossAvgVal, ep)
+            writer.add_scalar('RESNETEmo/Accuracy', correct, ep)
 
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
@@ -99,7 +104,7 @@ def main():
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFold = lossAvg
 
-        print('[EPOCH %03d] Training Loss %.5f Validation Loss %.5f - [%c] [%c]               ' % (ep, lossAvg, lossAvgVal,ibl,ibtl))
+        print('[EPOCH %03d] Training Loss %.5f Validation Loss %.5f Accuracy %.2f - [%c] [%c]               ' % (ep, lossAvg, lossAvgVal,correct,ibl,ibtl))
     
 if __name__ == '__main__':
     main()

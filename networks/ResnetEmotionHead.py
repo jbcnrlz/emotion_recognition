@@ -9,10 +9,7 @@ class ResnetEmotionHead(nn.Module):
         elif (resnetModel == 'resnet50'):
             self.innerResnetModel = models.resnet50(pretrained=pretrained)
 
-        self.softmax = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(4096, classes)
-        )
+        self.softmax = nn.Linear(1000, classes)
 
     def forward(self, x):
         feats = self.innerResnetModel(x)
