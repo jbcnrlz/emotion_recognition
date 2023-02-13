@@ -1,63 +1,163 @@
-import torch,os,sys,argparse, numpy as np, pandas as pd
-from diffusers.models import AutoencoderKL
+import torch,os,sys,argparse, matplotlib.pyplot as plt, numpy as np, random
 from torchvision import transforms
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(SCRIPT_DIR))
-from DatasetClasses.AffectNet import AffectNet
-from torchvision.transforms import ToPILImage
-from networks.ResnetEmotionHead import ResnetEmotionHead
+from sklearn.decomposition import PCA
 from torch.utils.tensorboard import SummaryWriter
 from torch import optim, nn
-from helper.function import saveStatePytorch, getFirstLevel, printProgressBar
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from loss.CenterLoss import CenterLoss
+from loss.ArcFace import CombinedMarginLoss
+from DatasetClasses.AffectNet import AffectNet
+from networks.ResnetEmotionHead import ResnetEmotionHead
+from helper.function import saveStatePytorch, printProgressBar
+from torch.nn.functional import linear, normalize
+
+def separate_bn_paras(modules):
+    if not isinstance(modules, list):
+        modules = [*modules.modules()]
+    paras_only_bn = []
+    paras_wo_bn = []
+    for layer in modules:
+        if 'model' in str(layer.__class__):
+            continue
+        if 'container' in str(layer.__class__):
+            continue
+        else:
+            if 'batchnorm' in str(layer.__class__):
+                paras_only_bn.extend([*layer.parameters()])
+            else:
+                paras_wo_bn.extend([*layer.parameters()])
+    return paras_only_bn, paras_wo_bn
+
+def outputFeaturesImage(centers,features,labels):
+    pcaProjection = PCA(n_components=2)
+    fig = plt.Figure(figsize=(4, 4), dpi=320, facecolor='w', edgecolor='k')
+    ax = fig.add_subplot(1, 1, 1)
+    cProjection = pcaProjection.fit_transform(centers)
+    ax.scatter(cProjection[:,0],cProjection[:,1])    
+    for l in np.unique(labels):
+        fProjection = pcaProjection.fit_transform(features[labels == l])
+        ax.scatter(fProjection[:,0],fProjection[:,1])
+
+    fig.set_tight_layout(True)
+    return fig
 
 def main():
     parser = argparse.ArgumentParser(description='Extract latent features with AutoencoderKL')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
-    parser.add_argument('--epochs', help='Path for valence and arousal dataset', required=False, default=20)
+    parser.add_argument('--epochs', help='Path for valence and arousal dataset', required=False, default=20, type=int)
     parser.add_argument('--output', help='Path for valence and arousal dataset', required=False, default='resnetEmotion')
     parser.add_argument('--batchSize', help='Path for valence and arousal dataset', required=True, type=int)
     parser.add_argument('--learningRate', help='Learning Rate', required=False, default=0.01, type=float)
-    args = parser.parse_args()
+    parser.add_argument('--networkToUse', help='Path for valence and arousal dataset', required=False,default='resnet18')
+    parser.add_argument('--additiveLoss', help='Path for valence and arousal dataset', required=False,default=None)
+    parser.add_argument('--samplePlotSize', help='Path for valence and arousal dataset', required=False,type=int,default=500)
+    parser.add_argument('--loadRandomSplits', help='Path for valence and arousal dataset', required=False,type=int,default=0)
+    args = parser.parse_args()    
+
+    alpha = 0.1
 
     if not os.path.exists(args.output):
         os.makedirs(args.output)
 
     writer = SummaryWriter()
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    data_transforms = transforms.Compose([
+    data_transforms = {
+    'train': transforms.Compose([
+        transforms.Resize((256,256)),
+        #transforms.RandomCrop(256),
+        #transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+    ]),
+    'test' : transforms.Compose([
         transforms.Resize((256,256)),
         transforms.ToTensor(),
-    ])
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='EXP')
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
+    ])} 
 
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='EXP')
+    if args.loadRandomSplits > 0:
+        loaders = []
+        for idxSplit in range(args.loadRandomSplits + 1):
+            dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',datasetNumber=idxSplit)
+            train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
+            loaders.append(train_loader)
+    else:
+        dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP')
+        train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
+
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    model = ResnetEmotionHead(2,'resnet18').to(device)
-    optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
+    model = ResnetEmotionHead(2,args.networkToUse).to(device)
+    print(model)    
     criterion = nn.CrossEntropyLoss().to(device)
+    cLoss = None
+    if args.additiveLoss == 'centerLoss':
+        cLoss = CenterLoss(2,512).to(device)
+        params = list(model.parameters()) + list(cLoss.parameters())
+        optimizer = optim.Adam(params,lr=args.learningRate)
+    elif args.additiveLoss == 'arcface':
+        cLoss = CombinedMarginLoss(
+            64,
+            1.0,
+            0.5,
+            0.0,
+            0
+        ).to(device)
+        optimizer = optim.AdamW(params=[{"params": model.parameters()}, {"params": cLoss.parameters()}], lr=args.learningRate, weight_decay=5e-4)
+    else:
+        optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
     bestForFoldTLoss = bestForFold = 5000
     for ep in range(args.epochs):
         ibl = ibtl = ' '
         lossAcc = []
         iteration = 0
+        featuresProject = None
+        labelsProject = None
+        alreadySampled = 0
+        if args.loadRandomSplits > 0:
+            train_loader = loaders[random.randint(0,len(loaders) - 1)]
         for img,label,pathfile in train_loader:
             printProgressBar(iteration,len(dataset.filesPath),length=50,prefix='Procesing face - training')
             img = img.to(device)
+
             label = label.to(device)
             features, classes = model(img)
 
             label[label > 1] = 1
 
-            loss = criterion(classes, label)
+            if cLoss is not None:
+                if args.additiveLoss == 'centerLoss':
+                    loss = criterion(classes, label) + (alpha * cLoss(features,label))
+                else:
+                    with torch.cuda.amp.autocast(False):
+                        features = normalize(features)
+                    features = features.clamp(-1, 1)
+                    thetas = cLoss(features,label)
+                    loss = criterion(thetas,label)
+            else:
+                loss = criterion(classes, label)
  
             optimizer.zero_grad()
             loss.backward()
+            if args.additiveLoss == 'centerLoss':
+                for param in cLoss.parameters():
+                    param.grad.data *= (0.0005/(alpha * args.learningRate))
             optimizer.step()
 
             lossAcc.append(loss.item())
             iteration += img.shape[0]
+            if args.additiveLoss == 'centerLoss':
+                if random.randint(0,1) and alreadySampled < args.samplePlotSize:                
+                    if featuresProject is None:
+                        featuresProject, labelsProject = features.cpu().detach().numpy(),label.cpu().detach().numpy()
+                    else:
+                        featuresProject = np.concatenate((featuresProject,features.cpu().detach().numpy()))
+                        labelsProject = np.concatenate((labelsProject,label.cpu().detach().numpy()))
+
+                    alreadySampled += featuresProject.shape[0]
+        if args.additiveLoss == 'centerLoss':
+            projectionCloss = outputFeaturesImage(cLoss.centers.cpu().detach().numpy(),featuresProject,labelsProject)
+            writer.add_figure('RESNETEmo/Features/train',projectionCloss,ep)
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         writer.add_scalar('RESNETEmo/Loss/train', lossAvg, ep)
@@ -73,7 +173,17 @@ def main():
                 label = label.to(device)
                 label[label > 1] = 1
                 features, classes = model(img)
-                loss = criterion(classes, label)
+                if cLoss is not None:
+                    if args.additiveLoss == 'centerLoss':
+                        loss = criterion(classes, label) + (alpha * cLoss(features,label))
+                    else:
+                        with torch.cuda.amp.autocast(False):
+                            features = normalize(features)
+                        features = features.clamp(-1, 1)
+                        thetas = cLoss(features,label)
+                        loss = criterion(thetas,label)             
+                else:
+                    loss = criterion(classes, label)
                 _, predicted = torch.max(classes.data, 1)
                 correct += (predicted == label).sum().item()
                 loss_val.append(loss)

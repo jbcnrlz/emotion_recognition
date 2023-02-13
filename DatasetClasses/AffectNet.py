@@ -1,4 +1,4 @@
-import torch.utils.data as data, os, re, torch, numpy as np, sys, pandas as pd, json
+import torch.utils.data as data, os, torch, numpy as np, sys, pandas as pd, random
 from PIL import Image as im
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -6,13 +6,19 @@ from helper.function import getDirectoriesInPath, getFilesInPath
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
-    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151, fixLabel=None):
+    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151, fixLabel=None, joinLabels=None,datasetNumber=None):
         self.terms = None if typeExperiment != 'TERMS' else self.loadTermsFile(termsQuantity)
         self.transform = transform
         self.label = []
         self.filesPath = []
         self.typeExperiment = typeExperiment
-        faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
+        quantitylabels = None
+        if joinLabels is not None:
+            quantitylabels = [0] * (joinLabels + 1)
+        if datasetNumber is None:
+            faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
+        else:
+            faces = getFilesInPath(os.path.join(afectdata,'images_%d' % (datasetNumber)),imagesOnly=True)
         for f in faces:
             print("Loading face %s" % (f))
             imageNumber = f.split(os.path.sep)[-1][:-4]
@@ -24,11 +30,19 @@ class AffectNet(data.Dataset):
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
                 if fixLabel is not None and int(currLabel) not in fixLabel:
                     continue
+                if joinLabels is not None:
+                    currLabel = currLabel if int(currLabel) < joinLabels else joinLabels
+                    quantitylabels[int(currLabel)] += 1
                 self.label.append(int(currLabel))
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
+            if quantitylabels is not None and quantitylabels[int(currLabel)] > 500 and not random.randint(0,1):
+                continue
             self.filesPath.append(f)
+
+            if quantitylabels is not None and sum(quantitylabels) >= 1000:
+                break
             
     def loadTermsFile(self,termsQuantity):
         return np.array(pd.read_csv('joinedWithDistance_%d.csv' % (termsQuantity)))[:,0]
