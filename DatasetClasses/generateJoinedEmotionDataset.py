@@ -59,9 +59,13 @@ def main():
                 lastClass += 1
                 fileSource = os.path.join(videoName,"%05d.jpg" % (idxFrame))
                 fileDest = os.path.join(imagesFolder,"%d.jpg" % (lastClass))
-                shutil.copy(fileSource,fileDest)
-                np.save(os.path.join(annotationFile,'%d_exp.npy' % (lastClass)),np.array([0]))
-                classes[1] += 1                
+                try:
+                    shutil.copy(fileSource,fileDest)
+                    np.save(os.path.join(annotationFile,'%d_exp.npy' % (lastClass)),np.array([0]))
+                    classes[1] += 1
+                except:
+                    lastClass -= 1
+                    continue
                 if classes[0] == classes[1]:
                     break
                 

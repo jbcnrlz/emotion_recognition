@@ -31,6 +31,7 @@ def main():
     parser.add_argument('--typeAnnotation', help='Path for cluster', required=True)    
     parser.add_argument('--csvEmotions', help='Path for resnet pretrained weights', required=True)
     parser.add_argument('--normalize', help='Should normalize?', required=False, default=None)
+    parser.add_argument('--matlabPrint', help='Should normalize?', required=False, default=None)
     args = parser.parse_args()
     #use valence and arousal to understand the cluster (plotting to understand)
     #images = getFilesInPath(args.pathAffWild)
@@ -60,7 +61,27 @@ def main():
                     clustersEval[c][currEmotion] = 0
                 clustersEval[c][currEmotion] += 1
 
-    if args.normalize is not None:
+    if args.matlabPrint is not None:
+        divisionGraphs = len(clustersEval) // 2 if len(clustersEval) % 2 == 0 else (len(clustersEval) // 2) + 1
+        outputGraph = "tiledlayout(%d,2);\n" % (divisionGraphs)
+        for k in clustersEval:
+            dataPlot = clustersEval[k]
+            dataPlot.pop('total')
+            outputGraph += 'a%d = [' % (int(k))
+            dataForPlot = [str(d) for d in dataPlot.values()]
+            outputGraph += ' '.join(dataForPlot) + '];\n'
+            outputGraph += 'b%d = {' % (int(k))
+            dataForPlot = ["'%s'" % str(d) for d in dataPlot.keys()]
+            dataForPlot.sort()
+            outputGraph += ' '.join(dataForPlot) + '};\n'
+            outputGraph += 'nexttile;\n'
+            outputGraph += 'bar(a%d);\n' %(int(k))
+            outputGraph += 'xticklabels(b%d);\n' %(int(k))
+            outputGraph += 'title(\'Cluster %d\');\n' %(int(k))
+
+        print(outputGraph)
+            
+    elif args.normalize is not None:
         print(normalize(clustersEval,[['neutral'],['sadness','happy','contempt','surprise','fear','anger','disgust']]))
     else:
         print(clustersEval)

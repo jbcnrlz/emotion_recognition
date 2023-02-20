@@ -10,30 +10,12 @@ from loss.ArcFace import CombinedMarginLoss
 from DatasetClasses.AffectNet import AffectNet
 from networks.ResnetEmotionHead import ResnetEmotionHead
 from helper.function import saveStatePytorch, printProgressBar
-from torch.nn.functional import linear, normalize
 
 def vaCenterValues():
     return [[0,0],[0.81,0.51],[-0.63,-0.27],[0.4,0.67],[-0.64,0.6],[-0.6,0.35],[-0.43,0.67],[-0.23,0.31]]
 
 def vaVarianceValues():
     return [[0.26,0.31],[0.21,0.26],[0.23,0.34],[0.3,0.27],[0.2,0.32],[0.2,0.41],[0.29,0.27],[0.39,0.33]]
-
-def separate_bn_paras(modules):
-    if not isinstance(modules, list):
-        modules = [*modules.modules()]
-    paras_only_bn = []
-    paras_wo_bn = []
-    for layer in modules:
-        if 'model' in str(layer.__class__):
-            continue
-        if 'container' in str(layer.__class__):
-            continue
-        else:
-            if 'batchnorm' in str(layer.__class__):
-                paras_only_bn.extend([*layer.parameters()])
-            else:
-                paras_wo_bn.extend([*layer.parameters()])
-    return paras_only_bn, paras_wo_bn
 
 def outputFeaturesImage(centers,features,labels):
     pcaProjection = PCA(n_components=2)
@@ -59,11 +41,9 @@ def main():
     parser.add_argument('--output', help='Path for valence and arousal dataset', required=False, default='resnetEmotion')
     parser.add_argument('--batchSize', help='Path for valence and arousal dataset', required=True, type=int)
     parser.add_argument('--learningRate', help='Learning Rate', required=False, default=0.01, type=float)
-    parser.add_argument('--networkToUse', help='Path for valence and arousal dataset', required=False,default='resnet18')
     parser.add_argument('--additiveLoss', help='Path for valence and arousal dataset', required=False,default=None)
     parser.add_argument('--samplePlotSize', help='Path for valence and arousal dataset', required=False,type=int,default=500)
     parser.add_argument('--loadRandomSplits', help='Path for valence and arousal dataset', required=False,type=int,default=0)
-    parser.add_argument('--useVAGuidance', help='Path for valence and arousal dataset', required=False,default=None)
     args = parser.parse_args()    
 
     alpha = 0.1
@@ -98,107 +78,49 @@ def main():
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    model = ResnetEmotionHead(8,args.networkToUse,vaGuidance=(args.useVAGuidance is not None)).to(device)
-    print(model)    
-    criterion = nn.CrossEntropyLoss().to(device)
+    model = ResnetEmotionHead(8,resnetModel='resnet18',vaGuidance=True).to(device)
+    print(model)
+    criterion = nn.GaussianNLLLoss().to(device)
     vaGuidenceCriterion = None if args.useVAGuidance is None else nn.GaussianNLLLoss().to(device)
     centersGuideVA = torch.tensor(np.array(vaCenterValues())).type(torch.float32).to(device)
     varGuidedVA = torch.tensor(np.array(vaVarianceValues())).type(torch.float32).to(device)
-    cLoss = None
-    if args.additiveLoss == 'centerLoss':
-        cLoss = CenterLoss(2,512).to(device)
-        params = list(model.parameters()) + list(cLoss.parameters())
-        optimizer = optim.Adam(params,lr=args.learningRate)
-    elif args.additiveLoss == 'arcface':
-        cLoss = CombinedMarginLoss(
-            64,
-            1.0,
-            0.5,
-            0.0,
-            0
-        ).to(device)
-        optimizer = optim.AdamW(params=[{"params": model.parameters()}, {"params": cLoss.parameters()}], lr=args.learningRate, weight_decay=5e-4)
-    else:
-        optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
+    optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
     bestForFoldTLoss = bestForFold = 5000
-    wVALOSS = 1    
     for ep in range(args.epochs):
         ibl = ibtl = ' '
         lossAcc = []
-        otherLoss = [0,0]
         iteration = 0
-        featuresProject = None
-        labelsProject = None
-        alreadySampled = 0
         if args.loadRandomSplits > 0:
             train_loader = loaders[random.randint(0,len(loaders) - 1)]
-        vaLossHistory = []
-        for img,label,pathfile in train_loader:
+
+        for img,label,_ in train_loader:
             printProgressBar(iteration,len(dataset.filesPath),length=50,prefix='Procesing face - training')
             img = img.to(device)
             label = label.to(device)
-            features, classes, va = model(img)
+            _, classes, va = model(img)
             if vaGuidenceCriterion is not None:
                 vaLabels = centersGuideVA[label]
                 vastdDev = varGuidedVA[label]
             #label[label > 1] = 1
 
-            if cLoss is not None:
-                if args.additiveLoss == 'centerLoss':
-                    loss = criterion(classes, label) + (alpha * cLoss(features,label))
-                else:
-                    with torch.cuda.amp.autocast(False):
-                        features = normalize(features)
-                    features = features.clamp(-1, 1)
-                    thetas = cLoss(features,label)
-                    loss = criterion(thetas,label)
-            elif vaGuidenceCriterion is not None:
-                celCalc = criterion(classes, label)
-                vaLossCalc = vaGuidenceCriterion(va,vaLabels,vastdDev)
-                loss = celCalc + (wVALOSS *  vaLossCalc)
-                otherLoss[0] += celCalc.item()
-                otherLoss[1] += vaLossCalc.item()
-                #vaLossHistory.append(vaGuidenceCriterion(classes[:,-2:],vaLabels).item())
-            else:
-                loss = criterion(classes, label)
+            loss = criterion(va,vaLabels,vastdDev)
  
             optimizer.zero_grad()
             loss.backward()
-            if args.additiveLoss == 'centerLoss':
-                for param in cLoss.parameters():
-                    param.grad.data *= (0.0005/(alpha * args.learningRate))
             optimizer.step()
 
             lossAcc.append(loss.item())
             iteration += img.shape[0]
-            if args.additiveLoss == 'centerLoss' or vaGuidenceCriterion is not None:
-                if random.randint(0,1) and alreadySampled < args.samplePlotSize:                
-                    if featuresProject is None:
-                        featuresProject, labelsProject = features.cpu().detach().numpy(),label.cpu().detach().numpy()
-                    else:
-                        featuresProject = np.concatenate((featuresProject,features.cpu().detach().numpy()))
-                        labelsProject = np.concatenate((labelsProject,label.cpu().detach().numpy()))
-
-                    alreadySampled += featuresProject.shape[0]
-        if args.additiveLoss == 'centerLoss':
-            projectionCloss = outputFeaturesImage(cLoss.centers.cpu().detach().numpy(),featuresProject,labelsProject)
-            writer.add_figure('RESNETEmo/Features/train',projectionCloss,ep)
-        #elif vaGuidenceCriterion is not None:
-        #    projectionCloss = outputFeaturesImage(centersGuideVA.cpu().detach().numpy(),featuresProject,labelsProject)
-        #    writer.add_figure('RESNETEmo/FeaturesGuidedVA/train',projectionCloss,ep)
 
         lossAvg = sum(lossAcc) / len(lossAcc)
-        writer.add_scalar('RESNETEmo/Loss/train', lossAvg, ep)
-        writer.add_scalar('RESNETEmo/CELoss/train', otherLoss[0] / len(lossAcc), ep)
-        writer.add_scalar('RESNETEmo/GNLLLoss/train', otherLoss[1] / len(lossAcc), ep)
+        writer.add_scalar('RESNETEmo/GNLLLoss/train', lossAvg, ep)
         #scheduler.step()
         model.eval()
         iteration = 0
         loss_val = []
         correct = 0
-        otherLoss = [0,0]
         with torch.no_grad():
-            for img,label,pathfile in val_loader:
+            for img,label,_ in val_loader:
                 printProgressBar(iteration,len(datasetVal.filesPath),length=50,prefix='Procesing face - testing')
                 img = img.to(device)
                 label = label.to(device)
@@ -207,45 +129,22 @@ def main():
                     vastdDev = varGuidedVA[label]
 
                 #label[label > 1] = 1
-                features, classes, va = model(img)
-                if cLoss is not None:
-                    if args.additiveLoss == 'centerLoss':
-                        loss = criterion(classes, label) + (alpha * cLoss(features,label))
-                    else:
-                        with torch.cuda.amp.autocast(False):
-                            features = normalize(features)
-                        features = features.clamp(-1, 1)
-                        thetas = cLoss(features,label)
-                        loss = criterion(thetas,label)             
-                elif vaGuidenceCriterion is not None:
-                    celCalc = criterion(classes, label)
-                    vaLossCalc = vaGuidenceCriterion(va,vaLabels,vastdDev)
-                    loss = celCalc + (wVALOSS *  vaLossCalc)
-                    otherLoss[0] += celCalc.item()
-                    otherLoss[1] += vaLossCalc.item()
-                else:                    
-                    loss = criterion(classes, label)
-                if vaGuidenceCriterion is not None:
-                    _, predicted = torch.max(classes.data, 1)
-                else:
-                    _, predicted = torch.max(classes.data, 1)
+                _, classes, va = model(img)
+                loss = criterion(va,vaLabels,vastdDev)
+                _, predicted = torch.max(classes.data, 1)
+
                 correct += (predicted == label).sum().item()
                 loss_val.append(loss)
                 iteration += img.shape[0]
 
             lossAvgVal = sum(loss_val) / len(loss_val)
             correct = correct / iteration
-            writer.add_scalar('RESNETEmo/Loss/val', lossAvgVal, ep)
-            writer.add_scalar('RESNETEmo/Accuracy', correct, ep)
-            writer.add_scalar('RESNETEmo/CELoss/val', otherLoss[0] / len(loss_val), ep)
-            writer.add_scalar('RESNETEmo/GNLLLoss/val', otherLoss[1] / len(loss_val), ep)
-        #wVALOSS = (sum(vaLossHistory) / len(vaLossHistory)) / max(vaLossHistory)
-        #writer.add_scalar('RESNETEmo/WeigthMSELoss', wVALOSS, ep)
+            writer.add_scalar('RESNETEmo/GNLLLoss/val', lossAvgVal, ep)
+
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
         fName = '%s_current.pth.tar' % ('resnet_emotion')
         fName = os.path.join(args.output, fName)
-        #saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
 
         if bestForFoldTLoss > lossAvgVal:
             ibtl = 'X'

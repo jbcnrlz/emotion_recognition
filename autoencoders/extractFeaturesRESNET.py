@@ -24,7 +24,7 @@ def main():
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='EXP')    
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=50, shuffle=False)
 
-    model = ResnetEmotionHead(2,args.networkToUse)
+    model = ResnetEmotionHead(8,args.networkToUse,vaGuidance=True)
     checkpoint = torch.load(args.weightsForResnet)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to(device)
@@ -35,7 +35,7 @@ def main():
         for img,label,pathfile in val_loader:
             printProgressBar(iteration,len(datasetVal.filesPath) // 50,length=50,prefix='Procesing face - validating')
             img = img.to(device)
-            features, _ = model(img)
+            features, _, _ = model(img)
             for f in range(features.shape[0]):
                 outputFile.append((features[f].cpu(),pathfile[f]))
 
