@@ -80,8 +80,7 @@ def main():
 
     model = ResnetEmotionHead(8,resnetModel='resnet18',vaGuidance=True).to(device)
     print(model)
-    criterion = nn.GaussianNLLLoss().to(device)
-    vaGuidenceCriterion = None if args.useVAGuidance is None else nn.GaussianNLLLoss().to(device)
+    criterion = nn.GaussianNLLLoss().to(device)    
     centersGuideVA = torch.tensor(np.array(vaCenterValues())).type(torch.float32).to(device)
     varGuidedVA = torch.tensor(np.array(vaVarianceValues())).type(torch.float32).to(device)
     optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
@@ -98,9 +97,8 @@ def main():
             img = img.to(device)
             label = label.to(device)
             _, classes, va = model(img)
-            if vaGuidenceCriterion is not None:
-                vaLabels = centersGuideVA[label]
-                vastdDev = varGuidedVA[label]
+            vaLabels = centersGuideVA[label]
+            vastdDev = varGuidedVA[label]
             #label[label > 1] = 1
 
             loss = criterion(va,vaLabels,vastdDev)
@@ -124,9 +122,8 @@ def main():
                 printProgressBar(iteration,len(datasetVal.filesPath),length=50,prefix='Procesing face - testing')
                 img = img.to(device)
                 label = label.to(device)
-                if vaGuidenceCriterion is not None:
-                    vaLabels = centersGuideVA[label]
-                    vastdDev = varGuidedVA[label]
+                vaLabels = centersGuideVA[label]
+                vastdDev = varGuidedVA[label]
 
                 #label[label > 1] = 1
                 _, classes, va = model(img)

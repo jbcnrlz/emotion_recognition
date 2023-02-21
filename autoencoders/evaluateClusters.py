@@ -68,16 +68,19 @@ def main():
             dataPlot = clustersEval[k]
             dataPlot.pop('total')
             outputGraph += 'a%d = [' % (int(k))
-            dataForPlot = [str(d) for d in dataPlot.values()]
+            keysForGraph = list(dataPlot.keys())
+            keysForGraph.sort()
+            dataForPlot = [str(dataPlot[d]) for d in keysForGraph]
             outputGraph += ' '.join(dataForPlot) + '];\n'
             outputGraph += 'b%d = {' % (int(k))
-            dataForPlot = ["'%s'" % str(d) for d in dataPlot.keys()]
-            dataForPlot.sort()
+            dataForPlot = ["'%s'" % str(d) for d in keysForGraph]
             outputGraph += ' '.join(dataForPlot) + '};\n'
             outputGraph += 'nexttile;\n'
             outputGraph += 'bar(a%d);\n' %(int(k))
             outputGraph += 'xticklabels(b%d);\n' %(int(k))
             outputGraph += 'title(\'Cluster %d\');\n' %(int(k))
+            outputGraph += 'axis([0 inf 0 500]);\n'
+            outputGraph += "axis 'auto x';\n"
 
         print(outputGraph)
             
