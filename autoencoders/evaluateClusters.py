@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--csvEmotions', help='Path for resnet pretrained weights', required=True)
     parser.add_argument('--normalize', help='Should normalize?', required=False, default=None)
     parser.add_argument('--matlabPrint', help='Should normalize?', required=False, default=None)
+    parser.add_argument('--yLimit', help='Should normalize?', required=False, default=None)
     args = parser.parse_args()
     #use valence and arousal to understand the cluster (plotting to understand)
     #images = getFilesInPath(args.pathAffWild)
@@ -79,8 +80,9 @@ def main():
             outputGraph += 'bar(a%d);\n' %(int(k))
             outputGraph += 'xticklabels(b%d);\n' %(int(k))
             outputGraph += 'title(\'Cluster %d\');\n' %(int(k))
-            outputGraph += 'axis([0 inf 0 500]);\n'
-            outputGraph += "axis 'auto x';\n"
+            if args.yLimit is not None:
+                outputGraph += 'axis([0 inf 0 %d]);\n' % (int(args.yLimit))
+                outputGraph += "axis 'auto x';\n"
 
         print(outputGraph)
             
