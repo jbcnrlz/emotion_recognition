@@ -35,7 +35,7 @@ def main():
         for img,label,pathfile in val_loader:
             printProgressBar(iteration,len(datasetVal.filesPath) // 50,length=50,prefix='Procesing face - validating')
             img = img.to(device)
-            features, _, _ = model(img)
+            features, _ = model(img)
             for f in range(features.shape[0]):
                 outputFile.append((features[f].cpu(),pathfile[f]))
 

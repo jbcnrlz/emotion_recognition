@@ -56,8 +56,8 @@ def main():
     data_transforms = {
     'train': transforms.Compose([
         #transforms.Resize((256,256)),
-        #transforms.RandomCrop(120),
-        transforms.RandomHorizontalFlip(),        
+        #transforms.RandomCrop(224),
+        #transforms.RandomHorizontalFlip(),        
         transforms.ToTensor(),
     ]),
     'test' : transforms.Compose([
@@ -81,13 +81,17 @@ def main():
     model = ResnetEmotionHead(8,resnetModel='resnet18',vaGuidance=True).to(device)
     print(model)
     criterion = nn.GaussianNLLLoss().to(device)    
+    cLoss = CenterLoss(8,512).to(device)
+    params = list(model.parameters()) + list(cLoss.parameters())
     centersGuideVA = torch.tensor(np.array(vaCenterValues())).type(torch.float32).to(device)
     varGuidedVA = torch.tensor(np.array(vaVarianceValues())).type(torch.float32).to(device)
-    optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
+    optimizer = optim.Adam(params,lr=args.learningRate)
     bestForFoldTLoss = bestForFold = 5000
     for ep in range(args.epochs):
         ibl = ibtl = ' '
         lossAcc = []
+        cLossAcc = []
+        gnllAcc = []
         iteration = 0
         if args.loadRandomSplits > 0:
             train_loader = loaders[random.randint(0,len(loaders) - 1)]
@@ -96,26 +100,36 @@ def main():
             printProgressBar(iteration,len(dataset.filesPath),length=50,prefix='Procesing face - training')
             img = img.to(device)
             label = label.to(device)
-            _, classes, va = model(img)
+            features, va = model(img)
             vaLabels = centersGuideVA[label]
             vastdDev = varGuidedVA[label]
             #label[label > 1] = 1
 
-            loss = criterion(va,vaLabels,vastdDev)
+            cLossValue = cLoss(features,label)
+            gnllLoss = criterion(va,vaLabels,vastdDev ** 2)
+            loss = gnllLoss + (alpha * cLossValue)
  
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             lossAcc.append(loss.item())
+            cLossAcc.append(cLossValue.item())
+            gnllAcc.append(gnllLoss.item())
             iteration += img.shape[0]
 
         lossAvg = sum(lossAcc) / len(lossAcc)
-        writer.add_scalar('RESNETEmo/GNLLLoss/train', lossAvg, ep)
+        cLossAvg = sum(cLossAcc) / len(cLossAcc)
+        gLossAvg = sum(gnllAcc) / len(gnllAcc)
+        writer.add_scalar('RESNETEmo/GNLLLoss/train', gLossAvg, ep)
+        writer.add_scalar('RESNETEmo/CLoss/train', cLossAvg, ep)
+        writer.add_scalar('RESNETEmo/Loss/train', lossAvg, ep)
         #scheduler.step()
         model.eval()
         iteration = 0
         loss_val = []
+        cLossAcc_val = []
+        gnllAcc_val = []
         correct = 0
         with torch.no_grad():
             for img,label,_ in val_loader:
@@ -126,38 +140,47 @@ def main():
                 vastdDev = varGuidedVA[label]
 
                 #label[label > 1] = 1
-                _, classes, va = model(img)
-                loss = criterion(va,vaLabels,vastdDev)
-                _, predicted = torch.max(classes.data, 1)
+                features, va = model(img)
+                cLossValue = cLoss(features,label)
+                gnllLoss = criterion(va,vaLabels,vastdDev ** 2)
+                loss = gnllLoss + (alpha * cLossValue)
 
-                correct += (predicted == label).sum().item()
+                #_, predicted = torch.max(classes.data, 1)
+
+                #correct += (predicted == label).sum().item()
                 loss_val.append(loss)
+                cLossAcc_val.append(cLossValue.item())
+                gnllAcc_val.append(gnllLoss.item())
                 iteration += img.shape[0]
 
             lossAvgVal = sum(loss_val) / len(loss_val)
-            correct = correct / iteration
-            writer.add_scalar('RESNETEmo/GNLLLoss/val', lossAvgVal, ep)
+            cLossAcc_val = sum(cLossAcc_val) / len(cLossAcc_val)
+            gnllAcc_val = sum(gnllAcc_val) / len(gnllAcc_val)
+            #correct = correct / iteration
+            writer.add_scalar('RESNETEmo/GNLLLoss/val', gnllAcc_val, ep)
+            writer.add_scalar('RESNETEmo/CLoss/val', cLossAcc_val, ep)
+            writer.add_scalar('RESNETEmo/Loss/val', lossAvgVal, ep)
 
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
         fName = '%s_current.pth.tar' % ('resnet_emotion')
         fName = os.path.join(args.output, fName)
 
-        if bestForFoldTLoss > lossAvgVal:
+        if bestForFoldTLoss > lossAvgVal and lossAvgVal > 0:
             ibtl = 'X'
             fName = '%s_best_val_loss_neutral.pth.tar' % ('resnet_emotion')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFoldTLoss = lossAvgVal
 
-        if bestForFold > lossAvg:
+        if bestForFold > lossAvg and lossAvg > 0:
             ibl = 'X'
             fName = '%s_best_loss_neutral.pth.tar' % ('resnet_emotion')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFold = lossAvg
 
-        print('[EPOCH %03d] Training Loss %.5f Validation Loss %.5f Accuracy %.2f - [%c] [%c]               ' % (ep, lossAvg, lossAvgVal,correct,ibl,ibtl))
+        print('[EPOCH %03d] Training Loss %.5f Validation Loss %.5f - [%c] [%c]               ' % (ep, lossAvg, lossAvgVal,ibl,ibtl))
     
 if __name__ == '__main__':
     main()

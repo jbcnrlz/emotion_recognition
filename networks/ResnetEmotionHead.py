@@ -16,11 +16,6 @@ class ResnetEmotionHead(nn.Module):
             nn.Dropout(),
             nn.Linear(512, 2,bias=False)
         )
-        self.softmax = nn.Sequential(
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(2, classes,bias=False)
-        )        
         '''
         if vaGuidance:
             self.softmax = nn.Sequential(
@@ -38,5 +33,4 @@ class ResnetEmotionHead(nn.Module):
     def forward(self, x):
         feats = self.innerResnetModel(x).view((-1,512))
         va = self.vaModule(feats)
-        classification = self.softmax(va)
-        return feats, classification, va
+        return feats, va

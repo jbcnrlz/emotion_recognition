@@ -1,21 +1,33 @@
 import argparse, numpy as np, pandas as pd, shutil, os
 from sklearn.mixture import BayesianGaussianMixture, GaussianMixture
+from sklearn.cluster import KMeans
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate GMM for latent')
+    parser = argparse.ArgumentParser(description='Generate Clusters from features')
     parser.add_argument('--latentCSV', help='Path for the terms file', required=True)
     parser.add_argument('--components', help='Quantity of components', required=True, type=int)
-    parser.add_argument('--type', help='Quantity of components', required=False, default='predict')
-    parser.add_argument('--dirCluster', help='Quantity of components', required=False, default='predict')    
+    parser.add_argument('--dirCluster', help='Folder to save clusters', required=True)    
+    parser.add_argument('--type', help='What should it do?', required=False, default='predict', choices=['predict','probability_predict'])    
+    parser.add_argument('--clusterType', help='Algorithm to cluster', required=False, default='gmm', choices=['gmm','bgmm','kmeans'])
     args = parser.parse_args()
     tFiles = np.array(pd.read_csv(args.latentCSV))
     classesLabel = tFiles[:,-1]
     vaValues = tFiles[:,:-1].astype(np.float32)
-    estimator = GaussianMixture(
-        n_components=args.components,
-        covariance_type='spherical',
-        random_state=0
-    )
+    estimator = None
+    if args.clusterType == 'gmm':
+        estimator = GaussianMixture(
+            n_components=args.components,
+            covariance_type='full',
+        )
+    elif args.clusterType == 'bgmm':
+        estimator = BayesianGaussianMixture(
+            n_components=args.components,
+            covariance_type='full',
+        )
+    elif args.clusterType == 'kmeans':
+        estimator = KMeans(
+            n_clusters=args.components
+        )
 
     if os.path.exists(args.dirCluster):
         shutil.rmtree(args.dirCluster)
