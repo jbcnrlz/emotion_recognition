@@ -25,6 +25,7 @@ def main():
     for i in range(args.lastClassNumber+1):
         if os.path.exists(os.path.join(imagesFolder,'%d.jpg' % (i))):
             images.append(os.path.join(imagesFolder,'%d.jpg' % (i)))
+            print("Fazendo imagem %s" % (images[-1]))
             vaValues.append((float(np.load(os.path.join(annotationFolder,'%d_val.npy' % (i)))),float(np.load(os.path.join(annotationFolder,'%d_aro.npy' % (i))))))
             nClass.append(np.load(os.path.join(annotationFolder,'%d_exp.npy' % (i))))
 
@@ -32,6 +33,7 @@ def main():
     nnTree = KDTree(vaValues)
     outputMaterial = []
     for idxVa, v in enumerate(vaValues):
+        print("Pegando vizinhos da imagem %d de %d" % (idxVa,len(vaValues)))
         _, neighs = nnTree.query(v,args.k+1)
         outputMaterial.append('%s,%f,%f,%d,%d\n' % (images[idxVa],v[0],v[1],nClass[idxVa],args.k))
         for idxN in neighs[1:]:
