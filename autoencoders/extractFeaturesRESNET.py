@@ -5,15 +5,17 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import printProgressBar
 from networks.ResnetEmotionHead import ResnetEmotionHead, ResnetEmotionHeadClassifier
 from DatasetClasses.AffectNet import AffectNet
+from DatasetClasses.CKPlus import CKPlus
 from PIL import Image
 
 def main():
-    parser = argparse.ArgumentParser(description='Extract latent features with ALAE')
+    parser = argparse.ArgumentParser(description='Extract latent features with RESNET')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--weightsForResnet', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--resnetModel', help='Path for valence and arousal dataset', default="resnet18")
     parser.add_argument('--outputCSVLatent', help='Path for valence and arousal dataset', required=True) 
     parser.add_argument('--networkToUse', help='Path for valence and arousal dataset', required=False,default='ResnetEmotionHead')    
+    parser.add_argument('--dataset', help='Path for valence and arousal dataset', required=False,default='affectnet')
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -21,7 +23,10 @@ def main():
         #transforms.Resize((256,256)),
         transforms.ToTensor(),
     ])
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='EXP')    
+    if args.networkToUse == 'affectnet':
+        datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='EXP')
+    else:
+        datasetVal = CKPlus(ckData=args.pathBase,transform=data_transforms)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=50, shuffle=False)
     checkpoint = torch.load(args.weightsForResnet)
     if args.networkToUse == 'ResnetEmotionHead':
