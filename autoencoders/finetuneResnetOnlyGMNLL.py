@@ -12,6 +12,7 @@ from networks.ResnetEmotionHead import ResnetEmotionHead
 from helper.function import saveStatePytorch, printProgressBar
 
 def vaCenterValues():
+    #       neutr,happy,      sad,          surprise,  fear,       disgust,    anger,       contempt
     return [[0,0],[0.81,0.51],[-0.63,-0.27],[0.4,0.67],[-0.64,0.6],[-0.6,0.35],[-0.43,0.67],[-0.23,0.31]]
 
 def vaVarianceValues():

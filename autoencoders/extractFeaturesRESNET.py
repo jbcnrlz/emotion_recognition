@@ -20,7 +20,7 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     data_transforms = transforms.Compose([
-        transforms.Resize((256,256)),
+        transforms.Resize((224,224)),
         transforms.ToTensor(),
     ])
     if args.networkToUse == 'affectnet':
