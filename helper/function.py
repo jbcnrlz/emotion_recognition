@@ -213,3 +213,18 @@ class AverageMeter(object):
     def __str__(self):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return fmtstr.format(**self.__dict__)
+    
+def loadNeighFiles(pathFile):
+    returnData = {}
+    with open(pathFile,'r') as pf:
+        currFile = ''
+        for p in pf:
+            fileComma = p.split(',')
+            if len(fileComma) > 3:
+                filePath = fileComma[0].split(os.path.sep)[-1]
+                currFile = filePath
+                returnData[filePath] = {'label' : int(fileComma[3]), 'va' : [float(fileComma[1]),float(fileComma[2])],'neighbours' : []}
+            else:
+                returnData[currFile]['neighbours'].append([float(fileComma[0]),float(fileComma[1]),int(fileComma[2])])
+
+    return returnData

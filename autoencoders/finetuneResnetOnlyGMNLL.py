@@ -1,6 +1,6 @@
 import torch,os,sys,argparse, matplotlib.pyplot as plt, numpy as np, random
 from torchvision import transforms
-from sklearn.decomposition import PCA
+from sklearn.decomposition import KernelPCA
 from torch.utils.tensorboard import SummaryWriter
 from torch import optim, nn
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,8 +18,8 @@ def vaCenterValues():
 def vaVarianceValues():
     return [[0.26,0.31],[0.21,0.26],[0.23,0.34],[0.3,0.27],[0.2,0.32],[0.2,0.41],[0.29,0.27],[0.39,0.33]]
 
-def outputFeaturesImage(centers,features,labels):
-    pcaProjection = PCA(n_components=2)
+def outputFeaturesImage(centers,features,labels,kernelForPCA):
+    pcaProjection = KernelPCA(n_components=2,kernel=kernelForPCA)
     fig = plt.Figure(figsize=(4, 4), dpi=320, facecolor='w', edgecolor='k')
     ax = fig.add_subplot(1, 1, 1)
     cProjection = pcaProjection.fit_transform(centers)
@@ -112,6 +112,10 @@ def main():
  
             optimizer.zero_grad()
             loss.backward()
+
+            for param in cLoss.parameters():
+                param.grad.data *= (0.0005/(alpha * args.learningRate))
+
             optimizer.step()
 
             lossAcc.append(loss.item())
@@ -132,6 +136,9 @@ def main():
         cLossAcc_val = []
         gnllAcc_val = []
         correct = 0
+        alreadySampled = 0
+        featuresProject = None
+        labelsProject = None
         with torch.no_grad():
             for img,label,_ in val_loader:
                 printProgressBar(iteration,len(datasetVal.filesPath),length=50,prefix='Procesing face - testing')
@@ -153,11 +160,23 @@ def main():
                 cLossAcc_val.append(cLossValue.item())
                 gnllAcc_val.append(gnllLoss.item())
                 iteration += img.shape[0]
+            
+                if random.randint(0,1) and alreadySampled < args.samplePlotSize:                
+                    if featuresProject is None:
+                        featuresProject, labelsProject = features.cpu().detach().numpy(),label.cpu().detach().numpy()
+                    else:
+                        featuresProject = np.concatenate((featuresProject,features.cpu().detach().numpy()))
+                        labelsProject = np.concatenate((labelsProject,label.cpu().detach().numpy()))
+
+                    alreadySampled += featuresProject.shape[0]
+
 
             lossAvgVal = sum(loss_val) / len(loss_val)
             cLossAcc_val = sum(cLossAcc_val) / len(cLossAcc_val)
             gnllAcc_val = sum(gnllAcc_val) / len(gnllAcc_val)
             #correct = correct / iteration
+            projectionCloss = outputFeaturesImage(cLoss.centers.cpu().detach().numpy(),featuresProject,labelsProject,'rbf')
+            writer.add_figure('RESNETEmo/Features/val',projectionCloss,ep)
             writer.add_scalar('RESNETEmo/GNLLLoss/val', gnllAcc_val, ep)
             writer.add_scalar('RESNETEmo/CLoss/val', cLossAcc_val, ep)
             writer.add_scalar('RESNETEmo/Loss/val', lossAvgVal, ep)

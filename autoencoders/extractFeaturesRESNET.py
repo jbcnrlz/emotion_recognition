@@ -3,7 +3,7 @@ from torchvision import transforms
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import printProgressBar
-from networks.ResnetEmotionHead import ResnetEmotionHead
+from networks.ResnetEmotionHead import ResnetEmotionHead, ResnetEmotionHeadClassifier
 from DatasetClasses.AffectNet import AffectNet
 from DatasetClasses.CKPlus import CKPlus
 from PIL import Image
@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--weightsForResnet', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--resnetModel', help='Path for valence and arousal dataset', default="resnet18")
     parser.add_argument('--outputCSVLatent', help='Path for valence and arousal dataset', required=True) 
-    parser.add_argument('--networkToUse', help='Path for valence and arousal dataset', required=False,default='resnet18')
+    parser.add_argument('--networkToUse', help='Path for valence and arousal dataset', required=False,default='ResnetEmotionHead')    
     parser.add_argument('--dataset', help='Path for valence and arousal dataset', required=False,default='affectnet')
     args = parser.parse_args()
 
@@ -28,9 +28,11 @@ def main():
     else:
         datasetVal = CKPlus(ckData=args.pathBase,transform=data_transforms)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=50, shuffle=False)
-
-    model = ResnetEmotionHead(8,args.networkToUse,vaGuidance=True)
     checkpoint = torch.load(args.weightsForResnet)
+    if args.networkToUse == 'ResnetEmotionHead':
+        model = ResnetEmotionHead(checkpoint['state_dict']['vaModule.2.weight'].shape[0],args.resnetModel,vaGuidance=True)
+    else:
+        model = ResnetEmotionHeadClassifier(checkpoint['state_dict']['softmax.2.weight'].shape[0],args.resnetModel,vaGuidance=False)    
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to(device)
     model.eval()
