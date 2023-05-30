@@ -181,3 +181,8 @@ categLevels.CSV
 ALAE.zip
 178127.png
 reconstructed_from_learned/
+neighsForDataset.txt
+.vscode/launch.json
+.vscode/settings.json
+ckp_predict.rar
+ckp_predict/

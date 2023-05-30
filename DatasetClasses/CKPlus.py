@@ -23,7 +23,6 @@ class CKPlus(data.Dataset):
                     fileName = f.split(os.path.sep)[-1]
                     imageFrameNumber = '_'.join(fileName.split('_')[:-1]) + '.png'
                     self.filesPath.append(os.path.join(imagesFolder,d,s,imageFrameNumber))
-        
 
     def openLabelFile(self,pathFile):
         with open(pathFile,'r') as lf:
@@ -35,7 +34,7 @@ class CKPlus(data.Dataset):
 
     def __getitem__(self, idx):
         path = self.filesPath[idx]
-        image = im.open(path)
+        image = im.open(path).convert('RGB')
         label = self.label[idx]
         if self.transform is not None:
             image = self.transform(image)

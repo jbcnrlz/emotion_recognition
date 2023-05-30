@@ -24,15 +24,21 @@ def normalize(rangesLabel,labelsToJoin):
 
     return outputImage
 
+def getEmotion(filePath):
+    with open(filePath,'r') as fp:
+        for f in fp:
+            return int(float(f.strip()))
+
 def main():
     parser = argparse.ArgumentParser(description='Evaluate folders')
     parser.add_argument('--pathBase', help='Path for cluster', required=True)
-    parser.add_argument('--pathAffWild', help='Path for cluster', required=True)
+    parser.add_argument('--pathDataset', help='Path for cluster', required=True)
     parser.add_argument('--typeAnnotation', help='Path for cluster', required=True)    
     parser.add_argument('--csvEmotions', help='Path for resnet pretrained weights', required=True)
     parser.add_argument('--normalize', help='Should normalize?', required=False, default=None)
     parser.add_argument('--matlabPrint', help='Should normalize?', required=False, default=None)
     parser.add_argument('--yLimit', help='Should normalize?', required=False, default=None)
+    parser.add_argument('--dataset', help='Should normalize?', required=False, default='affwild')
     args = parser.parse_args()
     #use valence and arousal to understand the cluster (plotting to understand)
     #images = getFilesInPath(args.pathAffWild)
@@ -45,16 +51,24 @@ def main():
         imagesFromClusters = getFilesInPath(os.path.join(args.pathBase,c))
         clustersEval[c]['total'] = len(imagesFromClusters)
         for i in imagesFromClusters:
-            filePath = int(i.split(os.path.sep)[-1][:-4])
+            if args.dataset == 'affwild':
+                filePath = int(i.split(os.path.sep)[-1][:-4])
+            else:
+                filePath = i.split(os.path.sep)[-1]                
             if (args.typeAnnotation == 'original'):
-                express = int(np.load(os.path.join(args.pathAffWild,'annotations','%d_exp.npy' % (filePath))))
+                if args.dataset == 'affwild':
+                    express = int(np.load(os.path.join(args.pathDataset,'annotations','%d_exp.npy' % (filePath))))
+                else:
+                    folder = filePath.split('_')[0]
+                    subject = filePath.split('_')[1]
+                    express = getEmotion(os.path.join(args.pathDataset,'Emotion',folder,subject,filePath[:-4] + '_emotion.txt'))
                 currEmotion = emotions[express][0]
                 if currEmotion not in clustersEval[c].keys():
                     clustersEval[c][currEmotion] = 0
                 clustersEval[c][currEmotion] += 1
 
             elif (args.typeAnnotation == 'hajer'):
-                currEmotion = getFeatureFromText(os.path.join(args.pathAffWild,'relabel','%d_relabel.txt' % (filePath)))
+                currEmotion = getFeatureFromText(os.path.join(args.pathDataset,'relabel','%d_relabel.txt' % (filePath)))
                 if currEmotion is None:
                     continue
                 currEmotion = currEmotion.split(' ')[0]
