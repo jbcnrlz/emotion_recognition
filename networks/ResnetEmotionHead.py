@@ -1,6 +1,6 @@
 from torchvision import models
 from torch import nn
-from attentionModule import *
+from networks.attentionModule import *
 class ResnetEmotionHead(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=False,vaGuidance=False) -> None:        
         super(ResnetEmotionHead,self).__init__()
@@ -43,10 +43,13 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         elif (resnetModel == 'resnet50'):
             self.innerResnetModel = models.resnet50(pretrained=pretrained)
 
-        modules=list(self.innerResnetModel.children())[:-1]
-        self.innerResnetModel=nn.Sequential(*modules)
+        modules=list(self.innerResnetModel.children())
+        beforAttention = modules[:-2]
+        self.innerResnetModel=nn.Sequential(*beforAttention)
 
-        self.selfAttentionMoule = nn.MultiheadAttention(512,3)
+        self.selfAttentionMoule = Self_Attn(512)
+
+        self.afterAttention = nn.Sequential(*modules[-2:-1])
 
         self.softmax = nn.Sequential(
             nn.ReLU(inplace=True),
@@ -69,7 +72,9 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
             )        
         '''
     def forward(self, x):
-        feats = self.innerResnetModel(x).view((-1,512))
+        feats = self.innerResnetModel(x)
+        feats = self.selfAttentionMoule(feats)
+        feats = self.afterAttention(feats[0]).view((-1,512))
         va = self.softmax(feats)
         return feats, va
 

@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from loss.CenterLoss import CenterLoss
 from loss.ArcFace import CombinedMarginLoss
 from DatasetClasses.AffectNet import AffectNet
-from networks.ResnetEmotionHead import ResnetEmotionHeadClassifier
+from networks.ResnetEmotionHead import ResnetEmotionHeadClassifier, ResnetEmotionHeadClassifierAttention
 from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
 from torch.nn.functional import linear, normalize
 from sklearn.naive_bayes import GaussianNB
@@ -43,6 +43,7 @@ def main():
     parser.add_argument('--loadRandomSplits', help='Path for valence and arousal dataset', required=False,type=int,default=0)
     parser.add_argument('--numberOfClasses', help='Path for valence and arousal dataset', required=False,default=8,type=int)
     parser.add_argument('--neighsFiles', help='Path for valence and arousal dataset', required=False,default=None)
+    parser.add_argument('--useAttention', help='Path for valence and arousal dataset', required=False,default=False, type=bool)
     args = parser.parse_args()    
 
     alpha = 0.1
@@ -76,8 +77,10 @@ def main():
 
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
-
-    model = ResnetEmotionHeadClassifier(args.numberOfClasses,args.networkToUse,vaGuidance=False).to(device)
+    if (not args.useAttention):
+        model = ResnetEmotionHeadClassifier(args.numberOfClasses,args.networkToUse,vaGuidance=False).to(device)
+    else:
+        model = ResnetEmotionHeadClassifierAttention(args.numberOfClasses,args.networkToUse).to(device)
     print(model)
 
     nFile = None    
