@@ -44,6 +44,7 @@ def main():
     parser.add_argument('--numberOfClasses', help='Path for valence and arousal dataset', required=False,default=8,type=int)
     parser.add_argument('--neighsFiles', help='Path for valence and arousal dataset', required=False,default=None)
     parser.add_argument('--useAttention', help='Path for valence and arousal dataset', required=False,default=False, type=bool)
+    parser.add_argument('--pathMsCELEB', help='Path for valence and arousal dataset', required=False,default=None)
     args = parser.parse_args()    
 
     alpha = 0.1
@@ -80,7 +81,7 @@ def main():
     if (not args.useAttention):
         model = ResnetEmotionHeadClassifier(args.numberOfClasses,args.networkToUse,vaGuidance=False).to(device)
     else:
-        model = ResnetEmotionHeadClassifierAttention(args.numberOfClasses,args.networkToUse).to(device)
+        model = ResnetEmotionHeadClassifierAttention(args.numberOfClasses,args.networkToUse,args.pathMsCELEB).to(device)
     print(model)
 
     nFile = None    
@@ -142,7 +143,7 @@ def main():
             features, classes = model(img)
             if nFile is not None:
                 classes = classes * logitsClass
-            label[label > 1] = 1
+            #label[label > 1] = 1
 
             if cLoss is not None:
                 if args.additiveLoss == 'centerLoss':
@@ -198,7 +199,7 @@ def main():
                 img = img.to(device)
                 label = label.to(device)
 
-                label[label > 1] = 1
+                #label[label > 1] = 1
                 features, classes = model(img)
                 if cLoss is not None:
                     if args.additiveLoss == 'centerLoss':

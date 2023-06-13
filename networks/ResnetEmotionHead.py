@@ -36,10 +36,13 @@ class ResnetEmotionHead(nn.Module):
         return feats, va
 
 class ResnetEmotionHeadClassifierAttention(nn.Module):
-    def __init__(self,classes,resnetModel,pretrained=False) -> None:        
+    def __init__(self,classes,resnetModel,pretrained=None) -> None:        
         super(ResnetEmotionHeadClassifierAttention,self).__init__()
         if (resnetModel == 'resnet18'):
-            self.innerResnetModel = models.resnet18(pretrained=pretrained)
+            self.innerResnetModel = models.resnet18(pretrained=False)
+            if (pretrained is not None):
+                checkpoint = torch.load(pretrained)
+                self.innerResnetModel.load_state_dict(checkpoint['state_dict'],strict=True)
         elif (resnetModel == 'resnet50'):
             self.innerResnetModel = models.resnet50(pretrained=pretrained)
 
