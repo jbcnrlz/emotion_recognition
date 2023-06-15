@@ -1,12 +1,11 @@
-import torch.utils.data, os, sys, torch, argparse, logging
+import torch.utils.data, os, sys, torch, argparse
 from torchvision import transforms
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import printProgressBar
-from networks.ResnetEmotionHead import ResnetEmotionHead, ResnetEmotionHeadClassifier
+from networks.ResnetEmotionHead import ResnetEmotionHead, ResnetEmotionHeadClassifier, ResnetEmotionHeadClassifierAttention
 from DatasetClasses.AffectNet import AffectNet
 from DatasetClasses.CKPlus import CKPlus
-from PIL import Image
 
 def main():
     parser = argparse.ArgumentParser(description='Extract latent features with RESNET')
@@ -20,10 +19,10 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     data_transforms = transforms.Compose([
-        transforms.Resize((224,224)),
+        #transforms.Resize((224,224)),
         transforms.ToTensor(),
     ])
-    if args.networkToUse == 'affectnet':
+    if args.dataset == 'affectnet':
         datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='EXP')
     else:
         datasetVal = CKPlus(ckData=args.pathBase,transform=data_transforms)
@@ -31,24 +30,30 @@ def main():
     checkpoint = torch.load(args.weightsForResnet)
     if args.networkToUse == 'ResnetEmotionHead':
         model = ResnetEmotionHead(checkpoint['state_dict']['vaModule.2.weight'].shape[0],args.resnetModel,vaGuidance=True)
+    elif args.networkToUse == 'ResnetEmotionAttention':
+        model = ResnetEmotionHeadClassifierAttention(checkpoint['state_dict']['softmax.2.weight'].shape[0],args.resnetModel)
     else:
         model = ResnetEmotionHeadClassifier(checkpoint['state_dict']['softmax.2.weight'].shape[0],args.resnetModel,vaGuidance=False)    
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to(device)
     model.eval()
-    iteration = 0
+    iteration = correct = 0
     outputFile = []
     with torch.no_grad():
         for img,label,pathfile in val_loader:
             printProgressBar(iteration,len(datasetVal.filesPath) // 50,length=50,prefix='Procesing face - validating')
             img = img.to(device)
-            features, _ = model(img)
+            features, logits = model(img)
             for f in range(features.shape[0]):
                 outputFile.append((features[f].cpu(),pathfile[f]))
+
+            _, predicted = torch.max(logits.data, 1)
+            correct += (predicted == label.to(device)).sum().item()
 
             iteration += 1
         
     generateCSVFile(args.outputCSVLatent,outputFile)
+    print(correct)
 
 def generateCSVFile(filePath,features):
     with open(filePath,'w') as fp:
