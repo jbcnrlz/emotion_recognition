@@ -2,7 +2,7 @@ import torch.utils.data as data, os, torch, numpy as np, sys, pandas as pd, rand
 from PIL import Image as im
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from helper.function import getDirectoriesInPath, getFilesInPath
+from helper.function import getDirectoriesInPath, getFilesInPath, printProgressBar
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
@@ -19,8 +19,8 @@ class AffectNet(data.Dataset):
             faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
         else:
             faces = getFilesInPath(os.path.join(afectdata,'images_%d' % (datasetNumber)),imagesOnly=True)
-        for f in faces:
-            print("Loading face %s" % (f))
+        for idx, f in enumerate(faces):
+            printProgressBar(idx,len(faces),length=50,prefix='Loading Faces...')
             imageNumber = f.split(os.path.sep)[-1][:-4]
             if typeExperiment == "VA":
                 valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))

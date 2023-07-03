@@ -186,3 +186,32 @@ neighsForDataset.txt
 .vscode/settings.json
 ckp_predict.rar
 ckp_predict/
+neighsForDataset_full.txt
+neighsForDataset_neutralbalanced.txt
+OneDrive_1_04-05-2023.zip
+.vscode/launch.json
+mae_vit/mae_pretrain_vit_large_k700.qpPW3eVF.pth.part
+OneDrive_1_04-05-2023/2020.10.26_CK+ AgreementForm.pdf
+OneDrive_1_04-05-2023/CK/Cohn-Kanade Database FACS codes_updated based on 2002 manual_revised.xls
+OneDrive_1_04-05-2023/CK/cohn-kanade.gz
+OneDrive_1_04-05-2023/CK/Consent-for-publication.doc
+OneDrive_1_04-05-2023/CK/Kanade_Cohn_Tian_2000.pdf
+OneDrive_1_04-05-2023/CK/ReadMeCohnKanadeDatabase_website.doc
+OneDrive_1_04-05-2023/CK/Translating AU Scores Into Emotion Terms.doc
+resnet18CenterLoss/
+resnet18EmotionArcFace/
+resnet18EmotionArcFaceBalanced/
+resnet18EmotionBalanced/
+resnet18EmotionBalancedCenterLoss/
+resnet18EmotionCenterLossDist_attention/
+resnet18EmotionCenterLossDist_attention_8classes/
+resnet18EmotionCenterLossDist_attention_8classes_msceleb/
+resnet18EmotionCenterLossDist_neutral/
+resnet18EmotionVAGuided/
+resnet50Emotion/
+resnetEmotion/
+resnetEmotionBalanced/
+resnetEmotionBalanced_nonaug/
+trainPytorch/
+vae_emotion_only_crossentropy/
+vaeLearnedFeatures/

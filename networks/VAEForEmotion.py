@@ -58,9 +58,9 @@ class VAEOurEmotion(nn.Module):
         mu = self.featuresLearnedMu(fe)
         sigma = torch.exp(self.featuresLearnedSigma(fe))
         z = mu + sigma * self.N.sample(mu.shape)
+        valenceValue = self.valenceEst(z)
         z = z.reshape([-1,1024,1,1])
         decoded = self.decoder(z)
-        valenceValue = self.valenceEst(z)
         return valenceValue, decoded, z
 
 

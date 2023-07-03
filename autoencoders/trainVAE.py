@@ -7,9 +7,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from networks.VAEForEmotion import VAEOurEmotion
-from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
-from torch.nn.functional import linear, normalize
-from sklearn.naive_bayes import GaussianNB
+from helper.function import saveStatePytorch, printProgressBar
+from scipy.stats import norm
 
 def outputFeaturesImage(centers,features,labels):
     pcaProjection = PCA(n_components=2)
@@ -46,14 +45,12 @@ def main():
     writer = SummaryWriter()
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    classesDist = torch.tensor(
-        np.array([[0,0],[0.81,0.21],[-0.63,0.23],[0.4,0.3],[-0.64,0.2],[-0.6,0.2],[-0.51,0.2],[-0.23,0.39]], dtype = np.float32)
-    ).to(device)
+    classesDist = np.array([[0,0.0001],[0.81,0.21],[-0.63,0.23],[0.4,0.3],[-0.64,0.2],[-0.6,0.2],[-0.51,0.2],[-0.23,0.39]], dtype = np.float32)
 
     data_transforms = {
     'train': transforms.Compose([
+        transforms.RandomCrop(120),
         transforms.Resize((256,256)),
-        #transforms.RandomCrop(120),
         #transforms.RandomHorizontalFlip(),        
         transforms.ToTensor(),
     ]),
@@ -84,20 +81,26 @@ def main():
         lossAcc = []
         otherLoss = [[],[]]
         iteration = 0
-        for img,label,_ in train_loader:
-            printProgressBar(iteration,len(dataset.filesPath),length=50,prefix='Procesing face - training')            
+        for imgTr,labelTr,_ in train_loader:
+            printProgressBar(iteration,len(dataset.filesPath),length=args.batchSize,prefix='Procesing face - training')
 
-            img = img.to(device)
-            label = label.to(device)
-            dist, imgRecons, _ = model(img)
-
-            loss = latentLOSS(dist,classesDist[label]) * 0.9 + reconsLOSS(img,imgRecons) * 0.1
+            imgTr = imgTr.to(device)
+            label = labelTr.to(device)
+            distTr, imgReconsTr, _ = model(imgTr)
+            expected = distTr.clone().detach().cpu()
+            fResult = []
+            for valCalc in range(expected.shape[0]):
+                fResult.append(norm.pdf(expected[valCalc],loc=classesDist[labelTr[valCalc]][0],scale=classesDist[labelTr[valCalc]][1]))
+            expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)
+            loss_tr = latentLOSS(distTr,expected) * 0.005 + reconsLOSS(imgTr,imgReconsTr) * 0.1
 
             optimizer.zero_grad()
-            loss.backward()
+            loss_tr.backward()
             optimizer.step()
 
-            lossAcc.append(loss.item())
+            lossAcc.append(loss_tr.item())
+
+            iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         writer.add_scalar('VAEmo/Loss/train', lossAvg, ep)
@@ -113,19 +116,21 @@ def main():
         otherLoss = [[],[]]
         with torch.no_grad():
             for img,label,pathfile in val_loader:
-                printProgressBar(iteration,len(datasetVal.filesPath),length=50,prefix='Procesing face - testing')
+                printProgressBar(iteration,len(datasetVal.filesPath),length=args.batchSize,prefix='Procesing face - testing')
                 img = img.to(device)
                 label = label.to(device)
                 dist, imgRecons, _ = model(img)
 
-                loss = latentLOSS(dist,classesDist[label]) * 0.9 + reconsLOSS(img,imgRecons) * 0.1
+                expected = dist.clone().detach().cpu()
+                fResult = []
+                for valCalc in range(expected.shape[0]):
+                    fResult.append(norm.pdf(expected[valCalc],loc=classesDist[label[valCalc]][0],scale=classesDist[label[valCalc]][1]))
+                expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
 
+                loss = latentLOSS(dist,expected) * 0.005 + reconsLOSS(img,imgRecons) * 0.1
                 loss_val.append(loss.item())
-
+                iteration += 1
             lossAvgVal = sum(loss_val) / len(loss_val)
             writer.add_scalar('VAEmo/Loss/val', lossAvgVal, ep)
 
