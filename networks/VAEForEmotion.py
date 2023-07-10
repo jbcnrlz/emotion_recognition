@@ -43,9 +43,18 @@ class VAEOurEmotion(nn.Module):
         )
 
         self.valenceEst = nn.Sequential(
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
             nn.Linear(1024,1)
         )
 
+        
+        self.classfier = nn.Sequential(
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(1024,8),
+            nn.LogSoftmax(dim=1)
+        )
 
         self.N = torch.distributions.Normal(0, 1)
         self.N.loc = self.N.loc.cuda() # hack to get sampling on the GPU
@@ -59,9 +68,11 @@ class VAEOurEmotion(nn.Module):
         sigma = torch.exp(self.featuresLearnedSigma(fe))
         z = mu + sigma * self.N.sample(mu.shape)
         valenceValue = self.valenceEst(z)
+        z_class = z.clone()
+        classification = self.classfier(z_class)
         z = z.reshape([-1,1024,1,1])
         decoded = self.decoder(z)
-        return valenceValue, decoded, z
+        return valenceValue, classification, decoded, z
 
 
 class VAEForEmotion(nn.Module):

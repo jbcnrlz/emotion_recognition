@@ -53,10 +53,18 @@ def main():
         transforms.Resize((256,256)),
         #transforms.RandomHorizontalFlip(),        
         transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.562454871481894, 0.8208898956471341, 0.395364053852456],
+            std=[0.43727472598867456, 0.31812502566122625, 0.3796120355707891]
+        )
     ]),
     'test' : transforms.Compose([
         transforms.Resize((256,256)),
         transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.562454871481894, 0.8208898956471341, 0.395364053852456],
+            std=[0.43727472598867456, 0.31812502566122625, 0.3796120355707891]
+        )
     ])} 
 
     dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP')
@@ -73,9 +81,11 @@ def main():
     '''
 
     latentLOSS = nn.KLDivLoss(reduction='batchmean').to(device)
-    reconsLOSS = nn.MSELoss().to(device)    
+    reconsLOSS = nn.MSELoss().to(device)
+    ceLOSS = nn.CrossEntropyLoss().to(device)
     optimizer = optim.Adam(model.parameters(),lr=args.learningRate)
     bestForFoldTLoss = bestForFold = 5000
+    bestResult = 0
     for ep in range(args.epochs):
         ibl = ibtl = ' '
         lossAcc = []
@@ -86,13 +96,13 @@ def main():
 
             imgTr = imgTr.to(device)
             label = labelTr.to(device)
-            distTr, imgReconsTr, _ = model(imgTr)
+            distTr, classModule, imgReconsTr, _ = model(imgTr)
             expected = distTr.clone().detach().cpu()
             fResult = []
             for valCalc in range(expected.shape[0]):
                 fResult.append(norm.pdf(expected[valCalc],loc=classesDist[labelTr[valCalc]][0],scale=classesDist[labelTr[valCalc]][1]))
             expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)
-            loss_tr = latentLOSS(distTr,expected) * 0.005 + reconsLOSS(imgTr,imgReconsTr) * 0.1
+            loss_tr = latentLOSS(distTr,expected) * 0.05 + reconsLOSS(imgTr,imgReconsTr) * 0.15 + ceLOSS(classModule,label) * 0.8
 
             optimizer.zero_grad()
             loss_tr.backward()
@@ -113,25 +123,28 @@ def main():
         iteration = 0
         loss_val = []
         correct = 0
-        otherLoss = [[],[]]
+        total = 0
         with torch.no_grad():
             for img,label,pathfile in val_loader:
                 printProgressBar(iteration,len(datasetVal.filesPath),length=args.batchSize,prefix='Procesing face - testing')
                 img = img.to(device)
                 label = label.to(device)
-                dist, imgRecons, _ = model(img)
+                dist, classModule, imgRecons, _ = model(img)
 
                 expected = dist.clone().detach().cpu()
                 fResult = []
                 for valCalc in range(expected.shape[0]):
                     fResult.append(norm.pdf(expected[valCalc],loc=classesDist[label[valCalc]][0],scale=classesDist[label[valCalc]][1]))
-                expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)
+                expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)                
 
-
-                loss = latentLOSS(dist,expected) * 0.005 + reconsLOSS(img,imgRecons) * 0.1
+                loss = latentLOSS(dist,expected) * 0.05 + reconsLOSS(img,imgRecons) * 0.15 + ceLOSS(classModule,label) * 0.8
+                _, predicted = torch.max(classModule.data, 1)
+                total += label.size(0)
+                correct += (predicted == label.to(device)).sum().item()
                 loss_val.append(loss.item())
                 iteration += 1
             lossAvgVal = sum(loss_val) / len(loss_val)
+            cResult = correct / total
             writer.add_scalar('VAEmo/Loss/val', lossAvgVal, ep)
 
 
@@ -155,7 +168,13 @@ def main():
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFold = lossAvg
 
-        print('[EPOCH %03d] Training Loss %.5f Validation Loss %.5f - [%c] [%c]               ' % (ep, lossAvg, lossAvgVal,ibl,ibtl))
+        if bestResult < cResult:
+            fName = '%s_best_acc_neutral.pth.tar' % ('vae_emotion')
+            fName = os.path.join(args.output, fName)
+            saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
+            bestResult = cResult
+
+        print('[EPOCH %03d] Training Loss %.5f Validation Loss %.5f Accuracy on validation %.5f - [%c] [%c]               ' % (ep, lossAvg, lossAvgVal,cResult,ibl,ibtl))
         
     
 if __name__ == '__main__':
