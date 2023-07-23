@@ -45,7 +45,19 @@ def main():
     writer = SummaryWriter()
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    classesDist = np.array([[0,0.0001],[0.81,0.21],[-0.63,0.23],[0.4,0.3],[-0.64,0.2],[-0.6,0.2],[-0.51,0.2],[-0.23,0.39]], dtype = np.float32)
+    '''
+    classesDist = np.array(
+        [
+            [0,0.0001 ],[0.81,0.21],[-0.63,0.23],[0.4,0.3   ], #neutral, happy, sad, surprise
+            [-0.64,0.2],[-0.6,0.2 ],[-0.51,0.2 ],[-0.23,0.39]  #fear, disgust, anger, contempt
+        ], dtype = np.float32)
+    '''
+
+    classesDist = np.array(
+        [
+            [0,0.0001],   [0.605,0.21],  [-0.522,0.15],[0.605,0.21], #neutral, happy, sad, surprise
+            [-0.522,0.15],[-0.522,0.15 ],[-0.522,0.15],[-0.522,0.15]  #fear, disgust, anger, contempt
+        ], dtype = np.float32)
 
     data_transforms = {
     'train': transforms.Compose([
