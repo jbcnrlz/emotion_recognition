@@ -7,8 +7,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from networks.VAEForEmotion import VAEOurEmotion
-from helper.function import saveStatePytorch, printProgressBar
+from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
 from scipy.stats import norm
+from sklearn.naive_bayes import GaussianNB
 
 def outputFeaturesImage(centers,features,labels):
     pcaProjection = PCA(n_components=2)
@@ -92,6 +93,10 @@ def main():
         nFile = loadNeighFiles(args.neighsFiles)        
     '''
 
+    nFile = None    
+    if args.neighsFiles is not None:
+        nFile = loadNeighFiles(args.neighsFiles)        
+
     latentLOSS = nn.KLDivLoss(reduction='batchmean').to(device)
     reconsLOSS = nn.MSELoss().to(device)
     ceLOSS = nn.CrossEntropyLoss().to(device)
@@ -103,8 +108,24 @@ def main():
         lossAcc = []
         otherLoss = [[],[]]
         iteration = 0
-        for imgTr,labelTr,_ in train_loader:
+        for imgTr,labelTr,pathfile in train_loader:
             printProgressBar(iteration,len(dataset.filesPath),length=args.batchSize,prefix='Procesing face - training')
+            if nFile is not None:
+                for idx, p in enumerate(pathfile):
+                    gnb = GaussianNB()
+                    cFileName = p.split(os.path.sep)[-1]
+                    cNs = np.array(nFile[cFileName]['neighbours'])
+                    cNs[:,-1][cNs[:,-1] > 1] = 1
+                    if np.all(cNs[:,0] == cNs[0,0]) and np.all(cNs[:,1] == cNs[0,1]):
+                        labelsSame, countLabels = np.unique(cNs[:,-1],return_counts=True)
+                        logitsClass[idx][labelsSame.astype(np.uint8)] = countLabels / np.sum(countLabels)
+                    else:
+                        for idxN in range(2):
+                            cNs[cNs[:,idxN] == 0,idxN] = 1e-10
+                        gnb.fit(cNs[:,:-1],cNs[:,-1])
+                        logitsClass[idx][gnb.classes_.astype(np.uint16)] = gnb.predict_proba(np.array([nFile[cFileName]['va']]))
+
+                logitsClass = torch.tensor(logitsClass).to(device)
 
             imgTr = imgTr.to(device)
             label = labelTr.to(device)
