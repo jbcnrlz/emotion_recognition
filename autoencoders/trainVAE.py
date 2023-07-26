@@ -109,23 +109,23 @@ def main():
         otherLoss = [[],[]]
         iteration = 0
         for imgTr,labelTr,pathfile in train_loader:
+            logitsClass = np.zeros((imgTr.shape[0],1)).flatten()
             printProgressBar(iteration,len(dataset.filesPath),length=args.batchSize,prefix='Procesing face - training')
             if nFile is not None:
                 for idx, p in enumerate(pathfile):
                     gnb = GaussianNB()
                     cFileName = p.split(os.path.sep)[-1]
                     cNs = np.array(nFile[cFileName]['neighbours'])
-                    cNs[:,-1][cNs[:,-1] > 1] = 1
+                    #cNs[:,-1][cNs[:,-1] > 1] = 1
                     if np.all(cNs[:,0] == cNs[0,0]) and np.all(cNs[:,1] == cNs[0,1]):
-                        labelsSame, countLabels = np.unique(cNs[:,-1],return_counts=True)
-                        logitsClass[idx][labelsSame.astype(np.uint8)] = countLabels / np.sum(countLabels)
+                        logitsClass[idx] = int(cNs[:,-1][0])
                     else:
                         for idxN in range(2):
                             cNs[cNs[:,idxN] == 0,idxN] = 1e-10
                         gnb.fit(cNs[:,:-1],cNs[:,-1])
-                        logitsClass[idx][gnb.classes_.astype(np.uint16)] = gnb.predict_proba(np.array([nFile[cFileName]['va']]))
+                        logitsClass[idx] = int(gnb.predict(np.array([nFile[cFileName]['va']]))[0])
 
-                logitsClass = torch.tensor(logitsClass).to(device)
+                labelTr = torch.tensor(logitsClass,dtype=torch.long)
 
             imgTr = imgTr.to(device)
             label = labelTr.to(device)
