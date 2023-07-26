@@ -1,4 +1,4 @@
-import os, sys, argparse, pandas as pd, numpy as np
+import os, sys, argparse, pandas as pd, numpy as np, pyperclip
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import getFilesInPath, getDirectoriesInPath, getFeatureFromText
@@ -39,9 +39,12 @@ def main():
     parser.add_argument('--matlabPrint', help='Should normalize?', required=False, default=None)
     parser.add_argument('--yLimit', help='Should normalize?', required=False, default=None)
     parser.add_argument('--dataset', help='Should normalize?', required=False, default='affwild')
+    parser.add_argument('--copyClipboard', help='Should normalize?', required=False, type=bool, default=True)
     args = parser.parse_args()
     #use valence and arousal to understand the cluster (plotting to understand)
     #images = getFilesInPath(args.pathAffWild)
+    if args.dataset == 'wfd':
+        datasetItems = pd.read_csv(args.pathDataset)
     emotions = np.array(pd.read_csv(args.csvEmotions))
     clusters = getDirectoriesInPath(args.pathBase)
     clustersEval = {}
@@ -58,11 +61,16 @@ def main():
             if (args.typeAnnotation == 'original'):
                 if args.dataset == 'affwild':
                     express = int(np.load(os.path.join(args.pathDataset,'annotations','%d_exp.npy' % (filePath))))
+                elif args.dataset == 'wfd':
+                    express = list(datasetItems[datasetItems['Image'] == filePath]['Most Selected Emotion'])[0]
                 else:
                     folder = filePath.split('_')[0]
                     subject = filePath.split('_')[1]
                     express = getEmotion(os.path.join(args.pathDataset,'Emotion',folder,subject,filePath[:-4] + '_emotion.txt'))
-                currEmotion = emotions[express][0]
+                if args.dataset == 'wfd':
+                    currEmotion = express
+                else:
+                    currEmotion = emotions[express][0]
                 if currEmotion not in clustersEval[c].keys():
                     clustersEval[c][currEmotion] = 0
                 clustersEval[c][currEmotion] += 1
@@ -98,7 +106,11 @@ def main():
                 outputGraph += 'axis([0 inf 0 %d]);\n' % (int(args.yLimit))
                 outputGraph += "axis 'auto x';\n"
 
-        print(outputGraph)
+        if args.copyClipboard:
+            pyperclip.copy(outputGraph)
+            print("Plot went to clipboard - paste it on MATLAB")
+        else:
+            print(outputGraph)
             
     elif args.normalize is not None:
         print(normalize(clustersEval,[['neutral'],['sadness','happy','contempt','surprise','fear','anger','disgust']]))
