@@ -52,15 +52,19 @@ class AffectNet(data.Dataset):
     def __getitem__(self, idx):
         path = self.filesPath[idx]
         image = im.open(path)
+        valenceLabel = None
         if self.typeExperiment == 'TERMS':
             label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
-        elif self.typeExperiment == 'EXP':
+        elif self.typeExperiment == 'EXP':            
             if self.exchangeLabel is not None:
-                self.label[idx] = self.exchangeLabel[self.label[idx]]
+                valenceLabel = torch.from_numpy(np.array(self.exchangeLabel[self.label[idx]])).to(torch.long)
             label = torch.from_numpy(np.array(self.label[idx])).to(torch.long)
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:
             image = self.transform(image)
 
-        return image, label, self.filesPath[idx]
+        if valenceLabel is not None:
+            return image, label, self.filesPath[idx], valenceLabel
+        else:
+            return image, label, self.filesPath[idx]

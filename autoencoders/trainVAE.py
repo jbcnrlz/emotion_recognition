@@ -42,6 +42,8 @@ def main():
     parser.add_argument('--additiveLoss', help='Path for valence and arousal dataset', required=False,default=None)
     args = parser.parse_args()        
 
+    alpha = 0.1
+
     if not os.path.exists(args.output):
         os.makedirs(args.output)
 
@@ -110,7 +112,7 @@ def main():
         lossAcc = []
         otherLoss = [[],[],[],[]]
         iteration = 0
-        for imgTr,labelTr,pathfile in train_loader:
+        for imgTr,labelTr,pathfile,valLabel in train_loader:
             logitsClass = np.zeros((imgTr.shape[0],1)).flatten()
             printProgressBar(iteration,len(dataset.filesPath),length=math.ceil(len(dataset.filesPath) / args.batchSize),prefix='Procesing face - training')
             if nFile is not None:
@@ -131,40 +133,68 @@ def main():
 
             imgTr = imgTr.to(device)
             label = labelTr.to(device)
-            distTr, classModule, imgReconsTr, _ = model(imgTr)
+            valLabel = valLabel.to(device)
+            distTr, classModule, imgReconsTr, z = model(imgTr)
             expected = distTr.clone().detach().cpu()
             fResult = []
             for valCalc in range(expected.shape[0]):
                 fResult.append(norm.pdf(expected[valCalc],loc=classesDist[labelTr[valCalc]][0],scale=classesDist[labelTr[valCalc]][1]))
             expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)
-            loss_tr = latentLOSS(distTr,expected) * 0.05 + reconsLOSS(imgTr,imgReconsTr) * 0.15 + ceLOSS(classModule,label) * 0.8
+            if args.additiveLoss is not None:
+                cLossV = alpha * cLoss(z,valLabel)
+                ceLossV = ceLOSS(classModule,label)
+                ltLoss = latentLOSS(distTr,expected)
+                reconLoss = reconsLOSS(imgTr,imgReconsTr)
+                loss_tr = ltLoss * 0.05 + reconLoss * 0.15 + (cLossV + ceLossV) * 0.8
+            else:            
+                ceLossV = ceLOSS(classModule,label)
+                ltLoss = latentLOSS(distTr,expected)
+                reconLoss = reconsLOSS(imgTr,imgReconsTr)
+                loss_tr = ltLoss * 0.05 + reconLoss * 0.15 + ceLossV * 0.8                
 
             optimizer.zero_grad()
             loss_tr.backward()
+            if args.additiveLoss == 'centerLoss':
+                for param in cLoss.parameters():
+                    param.grad.data *= (0.0005/(alpha * args.learningRate))
+
             optimizer.step()
 
             lossAcc.append(loss_tr.item())
+            if args.additiveLoss is not None:
+                otherLoss[0].append(cLossV.item())
+                otherLoss[1].append(ceLossV.item())
+                otherLoss[2].append(ltLoss.item())
+                otherLoss[3].append(reconLoss.item())
+            else:
+                otherLoss[1].append(ceLossV.item())
+                otherLoss[2].append(ltLoss.item())
+                otherLoss[3].append(reconLoss.item())
 
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         writer.add_scalar('VAEmo/Loss/train', lossAvg, ep)
-        #writer.add_scalar('VAEmo/CenterLoss/train', sum(otherLoss[1]) / len(otherLoss[1]), ep)
-        #writer.add_scalar('VAEmo/CELoss/train', sum(otherLoss[0]) / len(otherLoss[0]), ep)
-        
-        #scheduler.step()
+
+        lossesName = ['centerloss','crossentropyloss','klloss','mseloss']
+        for idx, otl in enumerate(otherLoss):
+            if len(otl) > 0:
+                vTB = sum(otl) / len(otl)
+                writer.add_scalar('VAEmo/%c/train' % (lossesName[idx]), vTB, ep)
         
         model.eval()
         iteration = 0
         loss_val = []
+        otherLoss = [[],[],[],[]]
         correct = 0
         total = 0
         with torch.no_grad():
-            for img,label,pathfile in val_loader:
+            for img,label,pathfile,valLabel in val_loader:
                 printProgressBar(iteration,len(datasetVal.filesPath),length=math.ceil(len(datasetVal.filesPath) / args.batchSize),prefix='Procesing face - testing')
                 img = img.to(device)
                 label = label.to(device)
-                dist, classModule, imgRecons, _ = model(img)
+                valLabel = valLabel.to(device)
+                dist, classModule, imgRecons, z = model(img)
 
                 expected = dist.clone().detach().cpu()
                 fResult = []
@@ -172,16 +202,42 @@ def main():
                     fResult.append(norm.pdf(expected[valCalc],loc=classesDist[label[valCalc]][0],scale=classesDist[label[valCalc]][1]))
                 expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)                
 
-                loss = latentLOSS(dist,expected) * 0.05 + reconsLOSS(img,imgRecons) * 0.15 + ceLOSS(classModule,label) * 0.8
+                if args.additiveLoss is not None:
+                    cLossV = alpha * cLoss(z,valLabel)
+                    ceLossV = ceLOSS(classModule,label)
+                    ltLoss = latentLOSS(distTr,expected)
+                    reconLoss = reconsLOSS(imgTr,imgRecons)
+                    loss = ltLoss * 0.05 + reconLoss * 0.15 + (cLossV + ceLossV) * 0.8
+                else:            
+                    ceLossV = ceLOSS(classModule,label)
+                    ltLoss = latentLOSS(distTr,expected)
+                    reconLoss = reconsLOSS(imgTr,imgRecons)
+                    loss = ltLoss * 0.05 + reconLoss * 0.15 + ceLossV * 0.8                
+
+                #loss = latentLOSS(dist,expected) * 0.05 + reconsLOSS(img,imgRecons) * 0.15 + ceLOSS(classModule,label) * 0.8
                 _, predicted = torch.max(classModule.data, 1)
                 total += label.size(0)
-                correct += (predicted == label.to(device)).sum().item()
+                correct += (predicted == label).sum().item()
                 loss_val.append(loss.item())
+                if args.additiveLoss is not None:
+                    otherLoss[0].append(cLossV.item())
+                    otherLoss[1].append(ceLossV.item())
+                    otherLoss[2].append(ltLoss.item())
+                    otherLoss[3].append(reconLoss.item())
+                else:
+                    otherLoss[1].append(ceLossV.item())
+                    otherLoss[2].append(ltLoss.item())
+                    otherLoss[3].append(reconLoss.item())
+
                 iteration += 1
             lossAvgVal = sum(loss_val) / len(loss_val)
             cResult = correct / total
             writer.add_scalar('VAEmo/Loss/val', lossAvgVal, ep)
-
+            lossesName = ['centerloss','crossentropyloss','klloss','mseloss']
+            for idx, otl in enumerate(otherLoss):
+                if len(otl) > 0:
+                    vTB = sum(otl) / len(otl)
+                    writer.add_scalar('VAEmo/%c/val' % (lossesName[idx]), vTB, ep)
 
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
