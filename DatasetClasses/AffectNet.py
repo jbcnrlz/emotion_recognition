@@ -6,19 +6,15 @@ from helper.function import getDirectoriesInPath, getFilesInPath, printProgressB
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
-    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151, fixLabel=None, joinLabels=None,datasetNumber=None):
+    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151,exchangeLabel=None):
+        self.exchangeLabel = exchangeLabel
         self.terms = None if typeExperiment != 'TERMS' else self.loadTermsFile(termsQuantity)
         self.transform = transform
         self.label = []
         self.filesPath = []
         self.typeExperiment = typeExperiment
         quantitylabels = None
-        if joinLabels is not None:
-            quantitylabels = [0] * (joinLabels + 1)
-        if datasetNumber is None:
-            faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
-        else:
-            faces = getFilesInPath(os.path.join(afectdata,'images_%d' % (datasetNumber)),imagesOnly=True)
+        faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
         for idx, f in enumerate(faces):
             printProgressBar(idx,len(faces),length=50,prefix='Loading Faces...')
             imageNumber = f.split(os.path.sep)[-1][:-4]
@@ -28,11 +24,6 @@ class AffectNet(data.Dataset):
                 self.label.append([valValue,aroValue])
             elif typeExperiment == "EXP":
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
-                if fixLabel is not None and int(currLabel) not in fixLabel:
-                    continue
-                if joinLabels is not None:
-                    currLabel = currLabel if int(currLabel) < joinLabels else joinLabels
-                    quantitylabels[int(currLabel)] += 1
                 self.label.append(int(currLabel))
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
@@ -64,6 +55,8 @@ class AffectNet(data.Dataset):
         if self.typeExperiment == 'TERMS':
             label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
         elif self.typeExperiment == 'EXP':
+            if self.exchangeLabel is not None:
+                self.label[idx] = self.exchangeLabel[self.label[idx]]
             label = torch.from_numpy(np.array(self.label[idx])).to(torch.long)
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)

@@ -4,7 +4,7 @@ from networks.unet.unet_parts import *
 
 class VAEOurEmotion(nn.Module):
 
-    def __init__(self,n_channels) -> None:
+    def __init__(self,n_channels,n_classes=8) -> None:
         super(VAEOurEmotion,self).__init__()
 
         self.encoder = nn.Sequential(
@@ -52,7 +52,7 @@ class VAEOurEmotion(nn.Module):
         self.classfier = nn.Sequential(
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
-            nn.Linear(1024,8),
+            nn.Linear(1024,n_classes),
             nn.LogSoftmax(dim=1)
         )
 
