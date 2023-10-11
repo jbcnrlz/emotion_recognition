@@ -37,10 +37,14 @@ def main():
                 random_state=0,
                 perplexity=100,
                 n_iter=300,
+                learning_rate=200
         )
         Y = tsne.fit_transform(features)
         ax = fig.add_subplot(nrows,ncols,idx+1)
-        ax.scatter(Y[:,0],Y[:,1],c=colorsForPlot[emotionsAnnotated])
+        for idx in range(len(emotions)):
+            idxWhere = np.where(idx == np.array(emotionsAnnotated))
+            ax.scatter(Y[idxWhere,0],Y[idxWhere,1],color=colorsForPlot[idx],label=emotions[idx][0])
+        ax.legend()
         ax.title.set_text(latentFile)
     plt.show()
     '''
