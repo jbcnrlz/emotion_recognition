@@ -84,10 +84,10 @@ def main():
         )
     ])} 
 
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',exchangeLabel=[0,1,2,1,2,2,2,2])
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',exchangeLabel=None)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
 
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=[0,1,2,1,2,2,2,2])
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
     model = VAEOurEmotion(3).to(device)
     print(model)
@@ -98,7 +98,8 @@ def main():
     latentLOSS = nn.KLDivLoss(reduction='batchmean').to(device)
     reconsLOSS = nn.MSELoss().to(device)
     ceLOSS = nn.CrossEntropyLoss().to(device)
-    if args.additiveLoss == 'centerLoss':
+    cLoss = None
+    if args.additiveLoss == 'centerloss':
         cLoss = CenterLoss(args.numberOfClasses,1024).to(device)
         params = list(model.parameters()) + list(cLoss.parameters())
         optimizer = optim.Adam(params,lr=args.learningRate)
@@ -112,9 +113,9 @@ def main():
         lossAcc = []
         otherLoss = [[],[],[],[]]
         iteration = 0
-        for imgTr,labelTr,pathfile,valLabel in train_loader:
+        for imgTr,labelTr,pathfile in train_loader:
             logitsClass = np.zeros((imgTr.shape[0],1)).flatten()
-            printProgressBar(iteration,len(dataset.filesPath),length=math.ceil(len(dataset.filesPath) / args.batchSize),prefix='Procesing face - training')
+            printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             if nFile is not None:
                 for idx, p in enumerate(pathfile):
                     gnb = GaussianNB()
@@ -133,7 +134,6 @@ def main():
 
             imgTr = imgTr.to(device)
             label = labelTr.to(device)
-            valLabel = valLabel.to(device)
             distTr, classModule, imgReconsTr, z = model(imgTr)
             expected = distTr.clone().detach().cpu()
             fResult = []
@@ -141,7 +141,7 @@ def main():
                 fResult.append(norm.pdf(expected[valCalc],loc=classesDist[labelTr[valCalc]][0],scale=classesDist[labelTr[valCalc]][1]))
             expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)
             if args.additiveLoss is not None:
-                cLossV = alpha * cLoss(z,valLabel)
+                cLossV = alpha * cLoss(z,label)
                 ceLossV = ceLOSS(classModule,label)
                 ltLoss = latentLOSS(distTr,expected)
                 reconLoss = reconsLOSS(imgTr,imgReconsTr)
@@ -180,7 +180,7 @@ def main():
         for idx, otl in enumerate(otherLoss):
             if len(otl) > 0:
                 vTB = sum(otl) / len(otl)
-                writer.add_scalar('VAEmo/%c/train' % (lossesName[idx]), vTB, ep)
+                writer.add_scalar('VAEmo/%s/train' % (lossesName[idx]), vTB, ep)
         
         model.eval()
         iteration = 0
@@ -189,11 +189,10 @@ def main():
         correct = 0
         total = 0
         with torch.no_grad():
-            for img,label,pathfile,valLabel in val_loader:
-                printProgressBar(iteration,len(datasetVal.filesPath),length=math.ceil(len(datasetVal.filesPath) / args.batchSize),prefix='Procesing face - testing')
+            for img,label,pathfile in val_loader:
+                printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),prefix='Procesing face - testing',length=50)
                 img = img.to(device)
                 label = label.to(device)
-                valLabel = valLabel.to(device)
                 dist, classModule, imgRecons, z = model(img)
 
                 expected = dist.clone().detach().cpu()
@@ -203,15 +202,15 @@ def main():
                 expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)                
 
                 if args.additiveLoss is not None:
-                    cLossV = alpha * cLoss(z,valLabel)
+                    cLossV = alpha * cLoss(z,label)
                     ceLossV = ceLOSS(classModule,label)
-                    ltLoss = latentLOSS(distTr,expected)
-                    reconLoss = reconsLOSS(imgTr,imgRecons)
+                    ltLoss = latentLOSS(dist,expected)
+                    reconLoss = reconsLOSS(img,imgRecons)
                     loss = ltLoss * 0.05 + reconLoss * 0.15 + (cLossV + ceLossV) * 0.8
                 else:            
                     ceLossV = ceLOSS(classModule,label)
-                    ltLoss = latentLOSS(distTr,expected)
-                    reconLoss = reconsLOSS(imgTr,imgRecons)
+                    ltLoss = latentLOSS(dist,expected)
+                    reconLoss = reconsLOSS(img,imgRecons)
                     loss = ltLoss * 0.05 + reconLoss * 0.15 + ceLossV * 0.8                
 
                 #loss = latentLOSS(dist,expected) * 0.05 + reconsLOSS(img,imgRecons) * 0.15 + ceLOSS(classModule,label) * 0.8
@@ -237,7 +236,7 @@ def main():
             for idx, otl in enumerate(otherLoss):
                 if len(otl) > 0:
                     vTB = sum(otl) / len(otl)
-                    writer.add_scalar('VAEmo/%c/val' % (lossesName[idx]), vTB, ep)
+                    writer.add_scalar('VAEmo/%s/val' % (lossesName[idx]), vTB, ep)
 
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
@@ -250,6 +249,8 @@ def main():
             fName = '%s_best_val_loss_neutral.pth.tar' % ('vae_emotion')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
+            if args.additiveLoss is not None:
+                saveStatePytorch(os.path.join(args.output,'center_loss_wtgs.pth.tar'),cLoss.state_dict(),opt_dict,ep+1)
             bestForFoldTLoss = lossAvgVal
 
         if bestForFold > lossAvg:

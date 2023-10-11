@@ -70,8 +70,8 @@ class VAEOurEmotion(nn.Module):
         valenceValue = self.valenceEst(z)
         z_class = z.clone()
         classification = self.classfier(z_class)
-        z = z.reshape([-1,1024,1,1])
-        decoded = self.decoder(z)
+        z_dec = z.reshape([-1,1024,1,1])
+        decoded = self.decoder(z_dec)
         return valenceValue, classification, decoded, z
 
 
