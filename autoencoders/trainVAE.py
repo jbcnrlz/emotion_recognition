@@ -7,7 +7,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from loss.CenterLoss import CenterLoss
 from DatasetClasses.AffectNet import AffectNet
-from networks.VAEForEmotion import VAEOurEmotion
+from networks.VAEForEmotion import VAEOurEmotion, VAEOurEmotionAttention
 from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
 from scipy.stats import norm
 from sklearn.naive_bayes import GaussianNB
@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--numberOfClasses', help='Path for valence and arousal dataset', required=False,default=8,type=int)
     parser.add_argument('--neighsFiles', help='Path for valence and arousal dataset', required=False,default=None)
     parser.add_argument('--additiveLoss', help='Path for valence and arousal dataset', required=False,default=None)
+    parser.add_argument('--modelToTrain', help='Path for valence and arousal dataset', required=False,default="vae")
     args = parser.parse_args()        
 
     alpha = 0.1
@@ -89,7 +90,10 @@ def main():
 
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
-    model = VAEOurEmotion(3).to(device)
+    if args.modelToTrain == 'vae':
+        model = VAEOurEmotion(3).to(device)
+    elif args.modelToTrain == 'vaeAttn':
+        model = VAEOurEmotionAttention(3).to(device)
     print(model)
     nFile = None    
     if args.neighsFiles is not None:
