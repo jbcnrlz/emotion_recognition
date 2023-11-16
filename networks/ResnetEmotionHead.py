@@ -1,7 +1,7 @@
 from torchvision import models
 from torch import nn
-from networks.attentionModule import *
-from networks.VAEForEmotion import PAM_Module
+from networks.attentionModule import FeatureEnhanceNoCross
+import torch
 class ResnetEmotionHead(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=False,vaGuidance=False) -> None:        
         super(ResnetEmotionHead,self).__init__()
@@ -42,7 +42,7 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         if (resnetModel == 'resnet18'):
             self.innerResnetModel = models.resnet18(weights=None)
             if (pretrained is not None):
-                checkpoint = torch.load(pretrained)
+                checkpoint = torch.load('/home/joaocardia/Projects/emotion_recognition/DAN/models/resnet18_msceleb.pth')
                 self.innerResnetModel.load_state_dict(checkpoint['state_dict'],strict=True)
         elif (resnetModel == 'resnet50'):
             self.innerResnetModel = models.resnet50(pretrained=pretrained)
@@ -51,20 +51,21 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         beforAttention = modules[:-2]
         self.innerResnetModel=nn.Sequential(*beforAttention)
 
-        self.selfAttentionMoule = PAM_Module(512)
+        self.selfAttentionMoule = FeatureEnhanceNoCross(512)
 
         self.afterAttention = nn.Sequential(*modules[-2:-1])
 
         self.softmax = nn.Sequential(
             nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(512, classes,bias=False),
+            nn.Linear(256, classes,bias=False),
             nn.Softmax(dim=1)
         )
     def forward(self, x):
         feats = self.innerResnetModel(x)
         feats = self.selfAttentionMoule(feats)
-        feats = self.afterAttention(feats).view((-1,512))
+        feats = self.afterAttention(feats)
+        feats = feats.view((-1,256))
         va = self.softmax(feats)
         return feats, va
 

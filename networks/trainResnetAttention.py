@@ -92,6 +92,7 @@ def train():
             optimizer.step()
 
             lossAcc.append(loss.item())
+            iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         scheduler.step()
