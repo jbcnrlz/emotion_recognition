@@ -1,5 +1,6 @@
 import argparse, torch, os, sys, numpy as np, math
 from torchvision import transforms
+from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
@@ -23,7 +24,7 @@ def train():
 
     if not os.path.exists(args.output):
         os.makedirs(args.output)
-
+    writer = SummaryWriter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
     model = ResnetEmotionHeadClassifierAttention(classes=8, resnetModel='resnet18')
@@ -95,6 +96,7 @@ def train():
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
+        writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
         scheduler.step()
         model.eval()
         total = 0
@@ -111,8 +113,10 @@ def train():
                 total += labels.size(0)
                 correct += (predicted == labels.to(device)).sum().item()
 
-        cResult = correct / total
+        cResult = correct / total        
         tLoss = sum(loss_val) / len(loss_val)
+        writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
+        writer.add_scalar('RESNETAtt/Acc', cResult, ep)
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
 
