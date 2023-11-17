@@ -39,15 +39,12 @@ def train():
         'train': transforms.Compose([
             transforms.Resize((256, 256)),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([
-                transforms.RandomAffine(20, scale=(0.8, 1), translate=(0.2, 0.2)),
-            ], p=0.7),
-        transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[0.562454871481894, 0.8208898956471341, 0.395364053852456],
-            std=[0.43727472598867456, 0.31812502566122625, 0.3796120355707891]
-        )
-    ]),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.562454871481894, 0.8208898956471341, 0.395364053852456],
+                std=[0.43727472598867456, 0.31812502566122625, 0.3796120355707891]
+            )
+        ]),
     'test' : transforms.Compose([
         transforms.Resize((256,256)),
         transforms.ToTensor(),
@@ -70,6 +67,7 @@ def train():
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
     criterion = nn.CrossEntropyLoss().to(device)
+    os.system('cls' if os.name == 'nt' else 'clear')
     print("Started traning")
     print('Training Phase =================================================================== BTL  BVL BAC')
     bestForFold = bestForFoldTLoss = 500000
