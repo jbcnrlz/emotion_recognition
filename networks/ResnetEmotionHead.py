@@ -58,16 +58,15 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         self.softmax = nn.Sequential(
             nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(512, classes,bias=False),
-            nn.Softmax(dim=1)
+            nn.Linear(512, classes,bias=False)
         )
     def forward(self, x):
         feats = self.innerResnetModel(x)
-        feats = self.selfAttentionMoule(feats)
-        feats = self.afterAttention(feats)
+        att = self.selfAttentionMoule(feats)
+        feats = self.afterAttention(att)
         feats = feats.view((-1,512))
         va = self.softmax(feats)
-        return feats, va
+        return feats, va, att
 
 class ResnetEmotionHeadClassifier(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=False,vaGuidance=False) -> None:        

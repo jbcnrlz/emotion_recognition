@@ -215,3 +215,4 @@ resnetEmotionBalanced_nonaug/
 trainPytorch/
 vae_emotion_only_crossentropy/
 vaeLearnedFeatures/
+.vscode/launch.json
