@@ -51,21 +51,21 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         beforAttention = modules[:-2]
         self.innerResnetModel=nn.Sequential(*beforAttention)
 
-        self.selfAttentionMoule = FeatureEnhanceNoCross(512)
+        self.selfAttentionMoule = FeatureEnhanceNoCross(512,512)
 
         self.afterAttention = nn.Sequential(*modules[-2:-1])
 
         self.softmax = nn.Sequential(
             nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(256, classes,bias=False),
+            nn.Linear(512, classes,bias=False),
             nn.Softmax(dim=1)
         )
     def forward(self, x):
         feats = self.innerResnetModel(x)
         feats = self.selfAttentionMoule(feats)
         feats = self.afterAttention(feats)
-        feats = feats.view((-1,256))
+        feats = feats.view((-1,512))
         va = self.softmax(feats)
         return feats, va
 
