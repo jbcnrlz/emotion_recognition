@@ -85,7 +85,7 @@ def train():
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-            _, classification = model(currBatch)
+            _, classification, _ = model(currBatch)
             loss = criterion(classification, currTargetBatch)
 
             optimizer.zero_grad()
@@ -105,7 +105,7 @@ def train():
         with torch.no_grad():
             for data in val_loader:
                 images, labels, _ = data
-                _, classification = model(images.to(device))
+                _, classification, _ = model(images.to(device))
                 _, predicted = torch.max(classification.data, 1)
                 loss = criterion(classification, labels.to(device))
 
