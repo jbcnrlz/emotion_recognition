@@ -1,6 +1,6 @@
 from torchvision import models
 from torch import nn
-from networks.attentionModule import FeatureEnhanceNoCross
+from networks.attentionModule import FeatureEnhanceNoCross, FeatureEnhanceRGB
 import torch
 class ResnetEmotionHead(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=False,vaGuidance=False) -> None:        
@@ -52,6 +52,7 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         self.innerResnetModel=nn.Sequential(*beforAttention)
 
         self.selfAttentionMoule = FeatureEnhanceNoCross(512,512)
+        #self.selfAttentionMoule = FeatureEnhanceRGB(512,512)
 
         self.afterAttention = nn.Sequential(*modules[-2:-1])
 
@@ -60,7 +61,7 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
             nn.Dropout(),
             nn.Linear(512, classes,bias=False)
         )
-    def forward(self, x):
+    def forward(self, x):        
         feats = self.innerResnetModel(x)
         att = self.selfAttentionMoule(feats)
         feats = self.afterAttention(att)
