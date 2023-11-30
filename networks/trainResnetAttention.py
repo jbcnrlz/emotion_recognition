@@ -3,6 +3,7 @@ from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
+from loss import CenterLoss
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar
 from networks.ResnetEmotionHead import ResnetEmotionHeadClassifierAttention
@@ -20,6 +21,7 @@ def train():
     parser.add_argument('--optimizer', help='Optimizer', required=False, default="sgd")
     parser.add_argument('--freeze', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--numberOfClasses', help='Freeze weights', required=False, type=int, default=0)
+    parser.add_argument('--additiveLoss', help='Adding additive Loss', required=False,default=None)
     args = parser.parse_args()
 
     if not os.path.exists(args.output):
@@ -60,18 +62,27 @@ def train():
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    if args.optimizer == 'sgd':
-        optimizer = optim.SGD(model.parameters(),lr = args.learningRate, momentum = 0.9)
-    elif args.optimizer == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
+    if args.additiveLoss == 'centerloss':
+        cLoss = CenterLoss(args.numberOfClasses,512).to(device)
+        params = list(model.parameters()) + list(cLoss.parameters())
+        optimizer = optim.Adam(params,lr=args.learningRate)
+    else:
+        if args.optimizer == 'sgd':
+            optimizer = optim.SGD(model.parameters(),lr = args.learningRate, momentum = 0.9)
+        elif args.optimizer == 'adam':
+            optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
+
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
+
+
     criterion = nn.CrossEntropyLoss().to(device)
     os.system('cls' if os.name == 'nt' else 'clear')
     print("Started traning")
     print('Training Phase =================================================================== BTL  BVL BAC')
     bestForFold = bestForFoldTLoss = 500000
     bestRankForFold = -1
+    alpha = 0.1
     for ep in range(args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
@@ -83,8 +94,13 @@ def train():
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-            _, classification, _ = model(currBatch)
-            loss = criterion(classification, currTargetBatch)
+            features, classification, _ = model(currBatch)
+            if args.additiveLoss is not None:
+                cLossV = alpha * cLoss(features,currTargetBatch)
+                ceLossV = criterion(classification, currTargetBatch)
+                loss = cLossV + ceLossV
+            else:
+                loss = criterion(classification, currTargetBatch)
 
             optimizer.zero_grad()
             loss.backward()
@@ -103,9 +119,15 @@ def train():
         with torch.no_grad():
             for data in val_loader:
                 images, labels, _ = data
-                _, classification, _ = model(images.to(device))
+                features, classification, _ = model(images.to(device))
                 _, predicted = torch.max(classification.data, 1)
-                loss = criterion(classification, labels.to(device))
+
+                if args.additiveLoss is not None:
+                    cLossV = alpha * cLoss(features,currTargetBatch)
+                    ceLossV = criterion(classification, currTargetBatch)
+                    loss = cLossV + ceLossV
+                else:
+                    loss = criterion(classification, currTargetBatch)
 
                 loss_val.append(loss)
                 total += labels.size(0)
