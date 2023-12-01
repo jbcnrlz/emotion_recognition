@@ -5,10 +5,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from loss.CenterLoss import CenterLoss
 from DatasetClasses.AffectNet import AffectNet
-from helper.function import saveStatePytorch, printProgressBar
+from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
 from networks.ResnetEmotionHead import ResnetEmotionHeadClassifierAttention
 from DatasetClasses.AffWild2 import AFF2Data
 from torch import nn, optim
+from sklearn.linear_model import LogisticRegression
+from scipy.stats import norm
 
 def train():
     parser = argparse.ArgumentParser(description='Finetune resnet')
@@ -23,6 +25,13 @@ def train():
     parser.add_argument('--numberOfClasses', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--additiveLoss', help='Adding additive Loss', required=False,default=None)
     args = parser.parse_args()
+
+    classesDist = np.array(
+        [
+            [0,0.0001],   [0.605,0.21],  [-0.522,0.15],[0.605,0.21], #neutral, happy, sad, surprise
+            [-0.522,0.15],[-0.522,0.15 ],[-0.522,0.15],[-0.522,0.15]  #fear, disgust, anger, contempt
+        ], dtype = np.float32
+    )
 
     if not os.path.exists(args.output):
         os.makedirs(args.output)
@@ -84,18 +93,48 @@ def train():
     bestForFold = bestForFoldTLoss = 500000
     bestRankForFold = -1
     alpha = 0.1
+    if args.neighsFiles is not None:
+        nFile = loadNeighFiles(args.neighsFiles)        
+
     for ep in range(args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
         lossAcc = []
         totalImages = 0
         iteration = 0
-        for currBatch, currTargetBatch, _ in train_loader:
+        for currBatch, currTargetBatch, pathfile in train_loader:
+            logitsClass = np.zeros((currBatch.shape[0],1)).flatten()
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
+            if nFile is not None:
+                for idx, p in enumerate(pathfile):
+                    gnb = LogisticRegression(C=10,penalty='l1',solver='saga',multi_class='multinomial',max_iter=1000)
+                    cFileName = p.split(os.path.sep)[-1]
+                    cNs = np.array(nFile[cFileName]['neighbours'])
+                    #cNs[:,-1][cNs[:,-1] > 1] = 1
+                    if np.all(cNs[:,0] == cNs[0,0]) and np.all(cNs[:,1] == cNs[0,1]):
+                        logitsClass[idx] = int(cNs[:,-1][0])
+                    else:
+                        for idxN in range(2):
+                            cNs[cNs[:,idxN] == 0,idxN] = 1e-10
+                        gnb.fit(cNs[:,:-1],cNs[:,-1])
+                        logitsClass[idx] = int(gnb.predict(np.array([nFile[cFileName]['va']]))[0])
+
+                labelTr = torch.tensor(logitsClass,dtype=torch.long).to(device)
+
+
             features, classification, _ = model(currBatch)
+
+            if nFile is not None:
+                expected = classification.clone().detach().cpu()
+                fResult = []
+                for valCalc in range(expected.shape[0]):
+                    fResult.append(norm.pdf(expected[valCalc],loc=classesDist[labelTr[valCalc]][0],scale=classesDist[labelTr[valCalc]][1]))
+                expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)                
+
+
             if args.additiveLoss is not None:
                 cLossV = alpha * cLoss(features,currTargetBatch)
                 ceLossV = criterion(classification, currTargetBatch)
@@ -147,21 +186,21 @@ def train():
 
         if bestForFoldTLoss > tLoss:
             ibtl = 'X'
-            fName = '%s_best_val_loss.pth.tar' % ('DAN')
+            fName = '%s_best_val_loss.pth.tar' % ('RESNETATT')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFoldTLoss = tLoss
 
         if bestForFold > lossAvg:
             ibl = 'X'
-            fName = '%s_best_loss.pth.tar' % ('DAN')
+            fName = '%s_best_loss.pth.tar' % ('RESNETATT')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFold = lossAvg
 
         if bestRankForFold < cResult:
             ibr = 'X'
-            fName = '%s_best_ccc.pth.tar' % ('DAN')
+            fName = '%s_best_ccc.pth.tar' % ('RESNETATT')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestRankForFold = cResult
