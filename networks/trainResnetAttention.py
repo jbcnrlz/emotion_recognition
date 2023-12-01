@@ -3,7 +3,7 @@ from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from loss import CenterLoss
+from loss.CenterLoss import CenterLoss
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar
 from networks.ResnetEmotionHead import ResnetEmotionHeadClassifierAttention
@@ -63,6 +63,7 @@ def train():
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
     if args.additiveLoss == 'centerloss':
+        print("Using CenterLoss with ADAM")
         cLoss = CenterLoss(args.numberOfClasses,512).to(device)
         params = list(model.parameters()) + list(cLoss.parameters())
         optimizer = optim.Adam(params,lr=args.learningRate)
@@ -115,23 +116,27 @@ def train():
         model.eval()
         total = 0
         correct = 0
-        loss_val = []        
+        loss_val = []
+        iteration = 0
         with torch.no_grad():
             for data in val_loader:
+                printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),length=50,prefix='Procesing face - testing')
                 images, labels, _ = data
                 features, classification, _ = model(images.to(device))
                 _, predicted = torch.max(classification.data, 1)
+                labels = labels.to(device)
 
                 if args.additiveLoss is not None:
-                    cLossV = alpha * cLoss(features,currTargetBatch)
-                    ceLossV = criterion(classification, currTargetBatch)
+                    cLossV = alpha * cLoss(features,labels)
+                    ceLossV = criterion(classification, labels)
                     loss = cLossV + ceLossV
                 else:
-                    loss = criterion(classification, currTargetBatch)
+                    loss = criterion(classification, labels)
 
                 loss_val.append(loss)
                 total += labels.size(0)
                 correct += (predicted == labels.to(device)).sum().item()
+                iteration += 1
 
         cResult = correct / total        
         tLoss = sum(loss_val) / len(loss_val)
