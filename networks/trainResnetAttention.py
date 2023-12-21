@@ -24,6 +24,7 @@ def train():
     parser.add_argument('--freeze', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--numberOfClasses', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--additiveLoss', help='Adding additive Loss', required=False,default=None)
+    parser.add_argument('--neighsFiles', help='File with neighbours', required=False,default=None)
     args = parser.parse_args()
 
     classesDist = np.array(
@@ -107,32 +108,33 @@ def train():
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
-
+            features, classification, _ = model(currBatch)
             if nFile is not None:
                 for idx, p in enumerate(pathfile):
-                    gnb = LogisticRegression(C=10,penalty='l1',solver='saga',multi_class='multinomial',max_iter=1000)
+                    expected = classification.clone().detach().cpu()
+                    gnb = LogisticRegression(C=10,penalty='l1',solver='saga',multi_class='multinomial',max_iter=100000)
                     cFileName = p.split(os.path.sep)[-1]
                     cNs = np.array(nFile[cFileName]['neighbours'])
-                    #cNs[:,-1][cNs[:,-1] > 1] = 1
-                    if np.all(cNs[:,0] == cNs[0,0]) and np.all(cNs[:,1] == cNs[0,1]):
-                        logitsClass[idx] = int(cNs[:,-1][0])
+                    if (len(np.unique(cNs[:,-1])) > 1):
+                        #cNs[:,-1][cNs[:,-1] > 1] = 1
+                        if np.all(cNs[:,0] == cNs[0,0]) and np.all(cNs[:,1] == cNs[0,1]):
+                            logitsClass[idx] = int(cNs[:,-1][0])
+                        else:
+                            for idxN in range(2):
+                                cNs[cNs[:,idxN] == 0,idxN] = 1e-10
+                            gnb.fit(cNs[:,:-1],cNs[:,-1])
+                            logitsClass[idx] = int(gnb.predict(np.array([nFile[cFileName]['va']]))[0])
                     else:
-                        for idxN in range(2):
-                            cNs[cNs[:,idxN] == 0,idxN] = 1e-10
-                        gnb.fit(cNs[:,:-1],cNs[:,-1])
-                        logitsClass[idx] = int(gnb.predict(np.array([nFile[cFileName]['va']]))[0])
+                        logitsClass[idx] = currTargetBatch[idx].clone().detach().cpu()
 
                 labelTr = torch.tensor(logitsClass,dtype=torch.long).to(device)
-
-
-            features, classification, _ = model(currBatch)
 
             if nFile is not None:
                 expected = classification.clone().detach().cpu()
                 fResult = []
                 for valCalc in range(expected.shape[0]):
                     fResult.append(norm.pdf(expected[valCalc],loc=classesDist[labelTr[valCalc]][0],scale=classesDist[labelTr[valCalc]][1]))
-                expected = torch.tensor(np.array(fResult,dtype=np.float32)).to(device)                
+                classification = classification * torch.tensor(np.array(fResult,dtype=np.float32)).to(device)
 
 
             if args.additiveLoss is not None:
