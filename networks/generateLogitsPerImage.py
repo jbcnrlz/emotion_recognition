@@ -25,10 +25,7 @@ def test():
         ax[1].text(150,200,emotionsLabels[labels[idx]],bbox={'facecolor': 'red' if l.argmax() != labels[idx] else 'green', 'alpha': 1, 'pad': 10})        
         imageSaved.append('imagesLogits/%s_%s_logits.png'%('wrong' if l.argmax() != labels[idx] else 'right',imName))
         plt.savefig(imageSaved[-1])
-        plt.close()     
-
-    pilIm = [ Image.open(fIm) for fIm in imageSaved ]
-    pilIm[0].save('imagesLogits/savedImages.pdf','PDF',resolution=100,save_all=True,append_images=pilIm[1:])
+        plt.close()    
 
 
 if __name__ == '__main__':
