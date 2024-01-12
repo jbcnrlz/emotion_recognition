@@ -8,6 +8,7 @@ from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
 from networks.ResnetEmotionHead import ResnetEmotionHeadClassifierAttention
 from DatasetClasses.AffWild2 import AFF2Data
+from DatasetClasses.JoinedDataset import JoinedDataset
 from torch import nn, optim
 from sklearn.linear_model import LogisticRegression
 from scipy.stats import norm
@@ -25,6 +26,7 @@ def train():
     parser.add_argument('--numberOfClasses', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--additiveLoss', help='Adding additive Loss', required=False,default=None)
     parser.add_argument('--neighsFiles', help='File with neighbours', required=False,default=None)
+    parser.add_argument('--trainDataset', help='File with neighbours', required=False,default="affectnet")
     args = parser.parse_args()
 
     classesDist = np.array(
@@ -39,7 +41,7 @@ def train():
     writer = SummaryWriter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
-    model = ResnetEmotionHeadClassifierAttention(classes=8, resnetModel='resnet18')
+    model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
     if args.freeze:
         print("Freezing weights")
         for param in model.parameters():
@@ -66,10 +68,14 @@ def train():
         )
     ])}
     print("Loading trainig set")
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',exchangeLabel=None)
+    if args.trainDataset == 'affectnet':
+        dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',exchangeLabel=None)        
+    elif args.trainDataset == 'joineddataset':
+        dataset = JoinedDataset(args.pathBase,transform=data_transforms['train'])
+
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
 
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None)
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None,loadLastLabel=(args.trainDataset != 'joineddataset'))
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
     if args.additiveLoss == 'centerloss':
@@ -94,6 +100,7 @@ def train():
     bestForFold = bestForFoldTLoss = 500000
     bestRankForFold = -1
     alpha = 0.1
+    nFile = None
     if args.neighsFiles is not None:
         nFile = loadNeighFiles(args.neighsFiles)        
 

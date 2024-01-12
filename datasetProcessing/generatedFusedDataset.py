@@ -19,7 +19,7 @@ def main():
     parser.add_argument('--rangeOfEmotions', help='Quantity of emotions', type=int, required=True)
     args = parser.parse_args()    
 
-    pathForAnnAffWild = "D:\\Affwild\\annotations\\EXPR_Set\\"
+    pathForAnnAffWild = "/home/joaocardia/Affwild/annotations/EXPR_Set"
     frameSize = 30
 
     if os.path.exists(args.newDatasetPath):
@@ -32,7 +32,7 @@ def main():
         transforms.ToTensor(),
     ])
 
-    dataset = AffectNet(afectdata=os.path.join("D:\\AffectNet",'train_set'),transform=data_transforms,typeExperiment='EXP',exchangeLabel=None)
+    dataset = AffectNet(afectdata=os.path.join("/home/joaocardia/AffectNet",'train_set'),transform=data_transforms,typeExperiment='EXP',exchangeLabel=None)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=50, shuffle=False)
 
     print("Copying Affectnet")
@@ -65,10 +65,10 @@ def main():
                 while(secondImages[chooseInterval] < 0):
                     chooseInterval = random.randint(0,len(secondImages)-1)
                 
-                if os.path.exists(os.path.join("D:\\Affwild\\cropped_aligned",fileName,"%05d.jpg" % (fNumber + chooseInterval))):
-                    print("Copying file %s" % (os.path.join("D:\\Affwild\\cropped_aligned",fileName,"%05d.jpg" % (fNumber + chooseInterval))))
+                if os.path.exists(os.path.join("/home/joaocardia/Affwild/cropped_aligned",fileName,"%05d.jpg" % (fNumber + chooseInterval))):
+                    print("Copying file %s" % (os.path.join("/home/joaocardia/Affwild/cropped_aligned",fileName,"%05d.jpg" % (fNumber + chooseInterval))))
                     shutil.copyfile(
-                        os.path.join("D:\\Affwild\\cropped_aligned",fileName,"%05d.jpg" % (fNumber + chooseInterval)),
+                        os.path.join("/home/joaocardia/Affwild/cropped_aligned",fileName,"%05d.jpg" % (fNumber + chooseInterval)),
                         os.path.join(args.newDatasetPath,str(secondImages[chooseInterval]),"%s%05d.jpg" % (fileName,fNumber + chooseInterval))
                     )
 

@@ -605,3 +605,46 @@ class FeatureEnhanceRGB(nn.Module):
             b_f = self.deform_convs[idx](b_f)
 
         return r_f, g_f, b_f
+class FeatureEnhanceWindow(nn.Module):
+
+    def __init__(self,
+                 in_channels=256,
+                 out_channels=256):
+        super(FeatureEnhanceWindow, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        self.pams = PAM_Module(self.in_channels)
+        self.cam_cals = CAM_Calculate(self.in_channels)
+        self.cam_uses = CAM_Use(self.in_channels)
+        self.deform_convs = nn.Conv2d(self.in_channels, self.out_channels, kernel_size=3, padding=1)
+
+    def forward(self, image):
+        imSpFeat = self.pams(image)
+        imageReshaped = image.reshape((image.shape[0],image.shape[1],4,-1))
+        attMap = imSpFeat.clone()
+        for i in range(0,imageReshaped.shape[-1],4):
+            wdtWindow = i+4 if i+4 < imageReshaped.shape[-1] else imageReshaped.shape[-1]
+            slicedWindow = imageReshaped[:,:,:,i:wdtWindow]            
+            rAttention = self.cam_cals(slicedWindow)
+            rr_sc_feat = self.cam_uses(imSpFeat, rAttention)
+            attMap += rr_sc_feat
+        return attMap
+        '''
+        r_sp_feat = self.pams(r_f)
+
+        r_attention = self.cam_cals(r_f)
+        g_attention = self.cam_cals(g_f)
+        b_attention = self.cam_cals(b_f)
+
+        rr_sc_feat = self.cam_uses(r_f, r_attention)
+        rg_sc_feat = self.cam_uses(r_f, g_attention)
+        rb_sc_feat = self.cam_uses(r_f, b_attention)
+
+        r_f = r_sp_feat + rr_sc_feat + rg_sc_feat + rb_sc_feat
+
+        r_f = self.deform_convs(r_f)
+
+
+        return r_f, g_f, b_f
+        '''

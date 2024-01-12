@@ -6,7 +6,7 @@ from helper.function import getDirectoriesInPath, getFilesInPath, printProgressB
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
-    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151,exchangeLabel=None):
+    def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151,exchangeLabel=None,loadLastLabel=True):
         self.exchangeLabel = exchangeLabel
         self.terms = None if typeExperiment != 'TERMS' else self.loadTermsFile(termsQuantity)
         self.transform = transform
@@ -24,6 +24,8 @@ class AffectNet(data.Dataset):
                 self.label.append([valValue,aroValue])
             elif typeExperiment == "EXP":
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
+                if int(currLabel) == 7 and not loadLastLabel:
+                    continue
                 self.label.append(int(currLabel))
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
