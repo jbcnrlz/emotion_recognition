@@ -29,11 +29,12 @@ def test():
     parser.add_argument('--dataset', help='Dataset for feature extractoin', required=False, default="OMG")
     parser.add_argument('--typeOutput', help='Average ou VS per frame', required=False, default="average")
     parser.add_argument('--datasetPart', help='Only for AffWild - train or validation', required=False, default="Validation_Set")
+    parser.add_argument('--classesQuantity', help='Only for AffWild - train or validation', required=False, type=int, default=8)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
-    model = ResnetEmotionHeadClassifierAttention(classes=8, resnetModel='resnet18')
+    model = ResnetEmotionHeadClassifierAttention(classes=args.classesQuantity, resnetModel='resnet18')
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to(device)

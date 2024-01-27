@@ -29,11 +29,12 @@ def test():
     parser.add_argument('--rawData', help='Should save raw data?', required=False, default=None)
     parser.add_argument('--typeOutput', help='Average ou VS per frame', required=False, default="average")
     parser.add_argument('--datasetPart', help='Only for AffWild - train or validation', required=False, default="Validation_Set")
+    parser.add_argument('--classNumber', help='Only for AffWild - train or validation', required=False, default=8,type=int)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
-    model = DANVA(num_class=8, num_head=4,pretrained=args.resnetPretrained)
+    model = DANVA(num_class=args.classNumber, num_head=4,pretrained=args.resnetPretrained)
     checkpoint = torch.load(args.weights)
     model.convertToVA()
     model.load_state_dict(checkpoint['state_dict'],strict=True)
