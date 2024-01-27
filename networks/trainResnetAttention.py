@@ -40,7 +40,7 @@ def train():
         os.makedirs(args.output)
     writer = SummaryWriter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Loading model")
+    print("Loading model -- Using " + str(device))
     model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
     if args.freeze:
         print("Freezing weights")
@@ -54,18 +54,12 @@ def train():
             transforms.Resize((256, 256)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.562454871481894, 0.8208898956471341, 0.395364053852456],
-                std=[0.43727472598867456, 0.31812502566122625, 0.3796120355707891]
-            )
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
         ]),
     'test' : transforms.Compose([
         transforms.Resize((256,256)),
         transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[0.562454871481894, 0.8208898956471341, 0.395364053852456],
-            std=[0.43727472598867456, 0.31812502566122625, 0.3796120355707891]
-        )
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])}
     print("Loading trainig set")
     if args.trainDataset == 'affectnet':
