@@ -217,3 +217,5 @@ vae_emotion_only_crossentropy/
 vaeLearnedFeatures/
 .vscode/launch.json
 imagesLogits/
+imagesLogits_8/
+logitsPOSTERV2/

@@ -1,5 +1,6 @@
-import argparse, torch, os, sys
+import argparse, torch, os, sys, numpy as np
 from torchvision import transforms
+from torch import nn
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DAN.networks.dan import DAN
@@ -21,7 +22,7 @@ def test():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
-    model = DAN(num_head=4, num_class=8, pretrained=None)
+    model = DAN(num_head=4, num_class=7, pretrained=None)
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['model_state_dict'],strict=True)
     model.to(device)
@@ -34,18 +35,47 @@ def test():
                                  std=[0.229, 0.224, 0.225]),
     ])
     print("Loading test set")
-    dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms)
+    dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms,typeExperiment="EXP")
     val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)
 
     model.eval()
     outputFile = []
+    predictions = None
+    pathFile = []
+    labelsFile = []
+    soft =  nn.Softmax(dim=1)
     with torch.no_grad():
         for idxBtc, data in enumerate(val_loader):
             print("Extraction Batch %d" % (idxBtc))
-            images, _, pathsForFiles = data
-            _, _, attHeads = model(images.to(device))
+            images, labels, pathsForFiles = data
+            logits, _, attHeads = model(images.to(device))
             for f in range(attHeads.shape[0]):
                 outputFile.append((attHeads[f].sum(dim=0).cpu(),pathsForFiles[f]))
+
+            prediction = soft(logits).cpu().detach().numpy()
+            predictions = prediction if predictions is None else np.concatenate((prediction,predictions))
+            pathFile = pathFile + list(pathsForFiles)
+            labelsFile = labelsFile + list(np.array(labels))
+
+
+
+    vaPerUtt = {}
+    for idxF, file in enumerate(pathFile):            
+        dirUtt = file
+        if dirUtt not in vaPerUtt.keys():
+            vaPerUtt[dirUtt] = {'logits' : [predictions[idxF]], 'label' : labelsFile[idxF]}
+        else:
+            vaPerUtt[dirUtt]['logits'].append(predictions[idxF])
+
+    values = []
+    utt = []
+    lbl = []
+    for k in vaPerUtt:
+        values.append(vaPerUtt[k]['logits'][0])
+        utt.append(k)
+        lbl.append(vaPerUtt[k]['label'])
+    saveToCSV(values,utt,lbl,"logitsDAN.csv")
+
 
     generateCSVFile(args.output,outputFile)
 
@@ -55,6 +85,15 @@ def generateCSVFile(filePath,features):
         fp.write(','.join(list(map(str,list(range(features[0][0].shape[0])))))+',%s\n' % ('filePath'))
         for f in features:
             fp.write(','.join(list(map(str,f[0].tolist()))) + ',%s\n' % (f[1]))
+
+
+def saveToCSV(preds,files,labels,pathCSV):
+    with open(pathCSV,'w') as pcsv:
+        pcsv.write('%s,file,label\n' % (','.join([str(f) for f in range(len(preds[0]))])))
+        for idx, p in enumerate(preds):
+            for fp in p:
+                pcsv.write('%f,' % (fp))
+            pcsv.write("%s,%s\n" % (files[idx],labels[idx]))
 
 
 if __name__ == '__main__':

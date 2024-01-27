@@ -6,6 +6,7 @@ from helper.function import getDirectoriesInPath, getFilesInPath, printProgressB
 
 class WFD(data.Dataset):    
     def __init__(self, afectdata, transform,typeLabel='categ'):
+        super(WFD,self).__init__()
         self.typeLabel = typeLabel
         self.emotionsIndex = ['Anger','Fear','Disgust','Sadness','Neutral','Happiness','Surprise','Other','Unknown']
         self.transform = transform        
@@ -14,7 +15,8 @@ class WFD(data.Dataset):
         self.emotionsAnnotated = []
         self.filesPath = []
         faces = getFilesInPath(os.path.join(afectdata,'WFD Stimuli'),imagesOnly=True)
-        for f in faces:
+        for idx, f in enumerate(faces):
+            printProgressBar(idx,len(faces),length=50,prefix='Loading Faces...')
             fileName = f.split(os.path.sep)[-1]
             self.emotionsAnnotated.append(list(adCSV[adCSV['Image'] == fileName]['Emotion Category']))
             self.label.append(list(adCSV[adCSV['Image'] == fileName]['Most Selected Emotion'])[0])
