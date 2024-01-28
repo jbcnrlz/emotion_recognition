@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from loss.CenterLoss import CenterLoss
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
-from networks.ResnetEmotionHead import ResnetEmotionHeadClassifierAttention
+from networks.ResnetEmotionHead import ResnetEmotionHeadClassifierAttention, ResnetEmotionHeadDANImplementation
 from DatasetClasses.AffWild2 import AFF2Data
 from DatasetClasses.JoinedDataset import JoinedDataset
 from torch import nn, optim
@@ -41,7 +41,8 @@ def train():
     writer = SummaryWriter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model -- Using " + str(device))
-    model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
+    #model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
+    model = ResnetEmotionHeadDANImplementation(classes=args.numberOfClasses)
     if args.freeze:
         print("Freezing weights")
         for param in model.parameters():

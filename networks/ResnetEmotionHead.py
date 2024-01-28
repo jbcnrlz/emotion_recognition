@@ -1,7 +1,11 @@
 from torchvision import models
 from torch import nn
 from networks.attentionModule import FeatureEnhanceNoCross, FeatureEnhanceWindow
-import torch
+from torch.nn import functional as F
+import torch, os, sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from DAN.networks.dan import CrossAttentionHead
 class ResnetEmotionHead(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=False,vaGuidance=False) -> None:        
         super(ResnetEmotionHead,self).__init__()
@@ -35,6 +39,36 @@ class ResnetEmotionHead(nn.Module):
         feats = self.innerResnetModel(x).view((-1,512))
         va = self.vaModule(feats)
         return feats, va
+
+class ResnetEmotionHeadDANImplementation(nn.Module):
+    def __init__(self,classes,pretrained=None) -> None:        
+        super(ResnetEmotionHeadDANImplementation,self).__init__()
+        self.innerResnetModel = models.resnet18(weights=None)
+        if (pretrained is not None):
+            checkpoint = torch.load('/home/joaocardia/Projects/emotion_recognition/DAN/models/resnet18_msceleb.pth')
+            self.innerResnetModel.load_state_dict(checkpoint['state_dict'],strict=True)
+        
+        modules=list(self.innerResnetModel.children())
+        beforAttention = modules[:-2]
+        self.innerResnetModel=nn.Sequential(*beforAttention)
+
+        self.selfAttentionMoule = CrossAttentionHead()
+
+        self.softmax = nn.Sequential(
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(512, classes,bias=False)
+        )
+
+        self.batchNorm = nn.BatchNorm1d(classes)
+
+    def forward(self, x):        
+        feats = self.innerResnetModel(x)
+        att = self.selfAttentionMoule(feats)
+        va = self.softmax(att)
+        va = self.batchNorm(va)
+        return feats, va, att
+
 
 class ResnetEmotionHeadClassifierAttention(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=None) -> None:        
