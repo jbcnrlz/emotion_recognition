@@ -70,3 +70,16 @@ class AffectNet(data.Dataset):
             return image, label, self.filesPath[idx], valenceLabel
         else:
             return image, label, self.filesPath[idx]
+        
+    def sample(self,classes,exclude):
+        returnValue = [0] * (max(classes) + 1)
+        for c in classes:
+            availble = [ idxc for idxc, cl in enumerate(self.label) if cl == c]
+            sortedIdx = random.randint(0,len(availble)-1)
+            while self.filesPath[availble[sortedIdx]] in exclude:
+                sortedIdx = random.randint(0,len(availble)-1)
+
+            i,_,_ = self.__getitem__(availble[sortedIdx])
+            returnValue[c] = i
+
+        return torch.stack(returnValue)
