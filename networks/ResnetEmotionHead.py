@@ -84,7 +84,7 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         modules=list(self.innerResnetModel.children())
         beforAttention = modules[:-2]
         self.innerResnetModel=nn.Sequential(*beforAttention)
-
+        self.batchNorm = nn.BatchNorm2d(512)
         self.selfAttentionMoule = FeatureEnhanceWindow(512,512)
         #self.selfAttentionMoule = FeatureEnhanceNoCross(512,512)
         #self.selfAttentionMoule = FeatureEnhanceRGB(512,512)

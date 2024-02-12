@@ -41,8 +41,8 @@ def train():
     writer = SummaryWriter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model -- Using " + str(device))
-    #model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
-    model = ResnetEmotionHeadDANImplementation(classes=args.numberOfClasses)
+    model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
+    #model = ResnetEmotionHeadDANImplementation(classes=args.numberOfClasses)
     if args.freeze:
         print("Freezing weights")
         for param in model.parameters():
