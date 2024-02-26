@@ -233,3 +233,12 @@ vaeLearnedFeatures_good_bad_neutral/
 vaeLearnedFeatures_noclass/
 vaeLearnedFeatures_non_segmented_neutral/
 vaeLearnedFeatures_test/
+anotations.txt
+confusionpath.png
+joinedAffWildNet.rar
+results_emotions.xlsx
+resnet_emotion_8labels/
+vae_emotion/
+vaeForEmotion/
+vaeLearnedFeatures_non_segmented_neutral_usinglabels/
+wts_scheme/
