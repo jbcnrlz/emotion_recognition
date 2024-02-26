@@ -14,19 +14,16 @@ from torch import nn, optim
 from sklearn.linear_model import LogisticRegression
 from scipy.stats import norm
 
-def getSamples(features,targets,closeList):
-    returnFeatures = torch.empty([2] + list(features.shape))
-    for idx, t in enumerate(targets):
-        if t == 0:
-            returnFeatures[0][idx] = torch.empty(features.shape[1])
-            returnFeatures[1][idx] = features[idx]
+def getLogits(classSimilarity):
+    returnLogits = np.zeros((len(classSimilarity),len(classSimilarity)))
+    for currClass, c in enumerate(classSimilarity):
+        if len(c[0]) == 1 and c[0][0] == currClass:
+            returnLogits[currClass][0] = 1
         else:
-            for type, closes in enumerate(closeList[t]):
-                featuresClose = sum(targets == i for i in closes).bool()
-                sampledSimilar = features[featuresClose]
-                returnFeatures[type][idx] = sampledSimilar[random.randint(0,sampledSimilar.shape[0]-1)]
+            validLabels = [currClass] + c[0]
+            returnLogits[currClass][validLabels] = 1
 
-    return returnFeatures[0], returnFeatures[1]
+    return returnLogits.astype(np.int32)
 
 
 
@@ -45,22 +42,21 @@ def train():
     parser.add_argument('--neighsFiles', help='File with neighbours', required=False,default=None)
     parser.add_argument('--trainDataset', help='File with neighbours', required=False,default="affectnet")
     args = parser.parse_args()
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     classesDist = [
-            [[0],[]],   
-            [[3],[2,4,5,6,7]],  
+            [[0],[1,2,3,4,5,6]],   
+            [[3],[2,4,5,6]],  
             [[4,5,6],[1,3]],
-            [[1],[2,4,5,6,7]],
-            [[2,5,6,7],[1,3]],
-            [[2,4,6,7],[1,3]],
-            [[2,4,5,7],[1,3]],
-            [[2,4,5,6],[1,3]],
+            [[1],[2,4,5,6,]],
+            [[2,5,6,],[1,3]],
+            [[2,4,6],[1,3]],
+            [[2,4,5],[1,3]],
+            #[[2,4,5,6],[1,3]],
         ]
-
+    labelsToCompare = torch.from_numpy(getLogits(classesDist)).type(torch.LongTensor).to(device)
     if not os.path.exists(args.output):
         os.makedirs(args.output)
-    writer = SummaryWriter()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
     model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
     if args.freeze:
@@ -104,11 +100,11 @@ def train():
         elif args.optimizer == 'adam':
             optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
 
-    eucLoss = EuclideanLoss().to(device)
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
     criterion = nn.CrossEntropyLoss().to(device)
 
-    similarityScore = nn.CosineEmbeddingLoss().to(device )
+    #similarityScore = nn.CosineEmbeddingLoss().to(device)
+    multiLabelLoss = nn.MultiLabelSoftMarginLoss().to(device)
 
     os.system('cls' if os.name == 'nt' else 'clear')
     print("Started traning")
@@ -124,14 +120,14 @@ def train():
         totalImages = 0
         iteration = 0
         for currBatch, currTargetBatch, pathfile in train_loader:
-            samplesFortesting = dataset.sample(classes=list(range(len(classesDist))),exclude=pathfile).to(device)
+            #samplesFortesting = dataset.sample(classes=list(range(args.numberOfClasses)),exclude=pathfile).to(device)
+            #similarIndexes = [classesDist[cClose][0][random.randint(0,len(classesDist[cClose][0])-1)] for cClose in currTargetBatch]
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
-            currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
-            features, classification, _ = model(currBatch)
+            currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)            
 
-            similarIndexes = [classesDist[cClose][0][random.randint(0,len(classesDist[cClose][0])-1)] for cClose in currTargetBatch]
-            featuresSimilar, _, _ = model(samplesFortesting[similarIndexes])
+            features, classification, _ = model(currBatch)            
+            #featuresSimilar, _, _ = model(samplesFortesting[similarIndexes])
 
             #similar, nonSimilar = getSamples(features,currTargetBatch,classesDist)
 
@@ -140,7 +136,9 @@ def train():
                 ceLossV = criterion(classification, currTargetBatch)
                 loss = cLossV + ceLossV
             else:
-                loss = criterion(classification, currTargetBatch) + similarityScore(features,featuresSimilar,torch.ones(features.shape[0]).to(device))
+                #loss = criterion(classification, currTargetBatch) + similarityScore(features,featuresSimilar,torch.ones(features.shape[0]).to(device))
+                #loss = criterion(classification, currTargetBatch)
+                loss = multiLabelLoss(classification, labelsToCompare[currTargetBatch])
 
             optimizer.zero_grad()
             loss.backward()
@@ -170,7 +168,8 @@ def train():
                     ceLossV = criterion(classification, labels)
                     loss = cLossV + ceLossV
                 else:
-                    loss = criterion(classification, labels)
+                    #loss = criterion(classification, labels)
+                    loss = multiLabelLoss(classification, labelsToCompare[labels ])
 
                 loss_val.append(loss)
                 total += labels.size(0)
