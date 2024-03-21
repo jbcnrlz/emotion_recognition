@@ -242,3 +242,8 @@ vae_emotion/
 vaeForEmotion/
 vaeLearnedFeatures_non_segmented_neutral_usinglabels/
 wts_scheme/
+logits_resnet_noew/
+logitsDIFF/
+resnetEmotionRelative_diffDist/
+resnetEmotionRelative_diffDist_CEL/
+resnetEmotionRelative_diffDist_CEL_exp2/
