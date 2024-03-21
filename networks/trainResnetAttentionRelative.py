@@ -46,11 +46,11 @@ def train():
     classesDist = [
             [[0],[1,2,3,4,5,6]],   
             [[3],[2,4,5,6]],  
-            [[4,5,6],[1,3]],
+            [[2],[1,3]],
             [[1],[2,4,5,6,]],
-            [[2,5,6,],[1,3]],
-            [[2,4,6],[1,3]],
-            [[2,4,5],[1,3]],
+            [[5,6,],[1,3]],
+            [[4,6],[1,3]],
+            [[4,5],[1,3]],
             #[[2,4,5,6],[1,3]],
         ]
     labelsToCompare = torch.from_numpy(getLogits(classesDist)).type(torch.LongTensor).to(device)
@@ -112,7 +112,8 @@ def train():
     bestForFold = bestForFoldTLoss = 500000
     bestRankForFold = -1
     alpha = 0.1
-
+    wtsCEL = 0.6
+    wtsMLL = 0.4
     for ep in range(args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
@@ -138,7 +139,7 @@ def train():
             else:
                 #loss = criterion(classification, currTargetBatch) + similarityScore(features,featuresSimilar,torch.ones(features.shape[0]).to(device))
                 #loss = criterion(classification, currTargetBatch)
-                loss = multiLabelLoss(classification, labelsToCompare[currTargetBatch])
+                loss = (wtsCEL * criterion(classification, currTargetBatch)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[currTargetBatch]))
 
             optimizer.zero_grad()
             loss.backward()
@@ -169,7 +170,7 @@ def train():
                     loss = cLossV + ceLossV
                 else:
                     #loss = criterion(classification, labels)
-                    loss = multiLabelLoss(classification, labelsToCompare[labels ])
+                    loss = (wtsCEL * criterion(classification, labels)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[labels]))
 
                 loss_val.append(loss)
                 total += labels.size(0)
