@@ -19,7 +19,7 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     data_transforms = transforms.Compose([
-        #transforms.Resize((224,224)),
+        transforms.Resize((256,256)),
         transforms.ToTensor(),
     ])
     if args.dataset == 'affectnet':
@@ -43,7 +43,7 @@ def main():
         for img,label,pathfile in val_loader:
             printProgressBar(iteration,len(datasetVal.filesPath) // 50,length=50,prefix='Procesing face - validating')
             img = img.to(device)
-            features, logits = model(img)
+            features, logits, _ = model(img)
             for f in range(features.shape[0]):
                 outputFile.append((features[f].cpu(),pathfile[f]))
 

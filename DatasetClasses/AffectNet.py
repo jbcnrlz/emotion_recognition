@@ -12,6 +12,7 @@ class AffectNet(data.Dataset):
         self.transform = transform
         self.label = []
         self.filesPath = []
+        self.seconLabel = []
         self.typeExperiment = typeExperiment
         quantitylabels = None
         faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
@@ -27,6 +28,14 @@ class AffectNet(data.Dataset):
                 if int(currLabel) == 7 and not loadLastLabel:
                     continue
                 self.label.append(int(currLabel))
+            elif typeExperiment == "BOTH":
+                currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
+                if int(currLabel) == 7 and not loadLastLabel:
+                    continue
+                valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
+                aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+                self.label.append(currLabel)
+                self.seconLabel.append([valValue,aroValue])
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
@@ -57,10 +66,13 @@ class AffectNet(data.Dataset):
         valenceLabel = None
         if self.typeExperiment == 'TERMS':
             label = torch.from_numpy(np.array(self.label[idx])).to(torch.float32)
-        elif self.typeExperiment == 'EXP':            
+        elif self.typeExperiment == 'EXP' or self.typeExperiment == 'BOTH':
             if self.exchangeLabel is not None:
                 valenceLabel = torch.from_numpy(np.array(self.exchangeLabel[self.label[idx]])).to(torch.long)
-            label = torch.from_numpy(np.array(self.label[idx])).to(torch.long)
+            if self.typeExperiment == 'BOTH':
+                valenceLabel = torch.from_numpy(np.array( [self.seconLabel[idx][0].astype(np.float32),self.seconLabel[idx][1].astype(np.float32)] )).to(torch.float32)
+            label = torch.from_numpy(np.array(self.label[idx]).astype(np.uint8)).to(torch.long)
+
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:
