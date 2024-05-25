@@ -92,10 +92,21 @@ class ResnetEmotionHeadClassifierAttention(nn.Module):
         self.afterAttention = nn.Sequential(*modules[-2:-1])
 
         self.softmax = nn.Sequential(
-            nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(512, classes,bias=False)
+            nn.Linear(512, classes,bias=False),
+            nn.Sigmoid()
         )
+
+    def warmUP(self):
+        self.innerResnetModel.requires_grad = False
+        self.afterAttention.requires_grad = False
+        self.softmax.requires_grad = False
+
+    def afterWarmUp(self):
+        self.innerResnetModel.requires_grad = True
+        self.afterAttention.requires_grad = True
+        self.softmax.requires_grad = True
+
     def forward(self, x):        
         feats = self.innerResnetModel(x)
         att = self.selfAttentionMoule(feats)

@@ -102,9 +102,14 @@ def train():
     alpha = 0.1
     wtsCEL = 0.6
     wtsMLL = 0.4
+    model.warmUP()
     for ep in range(args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
+
+        if ep == 5:
+            model.afterWarmUp()
+
         lossAcc = []
         totalImages = 0
         iteration = 0
