@@ -14,19 +14,9 @@ from torch import nn, optim
 from sklearn.linear_model import LogisticRegression
 from scipy.stats import norm
 
-def getLogits(classSimilarity):
-    returnLogits = np.zeros((len(classSimilarity),len(classSimilarity)))
-    for currClass, c in enumerate(classSimilarity):
-        if len(c[0]) == 1 and c[0][0] == currClass:
-            returnLogits[currClass][:] = 0.03
-            returnLogits[currClass][0] = 0.82            
-        else:
-            validLabels = [currClass] + c[0]
-            returnLogits[currClass][:] = 0.1 / len(validLabels)
-            returnLogits[currClass][currClass] = 0.6
-            returnLogits[currClass][c[0]] = 0.3 / len(c[0])                    
-
-    return returnLogits.astype(np.float64)
+def getRanks(vaLabel,vaDists):
+    dists = torch.cdist(vaLabel,vaDists,p=2)
+    return dists
 
 
 
@@ -46,17 +36,16 @@ def train():
     parser.add_argument('--trainDataset', help='File with neighbours', required=False,default="affectnet")
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    classesDist = [
-            [[0],[1,2,3,4,5,6]],   
-            [[3],[2,4,5,6]],  
-            [[2],[1,3]],
-            [[1],[2,4,5,6,]],
-            [[5,6,],[1,3]],
-            [[4,6],[1,3]],
-            [[4,5],[1,3]],
-            #[[2,4,5,6],[1,3]],
-        ]
-    labelsToCompare = torch.from_numpy(getLogits(classesDist)).type(torch.FloatTensor).to(device)
+    classesDist = torch.from_numpy(np.array([
+        [0,0],
+        [0.81,0.51],
+        [-0.63,-0.27],
+        [0.4,0.67],
+        [-0.64,0.6],
+        [-0.6,0.35],
+        [-0.51,0.59],
+        [-0.23,0.31]
+    ])).type(torch.FloatTensor).to(device)
     if not os.path.exists(args.output):
         os.makedirs(args.output)
     writer = SummaryWriter()    
@@ -82,14 +71,10 @@ def train():
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])}
     print("Loading trainig set")
-    if args.trainDataset == 'affectnet':
-        dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',exchangeLabel=None,loadLastLabel=(args.trainDataset != 'joineddataset'))
-    elif args.trainDataset == 'joineddataset':
-        dataset = JoinedDataset(args.pathBase,transform=data_transforms['train'])
-
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='BOTH',exchangeLabel=None)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
 
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None,loadLastLabel=(args.trainDataset != 'joineddataset'))
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='BOTH',exchangeLabel=None)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
     if args.additiveLoss == 'centerloss':
@@ -117,23 +102,22 @@ def train():
     alpha = 0.1
     wtsCEL = 0.6
     wtsMLL = 0.4
+    model.warmUP()
     for ep in range(args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
+
+        if ep == 5:
+            model.afterWarmUp()
+
         lossAcc = []
         totalImages = 0
         iteration = 0
-        for currBatch, currTargetBatch, pathfile in train_loader:
-            #samplesFortesting = dataset.sample(classes=list(range(args.numberOfClasses)),exclude=pathfile).to(device)
-            #similarIndexes = [classesDist[cClose][0][random.randint(0,len(classesDist[cClose][0])-1)] for cClose in currTargetBatch]
+        for currBatch, currTargetBatch, pathfile, vaBatch in train_loader:
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
-            currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)            
-
-            features, classification, _ = model(currBatch)            
-            #featuresSimilar, _, _ = model(samplesFortesting[similarIndexes])
-
-            #similar, nonSimilar = getSamples(features,currTargetBatch,classesDist)
+            currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
+            features, classification, _ = model(currBatch)
 
             if args.additiveLoss is not None:
                 cLossV = alpha * cLoss(features,currTargetBatch)
@@ -144,7 +128,8 @@ def train():
                 #loss = criterion(classification, currTargetBatch)
                 #loss = (wtsCEL * criterion(classification, currTargetBatch)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[currTargetBatch]))
                 #loss = criterion(classification, currTargetBatch)
-                loss = neuralNDCG(classification,labelsToCompare[currTargetBatch])
+                currRanking = getRanks(vaBatch.to(device),classesDist) 
+                loss = rankNet(classification,currRanking) * 0.4 + 0.6 * criterion(classification, currTargetBatch)
 
             optimizer.zero_grad()
             loss.backward()
@@ -164,7 +149,7 @@ def train():
         with torch.no_grad():
             for data in val_loader:
                 printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),length=50,prefix='Procesing face - testing')
-                images, labels, _ = data
+                images, labels, _, vaBatch = data
                 features, classification, _ = model(images.to(device))
                 _, predicted = torch.max(classification.data, 1)
                 labels = labels.to(device)
@@ -176,8 +161,9 @@ def train():
                 else:
                     #loss = criterion(classification, labels)
                     #loss = (wtsCEL * criterion(classification, labels)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[labels]))
-                    #loss = criterion(classification, labels)
-                    loss = neuralNDCG(classification,labelsToCompare[labels])
+                    #loss = criterion(classification, labels)                    
+                    currRanking = getRanks(vaBatch.to(device),classesDist) 
+                    loss = rankNet(classification,currRanking) * 0.4 + 0.6 * criterion(classification, labels)
 
                 loss_val.append(loss)
                 total += labels.size(0)
