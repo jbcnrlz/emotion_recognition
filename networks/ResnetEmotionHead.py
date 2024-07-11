@@ -69,6 +69,17 @@ class ResnetEmotionHeadDANImplementation(nn.Module):
         va = self.batchNorm(va)
         return feats, va, att
 
+class SmallClassified(nn.Module):
+    def __init__(self,classes) -> None:
+        super(SmallClassified,self).__init__()
+        self.softmax = nn.Sequential(
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(512, classes,bias=False)
+        )
+
+    def forward(self, x):
+        return self.softmax(x)
 
 class ResnetEmotionHeadClassifierAttention(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=None) -> None:        

@@ -43,10 +43,8 @@ def test():
     data_transforms = transforms.Compose([
         transforms.Resize((256,256)),
         transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[0.562454871481894, 0.8208898956471341, 0.395364053852456],
-            std=[0.43727472598867456, 0.31812502566122625, 0.3796120355707891]
-        )])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+        ])
     print("Loading test set")
     if args.dataset == 'OMG':
         dataset = OMGData(omgData=args.pathBase,annotationFile=args.annotationFile,transform=data_transforms)
@@ -70,13 +68,13 @@ def test():
             print("Extraction Batch %d" % (idxBtc))
             images, labels, pathsForFiles = data
             _, outputs, _ = model(images.to(device))
-            outputs = soft(outputs)
+            #outputs = soft(outputs)
 
             prediction = outputs.cpu().detach().numpy()
             predictions = prediction if predictions is None else np.concatenate((prediction,predictions))
 
-            pathFile = pathFile + list(pathsForFiles)
-            labelsFile = labelsFile + list(np.array(labels))
+            pathFile = list(pathsForFiles) + pathFile
+            labelsFile = list(np.array(labels)) + labelsFile
 
     vaPerUtt = {}
     if args.dataset == 'OMG':

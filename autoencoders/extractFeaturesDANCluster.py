@@ -6,12 +6,6 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DAN.networks.dan import DAN
 from DatasetClasses.AffectNet import AffectNet
 
-def saveToCSV(preds,files,pathCSV):
-    with open(pathCSV,'w') as pcsv:
-        pcsv.write('valence,arousal,file\n')
-        for idx, p in enumerate(preds):
-            pcsv.write('%f,%f,%s\n' % (p[0],p[1],files[idx]))
-
 def test():
     parser = argparse.ArgumentParser(description='Extract VA with DAN')
     parser.add_argument('--weights', help='Weights', required=True)
@@ -43,21 +37,30 @@ def test():
     predictions = None
     pathFile = []
     labelsFile = []
-    soft =  nn.Softmax(dim=1)
+    result = 0
+    total = 0
     with torch.no_grad():
         for idxBtc, data in enumerate(val_loader):
             print("Extraction Batch %d" % (idxBtc))
             images, labels, pathsForFiles = data
             logits, _, attHeads = model(images.to(device))
+
+            _, pred = torch.max(logits,1)
+            result += (pred == labels.to(device)).sum().item()
+            total += images.shape[0]
+
+
             for f in range(attHeads.shape[0]):
                 outputFile.append((attHeads[f].sum(dim=0).cpu(),pathsForFiles[f]))
 
-            prediction = soft(logits).cpu().detach().numpy()
+            prediction = logits.clone().cpu().detach().numpy()
             predictions = prediction if predictions is None else np.concatenate((prediction,predictions))
-            pathFile = pathFile + list(pathsForFiles)
-            labelsFile = labelsFile + list(np.array(labels))
+            pathFile = list(pathsForFiles) + pathFile 
+            labelsFile = list(np.array(labels)) + labelsFile
 
 
+
+    print(result / total)
 
     vaPerUtt = {}
     for idxF, file in enumerate(pathFile):            
