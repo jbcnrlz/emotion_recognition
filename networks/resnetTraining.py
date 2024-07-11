@@ -1,5 +1,6 @@
 import argparse, torch, os, sys, numpy as np, math, random
 from torchvision import transforms
+from torchvision import models
 from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -50,7 +51,8 @@ def train():
         os.makedirs(args.output)
     writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
-    model = ResnetEmotionHeadClassifierAttention(classes=args.numberOfClasses, resnetModel='resnet18')
+    model = models.resnet18(pretrained=False)
+    model.fc = nn.Linear(512, args.numberOfClasses,bias=False)
     if args.freeze:
         print("Freezing weights")
         for param in model.parameters():
@@ -106,68 +108,80 @@ def train():
         ibl = ibr = ibtl = ' '
         model.train()
         lossAcc = []
+        ceLossHist = []
+        rankNetLossHist = []
         totalImages = 0
         iteration = 0
         for currBatch, currTargetBatch, pathfile, vaBatch in train_loader:
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
-            features, classification, _ = model(currBatch)
+            classification = model(currBatch)
 
-            if args.additiveLoss is not None:
-                cLossV = alpha * cLoss(features,currTargetBatch)
-                ceLossV = criterion(classification, currTargetBatch)
-                loss = cLossV + ceLossV
-            else:
-                #loss = criterion(classification, currTargetBatch) + similarityScore(features,featuresSimilar,torch.ones(features.shape[0]).to(device))
-                #loss = criterion(classification, currTargetBatch)
-                #loss = (wtsCEL * criterion(classification, currTargetBatch)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[currTargetBatch]))
-                #loss = criterion(classification, currTargetBatch)
-                currRanking = getRanks(vaBatch.to(device),classesDist) 
-                loss = rankNet(classification,currRanking) * 0.4 + 0.6 * criterion(classification, currTargetBatch)
+            #loss = criterion(classification, currTargetBatch) + similarityScore(features,featuresSimilar,torch.ones(features.shape[0]).to(device))
+            #loss = criterion(classification, currTargetBatch)
+            #loss = (wtsCEL * criterion(classification, currTargetBatch)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[currTargetBatch]))
+            #loss = criterion(classification, currTargetBatch)
+            currRanking = getRanks(vaBatch.to(device),classesDist) 
+            lrank = rankNet(classification,currRanking) 
+            clValue = criterion(classification, currTargetBatch)
+            loss = lrank * 0.4 + 0.6 * clValue
+            #loss= clValue
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             lossAcc.append(loss.item())
+            ceLossHist.append(clValue.item())
+            rankNetLossHist.append(lrank.item())
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
+        ceLossHist = sum(ceLossHist) / len(ceLossHist)
+        rankNetLossHist = sum(rankNetLossHist) / len(rankNetLossHist)
         writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
+        writer.add_scalar('RESNETAtt/CELoss/train', ceLossHist,ep)
+        writer.add_scalar('RESNETAtt/Ranknet/train', rankNetLossHist,ep)
         scheduler.step()
         model.eval()
         total = 0
         correct = 0
         loss_val = []
+        ceLossHist = []
+        rankNetLossHist = []
         iteration = 0
         with torch.no_grad():
             for data in val_loader:
                 printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),length=50,prefix='Procesing face - testing')
                 images, labels, _, vaBatch = data
-                features, classification, _ = model(images.to(device))
+                classification = model(images.to(device))
                 _, predicted = torch.max(classification.data, 1)
                 labels = labels.to(device)
 
-                if args.additiveLoss is not None:
-                    cLossV = alpha * cLoss(features,labels)
-                    ceLossV = criterion(classification, labels)
-                    loss = cLossV + ceLossV
-                else:
-                    #loss = criterion(classification, labels)
-                    #loss = (wtsCEL * criterion(classification, labels)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[labels]))
-                    #loss = criterion(classification, labels)                    
-                    currRanking = getRanks(vaBatch.to(device),classesDist) 
-                    loss = rankNet(classification,currRanking) * 0.4 + 0.6 * criterion(classification, labels)
+                #loss = criterion(classification, labels)
+                #loss = (wtsCEL * criterion(classification, labels)) + (wtsMLL * multiLabelLoss(classification, labelsToCompare[labels]))
+                #loss = criterion(classification, labels)                    
+                currRanking = getRanks(vaBatch.to(device),classesDist) 
+                lrank = rankNet(classification,currRanking) 
+                clValue = criterion(classification, labels)
+                loss = lrank * 0.4 + 0.6 * clValue
+                #loss = clValue
 
                 loss_val.append(loss)
+                ceLossHist.append(clValue.item())
+                rankNetLossHist.append(lrank.item())
                 total += labels.size(0)
                 correct += (predicted == labels.to(device)).sum().item()
                 iteration += 1
 
         cResult = correct / total
         tLoss = sum(loss_val) / len(loss_val)
+        ceLossHist = sum(ceLossHist) / len(ceLossHist)
+        rankNetLossHist = sum(rankNetLossHist) / len(rankNetLossHist)
         writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
+        writer.add_scalar('RESNETAtt/CELoss/val', ceLossHist,ep)
+        writer.add_scalar('RESNETAtt/Ranknet/val', rankNetLossHist,ep)
         writer.add_scalar('RESNETAtt/Acc', cResult, ep)
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
