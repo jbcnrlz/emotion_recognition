@@ -93,12 +93,12 @@ def run_test():
     iter_cnt = 0
     bingo_cnt = 0
     sample_cnt = 0
-   
+    predictions = None
     for imgs, targets, _ in val_dataset:
         imgs = imgs.to(device)
         targets = targets.to(device)
         out,feat,heads = model(imgs)
-
+        predictions = out.cpu().detach().numpy() if predictions is None else np.concatenate((out.cpu().detach().numpy(),predictions))
         _, predicts = torch.max(out, 1)
         correct_num  = torch.eq(predicts,targets)
         bingo_cnt += correct_num.sum().cpu()
