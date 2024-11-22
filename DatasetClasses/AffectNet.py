@@ -36,6 +36,9 @@ class AffectNet(data.Dataset):
                 aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
                 self.label.append(currLabel)
                 self.seconLabel.append([valValue,aroValue])
+            elif typeExperiment == 'RANK':
+                currLabel = os.path.join(afectdata,'annotations' ,'%d_rank.txt' % (int(imageNumber)))
+                self.label.append(currLabel)
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
@@ -60,6 +63,12 @@ class AffectNet(data.Dataset):
 
         return returnData
 
+    def loadRankFile(self,rankPath):
+        dataOutput = None
+        with open(str(rankPath),'r') as rf:
+            dataOutput = list(map(int,rf.readline().strip().split(',')))
+        return dataOutput
+
     def __getitem__(self, idx):
         path = self.filesPath[idx]
         image = im.open(path)
@@ -72,7 +81,8 @@ class AffectNet(data.Dataset):
             if self.typeExperiment == 'BOTH':
                 valenceLabel = torch.from_numpy(np.array( [self.seconLabel[idx][0].astype(np.float32),self.seconLabel[idx][1].astype(np.float32)] )).to(torch.float32)
             label = torch.from_numpy(np.array(self.label[idx]).astype(np.uint8)).to(torch.long)
-
+        elif self.typeExperiment == "RANK":
+            label = torch.from_numpy(np.array(self.loadRankFile(self.label[idx])).astype(np.uint8)).to(torch.long)
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:

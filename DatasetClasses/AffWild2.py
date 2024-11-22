@@ -3,12 +3,12 @@ import torch.utils.data as data, os, re, torch, numpy as np, sys, pandas as pd
 from PIL import Image as im
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from helper.function import getDirectoriesInPath, getFilesInPath
+from helper.function import getDirectoriesInPath, getFilesInPath, printProgressBar
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AFF2Data(data.Dataset):    
     def __init__(self, affData, phase, type='VA', transform=None, termsQuantity=151):
-        typeData = {"VA" : 'VA_Set','AU' : 'AU_Set', 'EXPR' : 'EXPR_Set', 'TERMS' : 'TERMS_Set'}
+        typeData = {"VA" : 'VA_Set','AU' : 'AU_Set', 'EXPR' : 'EXPR_Set', 'TERMS' : 'TERMS_Set','RANK' : 'RANK_Set'}
         self.terms = None if typeData[type] != 'TERMS_Set' else self.loadTermsFile(termsQuantity)
         self.dataType = typeData[type]
         self.transform = transform
@@ -16,7 +16,8 @@ class AFF2Data(data.Dataset):
         self.filesPath = []
         files = getFilesInPath(os.path.join(affData,'annotations',self.dataType,phase))
         imagePath = os.path.join(affData,'cropped_aligned')
-        for r in files:
+        for idxFiles, r in enumerate(files):
+            printProgressBar(idxFiles,len(files),length=50,prefix='Loading Faces...')
             fileName = r.split(os.path.sep)[-1]            
             if fileName[-3:] != 'txt':                
                 continue
@@ -29,7 +30,7 @@ class AFF2Data(data.Dataset):
                 labelsForImage = self.loadLabels(r)
                 for frm in frames:
                     frameName = int(frm.split(os.path.sep)[-1][:-4]) - 1
-                    if (self.dataType != 'TERMS_Set') and (frameName > len(labelsForImage) or labelsForImage[frameName][0] < -1):
+                    if (self.dataType != 'TERMS_Set') and (frameName >= len(labelsForImage) or labelsForImage[frameName][0] < -1):
                         continue
                     elif len(labelsForImage) <= frameName:
                         continue
@@ -55,7 +56,10 @@ class AFF2Data(data.Dataset):
                 if self.dataType == 'TERMS_Set':
                     van.append(f.strip())
                 else:
-                    van.append(list(map(float,f.split(','))))
+                    try:
+                        van.append(list(map(float,f.split(','))))
+                    except:
+                        continue
 
         return van
 

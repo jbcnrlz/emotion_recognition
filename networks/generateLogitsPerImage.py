@@ -18,7 +18,7 @@ def test():
     logits = np.array(csvFiles)[:,:-2]
     paths = np.array(csvFiles)[:,-2:-1]
     labels = np.array(csvFiles)[:,-1]
-    emotionsLabels = [ 'neutral', 'happy', 'sad', 'surprise','fear', 'disgust', 'anger']
+    emotionsLabels = [ 'neutral', 'happy', 'sad', 'surprise','fear', 'disgust', 'anger', 'contempt']
 
     classesDist = np.array(
         [

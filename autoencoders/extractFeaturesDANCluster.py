@@ -5,6 +5,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DAN.networks.dan import DAN
 from DatasetClasses.AffectNet import AffectNet
+from DatasetClasses.AffWild2 import AFF2Data
 
 def test():
     parser = argparse.ArgumentParser(description='Extract VA with DAN')
@@ -12,11 +13,13 @@ def test():
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--batch', type=int, help='Size of the batch', required=True)
     parser.add_argument('--output', default=None, help='File to save csv', required=True)
+    parser.add_argument('--classes', type=int, help='File to save csv', required=True)
+    parser.add_argument('--dataset', help='File to save csv', required=True)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model")
-    model = DAN(num_head=4, num_class=7, pretrained=None)
+    model = DAN(num_head=4, num_class=args.classes, pretrained=None)
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['model_state_dict'],strict=True)
     model.to(device)
@@ -29,7 +32,10 @@ def test():
                                  std=[0.229, 0.224, 0.225]),
     ])
     print("Loading test set")
-    dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms,typeExperiment="EXP")
+    if args.dataset == 'affwild':
+        dataset = AFF2Data(args.pathBase,'Validation_Set',transform=data_transforms,type='EXPR')
+    else:
+        dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms,typeExperiment="EXP")
     val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)
 
     model.eval()
@@ -45,9 +51,10 @@ def test():
             images, labels, pathsForFiles = data
             logits, _, attHeads = model(images.to(device))
 
-            _, pred = torch.max(logits,1)
-            result += (pred == labels.to(device)).sum().item()
-            total += images.shape[0]
+            if args.dataset != 'affwild':
+                _, pred = torch.max(logits,1)
+                result += (pred == labels.to(device)).sum().item()
+                total += images.shape[0]
 
 
             for f in range(attHeads.shape[0]):
@@ -59,8 +66,8 @@ def test():
             labelsFile = list(np.array(labels)) + labelsFile
 
 
-
-    print(result / total)
+    if args.dataset != 'affwild':
+        print(result / total)
 
     vaPerUtt = {}
     for idxF, file in enumerate(pathFile):            
