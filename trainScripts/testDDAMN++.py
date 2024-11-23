@@ -12,6 +12,14 @@ import matplotlib.pyplot as plt
 import itertools
 from DatasetClasses.AffectNet import AffectNet
 
+def saveToCSV(preds,files,labels,pathCSV):
+    with open(pathCSV,'w') as pcsv:
+        pcsv.write('%s,file,label\n' % (','.join([str(f) for f in range(len(preds[0]))])))
+        for idx, p in enumerate(preds):
+            for fp in p:
+                pcsv.write('%f,' % (fp))
+            pcsv.write("%s,%s\n" % (files[idx],labels[idx]))
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--aff_path', type=str, default='./data/fer_112_112_v2.0/affectnet/', help='AfectNet dataset path.')
@@ -94,11 +102,15 @@ def run_test():
     bingo_cnt = 0
     sample_cnt = 0
     predictions = None
-    for imgs, targets, _ in val_dataset:
+    files = None
+    labels = None
+    for imgs, targets, f in val_dataset:
         imgs = imgs.to(device)
         targets = targets.to(device)
         out,feat,heads = model(imgs)
         predictions = out.cpu().detach().numpy() if predictions is None else np.concatenate((out.cpu().detach().numpy(),predictions))
+        files = np.array(f) if files is None else np.concatenate((np.array(f),files))
+        labels = targets.cpu().detach().numpy() if labels is None else np.concatenate((targets.cpu().detach().numpy(),labels))
         _, predicts = torch.max(out, 1)
         correct_num  = torch.eq(predicts,targets)
         bingo_cnt += correct_num.sum().cpu()
@@ -131,11 +143,8 @@ def run_test():
     elif args.num_class == 8:
         matrix = confusion_matrix(all_targets.data.cpu().numpy(), all_predicted.cpu().numpy())
         np.set_printoptions(precision=2)
-        plt.figure(figsize=(10, 8))
         plot_confusion_matrix(matrix, classes=class8_names, normalize=True, title= 'AffectNet Confusion Matrix (acc: %0.2f%%)' %(acc*100))
  		
-        plt.savefig(os.path.join('checkpoints_ver2.0', "affecnet8"+"_acc"+str(acc)+".png"))
-        plt.close()	
        
 if __name__ == "__main__":
                    
