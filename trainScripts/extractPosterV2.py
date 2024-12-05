@@ -7,6 +7,7 @@ warnings.filterwarnings("ignore")
 import argparse
 from DatasetClasses.SAM import SAM
 from DatasetClasses.AffectNet import AffectNet
+from DatasetClasses.AffWild2 import AFF2Data
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
@@ -23,6 +24,15 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 now = datetime.datetime.now()
 time_str = now.strftime("[%m-%d]-[%H-%M]-")
+
+def saveToCSV(preds,files,labels,pathCSV):
+    with open(pathCSV,'w') as pcsv:
+        pcsv.write('%s,file,label\n' % (','.join([str(f) for f in range(len(preds[0]))])))
+        for idx, p in enumerate(preds):
+            for fp in p:
+                pcsv.write('%f,' % (fp))
+            pcsv.write("%s,%s\n" % (files[idx],labels[idx]))
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default=r'/home/Dataset/AffectNet8')
@@ -42,6 +52,8 @@ parser.add_argument('--resume', default=None, type=str, metavar='PATH', help='pa
 parser.add_argument('-e', '--evaluate', default=None, type=str, help='evaluate model on test set')
 parser.add_argument('--beta', type=float, default=0.6)
 parser.add_argument('--gpu', type=str, default='0')
+parser.add_argument('--csvOutput', type=str)
+parser.add_argument('--dataset', type=str)
 args = parser.parse_args()
 
 
@@ -56,24 +68,8 @@ def main():
     model = torch.nn.DataParallel(model).cuda()
 
     criterion = torch.nn.CrossEntropyLoss()
-
-    if args.optimizer == 'adamw':
-        base_optimizer = torch.optim.AdamW
-    elif args.optimizer == 'adam':
-        base_optimizer = torch.optim.Adam
-    elif args.optimizer == 'sgd':
-        base_optimizer = torch.optim.SGD
-    else:
-        raise ValueError("Optimizer not supported.")
-
-    optimizer = SAM(model.parameters(), base_optimizer, lr=args.lr, rho=0.05, adaptive=False,)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
-    recorder = RecorderMeter(args.epochs)
-    recorder1 = RecorderMeter1(args.epochs)
-    
     cudnn.benchmark = True
-
-    valdir = os.path.join(args.data, 'val_set')
+    
     data_transforms_val = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -81,7 +77,11 @@ def main():
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]),
     ])
-    val_dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)
+    val_dataset = None
+    if args.dataset == 'affectnet':
+        val_dataset = AffectNet(afectdata=os.path.join(args.data,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)
+    else:
+        val_dataset = AFF2Data(args.data,'Validation_Set',transform=data_transforms_val,type="EXPR")
 
     val_loader = torch.utils.data.DataLoader(val_dataset,
                                              batch_size=args.batch_size,
@@ -120,16 +120,20 @@ def validate(val_loader, model, criterion, args):
          [0, 0, 0, 0, 0, 0, 0, 0],
          [0, 0, 0, 0, 0, 0, 0, 0],
          [0, 0, 0, 0, 0, 0, 0, 0]]
+    predictions = None
+    files = None
+    labels = None
     with torch.no_grad():
-        for i, (images, target) in enumerate(val_loader):
+        for i, (images, target, f) in enumerate(val_loader):
             images = images.cuda()
             target = target.cuda()
-            output = model(images)
-            loss = criterion(output, target)
+            output = model(images)            
 
+            predictions = output.cpu().detach().numpy() if predictions is None else np.concatenate((output.cpu().detach().numpy(),predictions))
+            files = np.array(f) if files is None else np.concatenate((np.array(f),files))
+            labels = target.cpu().detach().numpy() if labels is None else np.concatenate((target.cpu().detach().numpy(),labels))
             # measure accuracy and record loss
             acc, _ = accuracy(output, target, topk=(1, 5))
-            losses.update(loss.item(), images.size(0))
             top1.update(acc[0], images.size(0))
 
             topk = (1,)
@@ -152,17 +156,16 @@ def validate(val_loader, model, criterion, args):
             im_pre_label.transpose()
 
 
-            C = metrics.confusion_matrix(y_ture, y_pred, labels=[0, 1, 2, 3, 4, 5, 6, 7])
-            D += C
+            #C = metrics.confusion_matrix(y_ture, y_pred, labels=[0, 1, 2, 3, 4, 5, 6, 7])
+            #D += C
 
             if i % args.print_freq == 0:
                 progress.display(i)
 
         print(' **** Accuracy {top1.avg:.3f} *** '.format(top1=top1))
-        with open('./log/' + time_str + 'log.txt', 'a') as f:
-            f.write(' * Accuracy {top1.avg:.3f}'.format(top1=top1) + '\n')
 
     print(D)
+    saveToCSV(predictions,files,labels,args.csvOutput)
     return top1.avg, losses.avg, output, target
 
 def save_checkpoint(state, is_best, args):
@@ -209,8 +212,6 @@ class ProgressMeter(object):
         print_txt = '\t'.join(entries)
         print(print_txt)
         txt_name = './log/' + time_str + 'log.txt'
-        with open(txt_name, 'a') as f:
-            f.write(print_txt + '\n')
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
@@ -234,6 +235,67 @@ def accuracy(output, target, topk=(1,)):
 
 
 labels = ['A', 'B', 'C', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O']
+class RecorderMeter1(object):
+    """Computes and stores the minimum loss value and its epoch index"""
+
+    def __init__(self, total_epoch):
+        self.reset(total_epoch)
+
+    def reset(self, total_epoch):
+        self.total_epoch = total_epoch
+        self.current_epoch = 0
+        self.epoch_losses = np.zeros((self.total_epoch, 2), dtype=np.float32)  # [epoch, train/val]
+        self.epoch_accuracy = np.zeros((self.total_epoch, 2), dtype=np.float32)  # [epoch, train/val]
+
+    def update(self, output, target):
+        self.y_pred = output
+        self.y_true = target
+
+    def plot_confusion_matrix(self, cm, title='Confusion Matrix', cmap=plt.cm.binary):
+        plt.imshow(cm, interpolation='nearest', cmap=cmap)
+        y_true = self.y_true
+        y_pred = self.y_pred
+
+        plt.title(title)
+        plt.colorbar()
+        xlocations = np.array(range(len(labels)))
+        plt.xticks(xlocations, labels, rotation=90)
+        plt.yticks(xlocations, labels)
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label')
+
+        np.set_printoptions(precision=2)
+        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        plt.figure(figsize=(12, 8), dpi=120)
+
+        ind_array = np.arange(len(labels))
+        x, y = np.meshgrid(ind_array, ind_array)
+        for x_val, y_val in zip(x.flatten(), y.flatten()):
+            c = cm_normalized[y_val][x_val]
+            if c > 0.01:
+                plt.text(x_val, y_val, "%0.2f" % (c,), color='red', fontsize=7, va='center', ha='center')
+        # offset the tick
+        tick_marks = np.arange(len(7))
+        plt.gca().set_xticks(tick_marks, minor=True)
+        plt.gca().set_yticks(tick_marks, minor=True)
+        plt.gca().xaxis.set_ticks_position('none')
+        plt.gca().yaxis.set_ticks_position('none')
+        plt.grid(True, which='minor', linestyle='-')
+        plt.gcf().subplots_adjust(bottom=0.15)
+        # show confusion matrix
+        plt.savefig('./log/confusion_matrix.png', format='png')
+        print('Saved figure')
+        plt.show()
+
+    def matrix(self):
+        target = self.y_true
+        output = self.y_pred
+        im_re_label = np.array(target)
+        im_pre_label = np.array(output)
+        y_ture = im_re_label.flatten()
+        y_pred = im_pre_label.flatten()
+        im_pre_label.transpose()
+        labels = list(set(y_ture))
 
 class RecorderMeter(object):
     """Computes and stores the minimum loss value and its epoch index"""

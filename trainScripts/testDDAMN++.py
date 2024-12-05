@@ -7,6 +7,7 @@ import torch
 from torchvision import transforms, datasets
 import torch.utils.data as data
 from networks.DDAM import DDAMNet
+from DatasetClasses.AffWild2 import AFF2Data
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import itertools
@@ -28,6 +29,8 @@ def parse_args():
     parser.add_argument('--num_head', type=int, default=2, help='Number of attention head.')
     parser.add_argument('--num_class', type=int, default=8, help='Number of class.')
     parser.add_argument('--model_path', default = './checkpoints_ver2.0/affecnet8_epoch25_acc0.6469.pth')
+    parser.add_argument('--dataset', required=True)
+    parser.add_argument('--csv_path', required=True)
     return parser.parse_args()
 
 
@@ -78,7 +81,8 @@ def run_test():
     model = DDAMNet(num_class=args.num_class, num_head=args.num_head, pretrained=False)
     
     checkpoint = torch.load(args.model_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    key = 'model_state_dict' if 'model_state_dict' in checkpoint.keys() else 'state_dict'
+    model.load_state_dict(checkpoint[key])
     model.to(device)
     model.eval()        
 
@@ -87,8 +91,11 @@ def run_test():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])])     
-
-    val_dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)    
+    val_dataset = None
+    if args.dataset == 'affectnet':
+        val_dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)    
+    else:
+        val_dataset = AFF2Data(args.aff_path,'Validation_Set',transform=data_transforms_val,type="VA")
 
     if args.num_class == 7:   # ignore the 8-th class 
         idx = [i for i in range(len(val_dataset)) if val_dataset.imgs[i][1] != 7]
@@ -129,22 +136,7 @@ def run_test():
     acc = np.around(acc.numpy(),4)
 
     print("Validation accuracy:%.4f. " % ( acc))
-    if args.num_class == 7: 
-        # Compute confusion matrix
-        matrix = confusion_matrix(all_targets.data.cpu().numpy(), all_predicted.cpu().numpy())
-        np.set_printoptions(precision=2)
-        plt.figure(figsize=(10, 8))
-        # Plot normalized confusion matrix
-        plot_confusion_matrix(matrix, classes=class7_names, normalize=True, title= 'affectnet  Confusion Matrix (acc: %0.2f%%)' %(acc*100))
- 		
-        plt.savefig(os.path.join('checkpoints_ver2.0', "affecnet7"+"_acc"+str(acc)+".png"))
-        plt.close()				
-
-    elif args.num_class == 8:
-        matrix = confusion_matrix(all_targets.data.cpu().numpy(), all_predicted.cpu().numpy())
-        np.set_printoptions(precision=2)
-        plot_confusion_matrix(matrix, classes=class8_names, normalize=True, title= 'AffectNet Confusion Matrix (acc: %0.2f%%)' %(acc*100))
- 		
+    saveToCSV(predictions,files,labels,args.csv_path)
        
 if __name__ == "__main__":
                    
