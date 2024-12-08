@@ -1,6 +1,7 @@
-import os, sys
+import os, sys, math
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
+from helper.function import printProgressBar
 import argparse
 import numpy as np
 import torch
@@ -93,15 +94,12 @@ def run_test():
                                  std=[0.229, 0.224, 0.225])])     
     val_dataset = None
     if args.dataset == 'affectnet':
-        val_dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)    
+        dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)
+        #val_dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)    
     else:
-        val_dataset = AFF2Data(args.aff_path,'Validation_Set',transform=data_transforms_val,type="VA")
+        dataset = AFF2Data(args.aff_path,'Validation_Set',transform=data_transforms_val,type="VA")
 
-    if args.num_class == 7:   # ignore the 8-th class 
-        idx = [i for i in range(len(val_dataset)) if val_dataset.imgs[i][1] != 7]
-        val_dataset = data.Subset(val_dataset, idx)
-
-    val_dataset = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+    val_dataset = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     print('Validation set size:', val_dataset.__len__())
     
@@ -111,31 +109,17 @@ def run_test():
     predictions = None
     files = None
     labels = None
-    for imgs, targets, f in val_dataset:
+    for idx, (imgs, targets, f) in enumerate(val_dataset):
+        printProgressBar(idx,math.ceil(len(dataset.filesPath)/args.batch_size),length=50,prefix='Extracting right features')
         imgs = imgs.to(device)
         targets = targets.to(device)
         out,feat,heads = model(imgs)
         predictions = out.cpu().detach().numpy() if predictions is None else np.concatenate((out.cpu().detach().numpy(),predictions))
         files = np.array(f) if files is None else np.concatenate((np.array(f),files))
         labels = targets.cpu().detach().numpy() if labels is None else np.concatenate((targets.cpu().detach().numpy(),labels))
-        _, predicts = torch.max(out, 1)
-        correct_num  = torch.eq(predicts,targets)
-        bingo_cnt += correct_num.sum().cpu()
-        sample_cnt += out.size(0)
-        
-        if iter_cnt == 0:
-            all_predicted = predicts
-            all_targets = targets
-        else:
-            all_predicted = torch.cat((all_predicted, predicts),0)
-            all_targets = torch.cat((all_targets, targets),0)                  
-        iter_cnt+=1        
+        sample_cnt += out.size(0)     
 
 
-    acc = bingo_cnt.float()/float(sample_cnt)
-    acc = np.around(acc.numpy(),4)
-
-    print("Validation accuracy:%.4f. " % ( acc))
     saveToCSV(predictions,files,labels,args.csv_path)
        
 if __name__ == "__main__":
