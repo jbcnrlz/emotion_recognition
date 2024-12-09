@@ -23,8 +23,6 @@ def loadFileAffWild(pathData,typeData):
 
     return returnData
 
-
-
 def getRanks(vaLabel,vaDists):
     dists = torch.cdist(vaLabel,vaDists,p=2)
     return dists
@@ -36,21 +34,23 @@ def calculateNDCG(cOutput,datasetName,pathBase,bathSize):
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])
-    if datasetName == 'affwild':
+    if datasetName == 'affwild2':
         gallery = []
         probe = []
         csvParsed = np.array(dataOutput)
         dataLogs = csvParsed[:,:-1]
-        filePath = csvParsed[:,-1]
+        filePath = csvParsed[:,-2]
         dataFromAffectNet = loadFileAffWild(pathBase,'Validation_Set')
-        for idxLogs, dl in enumerate(dataLogs):
+        for idxLogs, dl in enumerate(dataLogs[:,:-1]):
             videoPath = filePath[idxLogs].split(os.path.sep)[-2] + '.txt'
             frameNumber = int(filePath[idxLogs].split(os.path.sep)[-1][:-4])
             if len(dataFromAffectNet[videoPath][frameNumber-1]) <= 0:
                 continue
             gallery.append(dataFromAffectNet[videoPath][frameNumber-1])
             probe.append(list(dl.astype(np.float32)))
-        print(ndcg_score(np.array(gallery),np.array(probe)))
+        gallery = np.array(gallery)
+        probe = np.array(probe)
+        print(ndcg_score(gallery,probe[:,:-1]))
         return None
     else:
         datasetVal = AffectNet(afectdata=os.path.join(pathBase,'val_set'),transform=data_transforms,typeExperiment='RANK',exchangeLabel=None)
@@ -99,6 +99,49 @@ def calculateACC(csvFile,dataset,pathBase,batchSize,classesQuantity):
                     if (currPath == fileName):
                         acc[int(labels[idxPath].numpy() == rankSize.argmax())] += 1
         print(acc)
+    elif dataset == 'affwild2':
+        #Neutral,Anger,Disgust,Fear,Happiness,Sadness,Surprise
+        emotionsOrder = [0,4,5,6,3,2,1,-1]
+        acc = [0,0]
+        for dataCSV in np.array(dataOutput):
+            guessEmo = emotionsOrder[dataCSV[:-2].argmax()]
+            acc[int(float(dataCSV[-1][1:-1])) == guessEmo] += 1
+
+        print(acc)
+        print(acc[1]/sum(acc))
+        
+def getRanks(vaLabel,vaDists):
+    dists = torch.cdist(vaLabel,vaDists,p=2)
+    return dists
+
+
+def rankCalculate(csvFile,dataset):
+    if dataset == 'affwild2':
+        dataOutput = pd.read_csv(csvFile)
+        classesDist = torch.tensor(np.array([
+            [0,0],
+            [0.81,0.51],
+            [-0.63,-0.27],
+            [0.4,0.67],
+            [-0.64,0.6],
+            [-0.6,0.35],
+            [-0.51,0.59],
+            [-0.23,0.31]
+        ]))
+        emotionsOrder = [0,4,5,6,3,2,1,-1]
+        label = []
+        features = []
+        for d in np.array(dataOutput):
+            label.append(np.array(list(map(float,np.array(d)[-1][1:-1].split()))))
+            features.append(d[:-2].astype(np.float32))
+        labels = getRanks(torch.tensor(np.array(label)),classesDist).argsort()
+        features = np.array(features).argsort()
+        acertos = [0,0]
+        for idx, l in enumerate(labels):
+            acertos[l == features[idx]] += 1
+
+        print(acertos)
+
 
 def main():
     parser = argparse.ArgumentParser(description='Generate Emotion Ranks')
@@ -113,6 +156,8 @@ def main():
         calculateNDCG(args.classifierOutput,args.dataset,args.pathBase,args.batchSize)
     elif args.metricType == 'acc':
         calculateACC(args.classifierOutput,args.dataset,args.pathBase,args.batchSize,args.classesQt)
+    elif args.metricType == 'rank':
+        rankCalculate(args.classifierOutput,args.dataset)
 
 
 if __name__ == '__main__':
