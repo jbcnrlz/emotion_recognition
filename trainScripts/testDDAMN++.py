@@ -97,7 +97,7 @@ def run_test():
         dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)
         #val_dataset = AffectNet(afectdata=os.path.join(args.aff_path,'val_set'),transform=data_transforms_val,typeExperiment='EXP',exchangeLabel=None)    
     else:
-        dataset = AFF2Data(args.aff_path,'Validation_Set',transform=data_transforms_val,type="VA")
+        dataset = AFF2Data(args.aff_path,'Validation_Set',transform=data_transforms_val,type="RANK")
 
     val_dataset = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
