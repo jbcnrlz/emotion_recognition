@@ -133,6 +133,37 @@ def rankCalculate(dataOutput,dataset,pathBase):
         gallery = np.array(gallery)
         probe = np.array(probe)
         print(np.sum(gallery[:,0] == emotionsOrder[(-probe).argsort()[:,0]]) / gallery.shape[0])
+    else:
+        data_transforms = transforms.Compose([
+            transforms.Resize((256,256)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+        ])
+        datasetVal = AffectNet(afectdata=os.path.join(pathBase,'val_set'),transform=data_transforms,typeExperiment='RANK',exchangeLabel=None)
+        val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=50, shuffle=False)
+        compare = [[],[]]
+        for data in val_loader:
+            _, labels, paths = data
+            for idxPath, p in enumerate(paths):
+                fileName = p.split(os.path.sep)[-1]
+                for idx, dataCSV in enumerate(np.array(dataOutput)):
+                    if (len(dataCSV) == 10):
+                        currPath = dataCSV[-2].split(os.path.sep)[-1]
+                    else:
+                        currPath = dataCSV[-1].split(os.path.sep)[-1]
+                    if (currPath == fileName):
+                        compare[0].append(labels[idxPath].numpy())
+                        if len(dataCSV) < 10:
+                            compare[1].append((-dataCSV[:-1].astype(np.float32)).argsort())
+                        else:
+                            compare[1].append((-dataCSV[:-2].astype(np.float32)).argsort())
+                        break
+        rank1 = [0,0]
+        for i in range(len(compare[0])):
+            rank1[int(compare[0][i][0] == compare[1][i][0])] += 1
+
+        print(rank1)
+
 
 
 def main():
