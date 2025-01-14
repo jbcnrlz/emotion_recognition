@@ -108,39 +108,31 @@ def calculateACC(csvFile,dataset,pathBase,batchSize,classesQuantity):
             acc[int(float(dataCSV[-1][1:-1])) == guessEmo] += 1
 
         print(acc)
-        print(acc[1]/sum(acc))
-        
-def getRanks(vaLabel,vaDists):
-    dists = torch.cdist(vaLabel,vaDists,p=2)
-    return dists
+        print(acc[1]/sum(acc))        
 
-
-def rankCalculate(csvFile,dataset):
+def rankCalculate(dataOutput,dataset,pathBase):
+    dataOutput = pd.read_csv(dataOutput)
     if dataset == 'affwild2':
-        dataOutput = pd.read_csv(csvFile)
-        classesDist = torch.tensor(np.array([
-            [0,0],
-            [0.81,0.51],
-            [-0.63,-0.27],
-            [0.4,0.67],
-            [-0.64,0.6],
-            [-0.6,0.35],
-            [-0.51,0.59],
-            [-0.23,0.31]
-        ]))
-        emotionsOrder = [0,4,5,6,3,2,1,-1]
-        label = []
-        features = []
-        for d in np.array(dataOutput):
-            label.append(np.array(list(map(float,np.array(d)[-1][1:-1].split()))))
-            features.append(d[:-2].astype(np.float32))
-        labels = getRanks(torch.tensor(np.array(label)),classesDist).argsort()
-        features = np.array(features).argsort()
-        acertos = [0,0]
-        for idx, l in enumerate(labels):
-            acertos[l == features[idx]] += 1
-
-        print(acertos)
+        emotionsOrder = np.array([0,4,5,6,3,2,1,-1])
+        gallery = []
+        probe = []
+        csvParsed = np.array(dataOutput)
+        dataLogs = csvParsed[:,:-1]
+        if (csvParsed.shape[1] == 8):
+            filePath = csvParsed[:,-1]
+        else:
+            filePath = csvParsed[:,-2]
+        dataFromAffectNet = loadFileAffWild(pathBase,'Validation_Set')
+        for idxLogs, dl in enumerate(dataLogs[:,:-1]):
+            videoPath = filePath[idxLogs].split(os.path.sep)[-2] + '.txt'
+            frameNumber = int(filePath[idxLogs].split(os.path.sep)[-1][:-4])
+            if len(dataFromAffectNet[videoPath][frameNumber-1]) <= 0:
+                continue
+            gallery.append(dataFromAffectNet[videoPath][frameNumber-1])
+            probe.append(list(dl.astype(np.float32)))
+        gallery = np.array(gallery)
+        probe = np.array(probe)
+        print(np.sum(gallery[:,0] == emotionsOrder[(-probe).argsort()[:,0]]) / gallery.shape[0])
 
 
 def main():
@@ -157,7 +149,7 @@ def main():
     elif args.metricType == 'acc':
         calculateACC(args.classifierOutput,args.dataset,args.pathBase,args.batchSize,args.classesQt)
     elif args.metricType == 'rank':
-        rankCalculate(args.classifierOutput,args.dataset)
+        rankCalculate(args.classifierOutput,args.dataset,args.pathBase)
 
 
 if __name__ == '__main__':
