@@ -41,6 +41,9 @@ class AffectNet(data.Dataset):
                 self.label.append(currLabel)
             elif typeExperiment == 'RANDOM':
                 self.label.append(np.random.randint(0,8))
+            elif typeExperiment == 'PROBS':
+                currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank.txt' % (int(imageNumber)))
+                self.label.append(currLabel)
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
@@ -71,6 +74,12 @@ class AffectNet(data.Dataset):
             dataOutput = list(map(int,rf.readline().strip().split(',')))
         return dataOutput
 
+    def loadProbFile(self,rankPath):
+        dataOutput = None
+        with open(str(rankPath),'r') as rf:
+            dataOutput = list(map(float,rf.readline().strip().split(',')))
+        return dataOutput
+
     def __getitem__(self, idx):
         path = self.filesPath[idx]
         image = im.open(path)
@@ -87,6 +96,8 @@ class AffectNet(data.Dataset):
             label = torch.from_numpy(np.array(self.loadRankFile(self.label[idx])).astype(np.uint8)).to(torch.long)
         elif self.typeExperiment == "RANDOM":
             label = torch.from_numpy(np.array(np.random.randint(0,8))).to(torch.long)
+        elif self.typeExperiment == "PROBS":
+            label = torch.from_numpy(np.array(self.loadProbFile(self.label[idx])).astype(np.float32)).to(torch.float32)
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:
