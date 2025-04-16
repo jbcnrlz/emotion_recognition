@@ -39,6 +39,8 @@ class AffectNet(data.Dataset):
             elif typeExperiment == 'RANK':
                 currLabel = os.path.join(afectdata,'annotations' ,'%d_rank.txt' % (int(imageNumber)))
                 self.label.append(currLabel)
+            elif typeExperiment == 'RANDOM':
+                self.label.append(np.random.randint(0,8))
             elif typeExperiment == 'PROBS':
                 currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank.txt' % (int(imageNumber)))
                 self.label.append(currLabel)
@@ -92,6 +94,8 @@ class AffectNet(data.Dataset):
             label = torch.from_numpy(np.array(self.label[idx]).astype(np.uint8)).to(torch.long)
         elif self.typeExperiment == "RANK":
             label = torch.from_numpy(np.array(self.loadRankFile(self.label[idx])).astype(np.uint8)).to(torch.long)
+        elif self.typeExperiment == "RANDOM":
+            label = torch.from_numpy(np.array(np.random.randint(0,8))).to(torch.long)
         elif self.typeExperiment == "PROBS":
             label = torch.from_numpy(np.array(self.loadProbFile(self.label[idx])).astype(np.float32)).to(torch.float32)
         else:
