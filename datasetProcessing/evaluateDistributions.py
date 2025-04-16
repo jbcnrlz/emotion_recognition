@@ -16,6 +16,15 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from PIL import Image  # Para carregar imagens
 
+def saveToCSV(preds,labels,files,pathCSV):
+    emotions = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
+    with open(pathCSV,'w') as pcsv:
+        pcsv.write('%s,exp,file\n' % (','.join([emotions[f] for f in range(len(preds[0]))])))
+        for idx, p in enumerate(preds):
+            for fp in p:
+                pcsv.write(f'{fp},')
+            pcsv.write(f"{emotions[labels[idx]]},{files[idx]}\n")
+
 def saveRankFile(probs,paths):
     for idx, p in enumerate(probs):
         splitedPath = paths[idx].split(os.path.sep)
@@ -188,15 +197,18 @@ def main():
         outputData = np.concatenate((outputData,vaBatch.numpy())) if outputData is not None else vaBatch.numpy()        
         vas = np.concatenate((vas,vaBatch.numpy())) if vas is not None else vaBatch.numpy()
         pts = np.concatenate((pts,paths)) if pts is not None else paths
-        
+
+    saveToCSV(probs,lbls,pts,'annotatedAffectNet.csv')
+
     #save_probability_histograms(probs, lbls, classesDist, vas, pts, output_folder='hist_probs')
-    saveRankFile(probs,pts)
+    #saveRankFile(probs,pts)
+    '''
     for idx, p in enumerate(probs):
         valuesGenerateText = {}
         for idx2, v in enumerate(p):
             valuesGenerateText[list(emotions.keys())[idx2]] = v
         generateTextForLLM(valuesGenerateText,'llm.txt',pts[idx])
-
+    '''
     '''
     colors = ['red', 'blue', 'green', 'orange', 'purple', 'yellow', 'cyan', 'magenta', 'brown', 'pink']
     emotions = list(emotions.keys())
