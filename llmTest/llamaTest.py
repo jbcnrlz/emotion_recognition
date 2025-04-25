@@ -1,7 +1,22 @@
-import transformers
+from transformers import pipeline
 import torch
-model_id = "meta-llama/Meta-Llama-3-8B"
-pipeline = transformers.pipeline(
-    "text-generation", model=model_id, model_kwargs={"torch_dtype": torch.bfloat16}, device_map="auto"
+from huggingface_hub import login
+
+login(token='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')
+
+model_id = "meta-llama/Llama-3.2-3B-Instruct"
+pipe = pipeline(
+    "text-generation",
+    model=model_id,
+    torch_dtype=torch.bfloat16,
+    device_map="auto",
 )
-pipeline("Hey how are you doing today?")
+messages = [
+    {"role": "system", "content": "You are a very experienced researcher with knowledge on machine learning!"},
+    {"role": "user", "content": "Can you write me chapter for a paper that describes neural networks with citations?"},
+]
+outputs = pipe(
+    messages,
+    max_new_tokens=256,
+)
+print(outputs[0]["generated_text"][-1])

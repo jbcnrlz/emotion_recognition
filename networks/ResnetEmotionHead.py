@@ -5,7 +5,7 @@ from torch.nn import functional as F
 import torch, os, sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from DAN.networks.dan import CrossAttentionHead
+
 class ResnetEmotionHead(nn.Module):
     def __init__(self,classes,resnetModel,pretrained=False,vaGuidance=False) -> None:        
         super(ResnetEmotionHead,self).__init__()

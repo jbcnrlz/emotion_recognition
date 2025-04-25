@@ -32,7 +32,7 @@ def main():
             [0.4,0.67]
         ])).type(torch.FloatTensor)
     else:
-        datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='BOTH',exchangeLabel=None)
+        datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='BOTH',exchangeLabel=None)
         classesDist = torch.from_numpy(np.array([
             [0,0],
             [0.81,0.51],
@@ -44,7 +44,7 @@ def main():
             [-0.23,0.31]
         ])).type(torch.FloatTensor)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
-    folderDataset = os.path.join(args.pathBase,'val_set')
+    folderDataset = os.path.join(args.pathBase,'train_set')
     markerFiles = {}
     for data in val_loader:
         if args.dataset == 'affwild':
@@ -56,7 +56,7 @@ def main():
             if args.dataset == 'affwild':
                 fileName = p.split(os.path.sep)[-2]
                 frame = int(p.split(os.path.sep)[-1][:-4])                
-                pathRank = os.path.join(args.pathBase,'annotations','Rank_Set','Validation_Set',fileName+'.txt')
+                pathRank = os.path.join(args.pathBase,'annotations','Rank_Set','Train_Set',fileName+'.txt')
                 if pathRank not in markerFiles.keys():
                     markerFiles[pathRank] = []
 
