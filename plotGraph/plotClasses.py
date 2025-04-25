@@ -51,7 +51,6 @@ def plot_matrix(cm, labels):
         - Currently, some of the ticks dont line up due to rotations.
     '''
     np.set_printoptions(precision=2)
-    ###fig, ax = matplotlib.figure.Figure()
 
     fig = plt.Figure(figsize=(4, 4), dpi=320, facecolor='w', edgecolor='k')
     ax = fig.add_subplot(1, 1, 1)
@@ -130,9 +129,7 @@ def calcIntersectionElipses(plotClasses,analiseItem=None):
             mp = elipses[i].intersection(elipses[j])
             intersectionsMatrix[i,j] = mp.area / elipses[i].area
             intersectionsMatrix[j,i] = mp.area / elipses[j].area
-    
 
-    #np.savetxt("test.csv",intersectionsMatrix,delimiter=',')
     sortedIntersections = (-intersectionsMatrix).argsort()
     classAndInters = {}
     for i in range(len(intersectionsMatrix)):
@@ -141,38 +138,6 @@ def calcIntersectionElipses(plotClasses,analiseItem=None):
     if analiseItem is not None:
         plotIntersections(elipses[analiseItem],[elipses[i] if intersectionsMatrix[analiseItem][i] > 0 else None for i in (-intersectionsMatrix[analiseItem]).argsort()])
 
-    #print('opa')
-
-    '''
-    with open('intersections.txt','w') as fileInt:
-        for c in classAndInters:
-            fileInt.write('%s -> ' % (c))
-            for inter in classAndInters[c]:
-                if inter[0] <=0 :
-                    break
-                fileInt.write("Class: %s intersection rating: %f | " % (inter[1],inter[0]))
-
-            fileInt.write('\n')
-    print('oi')
-    '''
-    '''
-    elipses = ellipse_polyline(elipses)
-    for i in range(len(elipses)):
-        for j in range(len(elipses)):
-            if i == j:
-                continue
-            x, y, mp = intersections(elipses[i],elipses[j])
-            if len(x) > 2:
-                fig,ax = plt.subplots()
-                ax.set_xlim([-1,1])
-                ax.set_ylim([-1,1])
-                ax.set_aspect('equal')
-                ax.plot(x, y, "o")
-                ax.plot(elipses[i][:,0], elipses[i][:,1])
-                ax.plot(elipses[j][:,0], elipses[j][:,1])
-                plt.show()
-                print('opa')
-    '''
 def plotClassesCircle(plotClasses):
     circles = list(zip(plotClasses['valence mean'],plotClasses['arousal mean']))
     distances = (plotClasses['valence std'] + plotClasses['arousal std']) / 2
