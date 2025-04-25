@@ -9,13 +9,15 @@ from huggingface_hub import login
 def loadRanksFiles(datasetPath):
     returnRanksFiles = []
     images = getFilesInPath(os.path.join(datasetPath,'images'))
+    pathFiles = []
     for i in images:
         fileName = i.split(os.path.sep)[-1][:-4]
         with open(os.path.join(datasetPath,'annotations',f"{fileName}_prob_rank.txt"), 'r') as file:
             for f in file:
                 returnRanksFiles.append(list(map(float, f.split(','))))
+        pathFiles.append(i.split(os.path.sep)[-1])
 
-    return np.array(returnRanksFiles)
+    return np.array(returnRanksFiles), pathFiles
 
 
 def main():
@@ -28,8 +30,9 @@ def main():
     if args.pathBase[-4] == '.':
         csvFile = np.array(pd.read_csv(args.pathBase))
         ranks = csvFile[:,:-1].astype(np.float64)
+        files = csvFile[:,-1]
     else:
-        ranks = loadRanksFiles(args.pathBase)
+        ranks, files = loadRanksFiles(args.pathBase)
         
     hf_token = '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'
     login(hf_token)
@@ -45,7 +48,9 @@ def main():
 
     emotions = ['neutral', 'happy', 'sad', 'surprised', 'fear', 'disgust', 'angry', 'contempt', 'serene', 'contemplative', 'secure', 'untroubled', 'quiet']
 
-    for r in ranks:
+    outputsToFile = []
+
+    for idx2, r in enumerate(ranks):
 
         messageEmotions = ''
         for idx in range(len(r)):
@@ -78,7 +83,12 @@ def main():
             top_p=0.9,
         )
         response = outputs[0][input_ids.shape[-1]:]
-        print(tokenizer.decode(response, skip_special_tokens=True))
+        outputsToFile.append(tokenizer.decode(response, skip_special_tokens=True),files[idx2])        
+
+        
+    with open('emotions.txt', 'w') as f:
+        for i in outputsToFile:
+            f.write(f"{i[0]} - {i[1]}\n")
 
 if __name__ == "__main__":
     main()
