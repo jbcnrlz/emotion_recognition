@@ -5,44 +5,192 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Join File",
-            "type": "python",
+            "name": "Python Debugger: Generate LLMs annotation",
+            "type": "debugpy",
             "request": "launch",
-            "program": "datasetProcessing/joinToVideo.py",
-            "console": "integratedTerminal"
+            "program": "llmTest/generateLabelsForEmotions.py",
+            "console": "integratedTerminal",
+            "args" : [
+                "--pathBase","valAffect.csv"
+            ]
         },
         {
-            "name": "Python: Extract Features",
-            "type": "python",
+            "name": "Python Debugger: Finetune Resnet",
+            "type": "debugpy",
             "request": "launch",
-            "program": "mimamo/extractFeatures.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: Extract faces",
-            "type": "python",
-            "request": "launch",
-            "program": "datasetProcessing/extractFacesFromVideo.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: Track landmarks",
-            "type": "python",
-            "request": "launch",
-            "program": "datasetProcessing/defineVideoRegions.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: Separate video in chuncks",
-            "type": "python",
-            "request": "launch",
-            "program": "datasetProcessing/separateVideo.py",
+            "program": "trainScripts/finetuneResnet.py",
             "console": "integratedTerminal",
             "args": [
                 "--pathBase",
-                "D:/data_sep_videos",
-                "--sizeClip",
-                "5"
+                "/home/joaocardia/Documents/Projects/AffectNet",
+                "--batchSize",
+                "100",
+                "--epochs",
+                "20",
+                "--learningRate",
+                "0.0001",
+                "--output",
+                "resnet_prob_emotion",
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate rank annotations with probs - Affectnet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/evaluateDistributions.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "/home/joaocardia/Documents/Projects/AffectNet/",
+                "--batchSize",
+                "50"
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate rank annotations - Affectnet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/generateRanksForDataset.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "/home/joaocardia/Documents/Projects/AffectNet/",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affectnet"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate Rank Affecnet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators/calculateNDCGScore.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "/home/joaocardia/Documents/Projects/AffectNet/",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affectnet",
+                "--classifierOutput",
+                "poster.csv",
+                "--classesQt",
+                "8",
+                "--metricType",
+                "rank"
+            ]
+        },
+        {
+            "name": "Python Debugger: Test Bode",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "llmTest/bodeTest.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Test LLama3",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "llmTest/llamaTest.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Finetune DDAMNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "trainScripts/finetuneDDAMN++.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "/home/joaocardia/Documents/Projects/AffectNet",
+                "--batchSize",
+                "150",
+                "--epochs",
+                "20",
+                "--learningRate",
+                "0.0001",
+                "--output",
+                "dammet_exp_repl",
+                "--model_path",
+                "/home/joaocardia/Documents/Projects/DDAMFN/DDAMFN++/checkpoints_ver2.0/affecnet8_epoch25_acc0.6469.pth"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate Scores",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators/calculateNDCGScore.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "/home/joaocardia/Documents/Projects/AffectNet",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affwild",
+                "--classifierOutput",
+                "ddamn_affwild.csv",
+                "--classesQt",
+                "8",
+                "--metricType",
+                "ndcg"
+            ]
+        },
+        {
+            "name": "Python Debugger: Validate POSTERV2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "trainScripts/extractPosterV2.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--data",
+                "/home/joaocardia/Documents/Projects/AffWild",
+                "--csvOutput",
+                "posterV2wild2.csv",
+                "--dataset",
+                "affwild2",
+                "--evaluate",
+                "/home/joaocardia/Documents/Projects/emotion_recognition/posterv2wtgs/affectnet-8-model_best.pth"
+            ]
+        },
+        {
+            "name": "Python Debugger: Validate DDAM",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "trainScripts/testDDAMN++.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--aff_path",
+                "/home/joaocardia/Documents/Projects/AffectNet",
+                "--batch_size",
+                "50",
+                "--model_path",
+                "/home/joaocardia/Documents/Projects/DDAMFN/DDAMFN++/checkpoints_ver2.0/RESNETATT_best_val_loss.pth.tar",
+                "--dataset",
+                "affectnet",
+                "--csv_path",
+                "ddamn_affectnet_rank.csv"
+            ]
+        },
+        {
+            "name": "Python Debugger: Validate DDAM - AffWild",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "trainScripts/testDDAMN++.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--aff_path",
+                "/home/joaocardia/Documents/Projects/AffWild",
+                "--batch_size",
+                "50",
+                "--model_path",
+                "/home/joaocardia/Documents/Projects/DDAMFN/DDAMFN++/checkpoints_ver2.0/affecnet8_epoch25_acc0.6469.pth",
+                "--dataset",
+                "affwild",
+                "--csv_path",
+                "ddamn_affwild.csv"
             ]
         }
     ]

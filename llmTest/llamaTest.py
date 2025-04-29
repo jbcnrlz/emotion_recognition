@@ -1,8 +1,6 @@
 from transformers import pipeline
 import torch
 from huggingface_hub import login
-
-
 model_id = "meta-llama/Llama-3.2-3B-Instruct"
 pipe = pipeline(
     "text-generation",
