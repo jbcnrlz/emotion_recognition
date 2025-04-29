@@ -2,7 +2,6 @@ from transformers import pipeline
 import torch
 from huggingface_hub import login
 
-login(token='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')
 
 model_id = "meta-llama/Llama-3.2-3B-Instruct"
 pipe = pipeline(

@@ -37,7 +37,7 @@ def main():
     else:
         ranks, files = loadRanksFiles(args.pathBase)
         
-    hf_token = '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'
+    hf_token = None
     login(hf_token)
 
     model_id = "meta-llama/Meta-Llama-3-8B-Instruct"

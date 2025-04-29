@@ -2,7 +2,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 from peft import PeftModel, PeftConfig
 
 llm_model = 'recogna-nlp/bode-7b-alpaca-pt-br'
-hf_auth = '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'
 config = PeftConfig.from_pretrained(llm_model)
 model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, trust_remote_code=True, return_dict=True, load_in_8bit=True, device_map='auto', token=hf_auth)
 tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path, token=hf_auth)
