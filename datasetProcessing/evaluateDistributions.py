@@ -6,13 +6,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from matplotlib.patches import Ellipse
-
-import os
-import matplotlib.pyplot as plt
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from PIL import Image  # Para carregar imagens
 
@@ -143,7 +136,7 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='BOTH',exchangeLabel=None)
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='BOTH',exchangeLabel=None)
     classesDist = np.array([
         [0,0,0,0],
         [0.81,0.21,0.51,0.26], #happy
@@ -198,10 +191,10 @@ def main():
         vas = np.concatenate((vas,vaBatch.numpy())) if vas is not None else vaBatch.numpy()
         pts = np.concatenate((pts,paths)) if pts is not None else paths
 
-    saveToCSV(probs,lbls,pts,'annotatedAffectNet.csv')
+    #saveToCSV(probs,lbls,pts,'annotatedAffectNet.csv')
 
     #save_probability_histograms(probs, lbls, classesDist, vas, pts, output_folder='hist_probs')
-    #saveRankFile(probs,pts)
+    saveRankFile(probs,pts)
     '''
     for idx, p in enumerate(probs):
         valuesGenerateText = {}
