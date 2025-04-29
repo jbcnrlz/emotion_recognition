@@ -5,36 +5,1875 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Join File",
-            "type": "python",
+            "name": "Python Debugger: Train resnet with bayesian inference",
+            "type": "debugpy",
             "request": "launch",
-            "program": "datasetProcessing/joinToVideo.py",
+            "program": "trainScripts/finetuneResnetBayes.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batch",
+                "50",
+                "--learningRate",
+                "0.00005",
+                "--output",
+                "resnetBayes",
+                "--epochs",
+                "10",
+                "--numberOfClasses",
+                "13"
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate images",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "calculateResults/plotImage.py",
             "console": "integratedTerminal"
         },
         {
+            "name": "Python Debugger: Generate label LLM",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "llmTest/generateLabelsForEmotions.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "valAffect_diffloss.csv",
+            ]
+        },
+        {
+            "name": "Python Debugger: Get VA from Dists",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "calculateResults/getVAFromDists.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+                "--csvEmotions",
+                "valAffect.csv"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate between close emotions",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "calculateResults/generateTree.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate discrepancy",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "calculateResults/measureDiscrepancy.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate metrics",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "calculateResults/distroResults.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+                "--csvFiles",
+                "valAffect_diffloss.csv"
+            ]
+        },
+        {
+            "name": "Python Debugger: Extract Emotion GMM",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractFeaturesRESNET.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+                "--batch",
+                "50",
+                "--weights",
+                "resnet_diff_loss/RESNETATT_best_val_loss.pth.tar",
+                "--output",
+                "valAffect_diffloss.csv",
+                "--dataset",
+                "affectnet"
+            ]
+        },
+        {
+            "name": "Python Debugger: Fuse datasets",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/fuseDistributions.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affectnet",
+                "--batchSize",
+                "50",
+            ]
+        },
+        {
+            "name": "Python Debugger: Evaluate probs",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/evaluateDistributions.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affectnet",
+                "--batchSize",
+                "50",
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate dist file",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/extractDistributions.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affectnet",
+                "--batchSize",
+                "50",
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate LLM Annotation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/generateLLMAnnotation.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:/AffectNet/val_set/images",
+                "--annotationPath",
+                "D:/AffectNet/val_set/annotations_8",
+                "--lastClass",
+                "414796"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate discrepancies",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/countDiscrepancy.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--affectNetFolder",
+                "C:\\Users\\joaoc\\AffectNet\\train_set\\annotations",
+                "--affWildFolder",
+                "C:\\Users\\joaoc\\Affwild\\annotations"
+            ]
+        },
+        {
+            "name": "Python Debugger: Using LLama",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "llmTest/llamaTest.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Using Bode",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "llmTest/bodeTest.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Calculate Rank Affwild",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators/calculateNDCGScore.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affwild",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affwild2",
+                "--classifierOutput",
+                "restnet18Features_affwild.csv",
+                "--classesQt",
+                "8",
+                "--metricType",
+                "rank"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate Acc Affwild",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators/calculateNDCGScore.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affwild",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affwild2",
+                "--classifierOutput",
+                "ddamn_affwild.csv",
+                "--classesQt",
+                "8",
+                "--metricType",
+                "ndcg"
+            ]
+        },
+        {
+            "name": "Python Debugger: Validate POSTERV2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "trainScripts/extractPosterV2.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--data",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--evaluate",
+                "D:\\PycharmProjects\\POSTER_V2\\checkpoint\\affectnet-8-model_best.pth"
+            ]
+        },
+        {
+            "name": "Python Debugger: Validate DDAM",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "trainScripts/testDDAMN++.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--aff_path",
+                "C:\\Users\\joaoc\\AffWild",
+                "--batch_size",
+                "50",
+                "--model_path",
+                "D:\\PycharmProjects\\emotion_recognition\\wtgsDDAMN\\affecnet8_epoch25_acc0.6469.pth",
+                "--dataset",
+                "affwild",
+                "--csv_path",
+                "affwild_ddamfn.csv"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate Acc AffectNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators/calculateNDCGScore.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affectnet",
+                "--classifierOutput",
+                "logitsPoster.csv",
+                "--classesQt",
+                "7",
+                "--metricType",
+                "acc"
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate resnet logits with rank - AFFWILD2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractRESNETFeaturesFromRank.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--dataset",
+                "AFFWILD2",
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affwild",
+                "--batchSize",
+                "50",
+                "--output",
+                "restnet18Features_affwild.csv",
+                "--numberOfClasses",
+                "7",
+                "--wtsLoad",
+                "D:\\PycharmProjects\\emotion_recognition\\resnet18_ranknet_7class\\RESNETATT_best_val_loss.pth.tar"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate NDCG Affwild",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators/calculateNDCGScore.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affwild",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affwild",
+                "--classifierOutput",
+                "restnet18Features_affwild.csv"
+            ]
+        },
+        {
+            "name": "Python Debugger: Calculate NDCG",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators/calculateNDCGScore.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affectnet",
+                "--classifierOutput",
+                "restnet18Features_onceloss.csv"
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate rank annotations - AffWild2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/generateRanksForDataset.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affwild",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "affwild"
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate rank annotations - Affectnet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/generateRanksForDataset.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batchSize",
+                "50"
+            ]
+        },
+        {
+            "name": "Python Debugger: Generate resnet logits with rank",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractRESNETFeaturesFromRank.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batchSize",
+                "50",
+                "--output",
+                "restnet18Features_onceloss.csv",
+                "--numberOfClasses",
+                "8",
+                "--wtsLoad",
+                "D:\\PycharmProjects\\emotion_recognition\\resnet18_pure_celoss\\RESNETATT_best_val_loss.pth.tar"
+            ]
+        },
+        {
+            "name": "Python: Generate Confusion Matrix Multiclass",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "metrics/confusionMatrixMultilabel.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathCSV",
+                "logitsRESNETEMOTION_8classes_diff_cl_ranknet_nowarmup.csv"
+            ]
+        },
+        {
+            "name": "Python: Generate CMC Curve",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/generateCMCEmotion.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathCSV",
+                "logitsPoster.csv",
+                "logitsDAN.csv",
+                "logitsRESNETEMOTION_8classes_diff_cl_ranknet_nowarmup.csv",
+                "--ranks",
+                "7",
+                "--labels",
+                "PosterV2",
+                "DAN",
+                "Our Approach"
+            ]
+        },
+        {
+            "name": "Python: Check acc logits",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/checkACCWithLogits.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--logitsFile",
+                "logits_POSTERV2_7classes.csv"
+            ]
+        },
+        {
+            "name": "Python: Train Resnet Recognition Attention - small class",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/trainStepedResNet.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batch",
+                "20",
+                "--learningRate",
+                "0.00005",
+                "--output",
+                "resnetRecognitionAttention",
+                "--epochs",
+                "10",
+                "--numberOfClasses",
+                "7"
+            ]
+        },
+        {
+            "name": "Python: Train Resnet Recognition Attention - relative",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/trainResnetAttentionRelative.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batch",
+                "20",
+                "--learningRate",
+                "0.00005",
+                "--output",
+                "resnetRecognitionAttention",
+                "--epochs",
+                "10",
+                "--numberOfClasses",
+                "8"
+            ]
+        },
+        {
+            "name": "Python: Add WFD",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/joinWFDToDataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBaseWFD",
+                "C:\\Users\\joaoc\\WFD",
+                "--newDatasetPath",
+                "D:\\PycharmProjects\\emotion_recognition\\joinedAffWildNet"
+            ]
+        },
+        {
+            "name": "Python: Generate confusion matrix",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/generateConfusionMatrix.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+                "--weights",
+                "D:\\PycharmProjects\\emotion_recognition\\resnetRecognitionAttentionWindow\\RESNETATT_best_val_loss.pth.tar",
+                "--batch",
+                "50",
+                "--dataset",
+                "AFFECTNET",
+                "--classesQuantity",
+                "7",
+                "--confPath",
+                "confusionpath.png"
+            ]
+        },
+        {
+            "name": "Python: Extract Logist with Resenetemotion - 8 classes",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractRESNETEmotion.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+                "--weights",
+                "D:\\PycharmProjects\\emotion_recognition\\resnetEmotionRelative_diffDist_CEL_neuralNDCG_nowarmpup\\RESNETATT_best_val_loss.pth.tar",
+                "--batch",
+                "50",
+                "--output",
+                "logitsRESNETEMOTION_8classes_diff_cl_ranknet_nowarmup.csv",
+                "--dataset",
+                "AFFECTNET",
+                "--typeOutput",
+                "frame",
+                "--classesQuantity",
+                "8"
+            ]
+        },
+        {
+            "name": "Python: Extract Logist with Resenetemotion - 7 classes",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractRESNETEmotion.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet\\val_set",
+                "--weights",
+                "D:\\PycharmProjects\\emotion_recognition\\resnetEmotionRelative_diffDist_CEL_rankNet\\RESNETATT_best_ccc.pth.tar",
+                "--batch",
+                "50",
+                "--output",
+                "logitsRESNETEMOTION_7classes_diff_cl_ranknet_nologit.csv",
+                "--dataset",
+                "AFFECTNET",
+                "--typeOutput",
+                "frame",
+                "--classesQuantity",
+                "7"
+            ]
+        },
+        {
+            "name": "Python: Fuse datasets",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/generatedFusedDataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--newDatasetPath",
+                "joinedAffWildNet",
+                "--rangeOfEmotions",
+                "7"
+            ]
+        },
+        {
+            "name": "Python: Generate PDF statistics from file",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/generateLogitsPerImage.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathCSV",
+                "restnet18Features_onceloss.csv",
+                "--folderLogits",
+                "ranknet_celoss"
+            ]
+        },
+        {
+            "name": "Python: Extract Logist with Resenetemotion",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractRESNETEmotion.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet\\val_set",
+                "--weights",
+                "D:\\PycharmProjects\\emotion_recognition\\resnetEmotionRelative\\RESNETATT_best_val_loss.pth.tar",
+                "--batch",
+                "50",
+                "--output",
+                "logitsRESNETEMOTIONMULTILABEL.csv",
+                "--dataset",
+                "AFFECTNET",
+                "--typeOutput",
+                "frame"
+            ]
+        },
+        {
+            "name": "Python: Extract dataset information",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "DatasetClasses/DatasetStatistics.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet"
+            ]
+        },
+        {
+            "name": "Python: ViT Train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/trainViTModels.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet",
+                "--batch",
+                "5",
+                "--learningRate",
+                "0.00005",
+                "--output",
+                "ViTRecognitionAttention",
+                "--epochs",
+                "10",
+                "--numberOfClasses",
+                "8"
+            ]
+        },
+        {
+            "name": "Python: Clip Experiment",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "clipExperiments/clipExecution.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet\\val_set"
+            ]
+        },
+        {
+            "name": "Python: Train Resnet Recognition Attention",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/trainResnetAttention.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\AffectNet",
+                "--batch",
+                "5",
+                "--learningRate",
+                "0.00005",
+                "--output",
+                "resnetRecognitionAttention",
+                "--epochs",
+                "10",
+                "--numberOfClasses",
+                "7"
+            ]
+        },
+        {
+            "name": "Python: Train VAE for Emotion with attention",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/trainVAE.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet",
+                "--batchSize",
+                "5",
+                "--learningRate",
+                "0.00005",
+                "--output",
+                "vaeLearnedFeatures_attention",
+                "--epochs",
+                "10",
+                "--numberOfClasses",
+                "8",
+                "--additiveLoss",
+                "centerloss",
+                "--modelToTrain",
+                "vaeAttn"
+            ]
+        },
+        {
+            "name": "Python: Segment face from images",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/preprocessDataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--folderImages",
+                "D:\\AffectNet\\train_set\\images"
+            ]
+        },
+        {
+            "name": "Python: Evaluate Clusters - WFD",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/evaluateClusters.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "ours_cluters_vae_probs_wfd",
+                "--pathDataset",
+                "D:\\WFD\\All data.csv",
+                "--typeAnnotation",
+                "original",
+                "--csvEmotions",
+                "classesWFD.csv",
+                "--matlabPrint",
+                "True",
+                "--yLimit",
+                "150",
+                "--dataset",
+                "wfd"
+            ]
+        },
+        {
+            "name": "Python: Extract VAE - our code (WFD)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/extractFeaturesFromOurVAE.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\WFD\\",
+                "--output",
+                "D:\\PycharmProjects\\emotion_recognition\\fileFeaturesVAEWFD_good_bad_prob.csv",
+                "--weightsForVAE",
+                "D:\\PycharmProjects\\emotion_recognition\\vaeLearnedFeatures_non_segmented_neutral\\vae_emotion_best_acc_neutral.pth.tar",
+                "--batchSize",
+                "50",
+                "--dataset",
+                "wfd"
+            ]
+        },
+        {
+            "name": "Python: Plot t-SNE",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "evaluators//evaluateVAEFeatures.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--latentCSV",
+                "fileFeaturesVAE_goodbad.csv",
+                "fileFeaturesVAE_goodbad_probs.csv",
+                "fileFeaturesVAE_goodbad_cl.csv",
+                "--components",
+                "2",
+                "--pathDataset",
+                "D:\\AffectNet\\val_set",
+                "--csvEmotions",
+                "classes.csv"
+            ]
+        },
+        {
+            "name": "Python: Extract VAE - our code",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/extractFeaturesFromOurVAE.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet\\",
+                "--output",
+                "D:\\PycharmProjects\\emotion_recognition\\fileFeaturesVAE_goodbad_cl.csv",
+                "--weightsForVAE",
+                "D:\\PycharmProjects\\emotion_recognition\\vaeLearnedFeatures_closs\\vae_emotion_best_val_loss_neutral.pth.tar",
+                "--batchSize",
+                "50"
+            ]
+        },
+        {
+            "name": "Python: Train VAE for Emotion",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/trainVAE.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet",
+                "--batchSize",
+                "10",
+                "--learningRate",
+                "0.00005",
+                "--output",
+                "vaeLearnedFeatures_test",
+                "--epochs",
+                "10",
+                "--numberOfClasses",
+                "3",
+                "--additiveLoss",
+                "centerloss"
+            ]
+        },
+        {
+            "name": "Python: Extract Features from DAN Original",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/extractFeaturesDANCluster.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:\\Users\\joaoc\\Affwild",
+                "--weights",
+                "D:\\PycharmProjects\\emotion_recognition\\DAN\\models\\affecnet7_epoch6_acc0.6569.pth",
+                "--batch",
+                "50",
+                "--output",
+                "featuresDANOriginal_AffWild.csv",
+                "--classes",
+                "7",
+                "--dataset",
+                "affwild"
+            ]
+        },
+        {
+            "name": "Python: Evaluate Clusters Latent - CKP",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/evaluateClusters.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\PycharmProjects\\emotion_recognition\\ckp_predict",
+                "--pathDataset",
+                "D:\\PycharmProjects\\CK+",
+                "--typeAnnotation",
+                "original",
+                "--csvEmotions",
+                "classesCKP.csv",
+                "--matlabPrint",
+                "True",
+                "--dataset",
+                "ckp"
+            ]
+        },
+        {
+            "name": "Python: Exrtact Resenet18 features - CKPLUS",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/extractFeaturesRESNET.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\PycharmProjects\\CK+",
+                "--weightsForResnet",
+                "resnet_prob_cluster\\resnet_emotion_best_val_loss_neutral.pth.tar",
+                "--outputCSVLatent",
+                "finetunedLatentResnet18_ckplus.csv",
+                "--dataset",
+                "ckplus",
+                "--networkToUse",
+                "ResnetEmotionHeadClassifier"
+            ]
+        },
+        {
+            "name": "Python: Balance class",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/balanceDataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathAnnotation",
+                "D:\\AffectNet\\train_set",
+                "--lastClassNumber",
+                "414796"
+            ]
+        },
+        {
+            "name": "Python: Count emotions",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "distributionsFinder/viewQuantityEmotions.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathAnnotation",
+                "D:\\AffectNet\\train_set\\annotations",
+                "--lastClassNumber",
+                "414796"
+            ]
+        },
+        {
+            "name": "Python: Get Neighbours",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "distributionsFinder/getNeighs.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--datasetFolder",
+                "D:\\AffectNet\\train_set",
+                "--lastClassNumber",
+                "414796",
+                "--k",
+                "15",
+                "--outputFile",
+                "neighsForDataset_full.txt"
+            ]
+        },
+        {
+            "name": "Python: Evaluate Clusters",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/evaluateClusters.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "ours_cluters_vae_cl_8",
+                "--pathDataset",
+                "D:\\AffectNet\\val_set",
+                "--typeAnnotation",
+                "original",
+                "--csvEmotions",
+                "classes.csv",
+                "--matlabPrint",
+                "True",
+                "--yLimit",
+                "500"
+            ]
+        },
+        {
+            "name": "Python: Generate GMM from data",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "distributionsFinder/calculateDistsFromAnnotation.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathAnnotationTrain",
+                "D:\\AffectNet\\train_set\\annotations",
+                "--lastClassNumber",
+                "5495",
+                "--clusterFolder",
+                "clusterGMM",
+                "--pathAnnotationTest",
+                "D:\\AffectNet\\val_set\\annotations",
+            ]
+        },
+        {
+            "name": "Python: Join Neutral Files",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "DatasetClasses/generateJoinedEmotionDataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBaseAffectNet",
+                "D:\\AffectNet\\train_set",
+                "--pathBaseAffWild",
+                "D:\\Affwild",
+                "--newDatasetPath",
+                "D:\\BalancedDatasetAffectWild"
+            ]
+        },
+        {
+            "name": "Python: Generate Random Folds",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "DatasetClasses/generateRandomTrainingSets.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet\\val_set\\images",
+                "--sizeSampling",
+                "500",
+                "--ignoreEmotion",
+                "0"
+            ]
+        },
+        {
+            "name": "Python: Exrtact Resenet18 features",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/extractFeaturesRESNET.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet",
+                "--weightsForResnet",
+                "resnet18EmotionCenterLossDist_attention_8classes_msceleb\\resnet_emotion_best_val_loss_neutral.pth.tar",
+                "--outputCSVLatent",
+                "attentionFromScratch_8labels_msceleb.csv",
+                "--networkToUse",
+                "ResnetEmotionAttention"
+            ]
+        },
+        {
+            "name": "Python: Extract Finetuned Latent KL",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/fineTunedTest.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet\\val_set",
+                "--weightsForNetowrk",
+                "vae_emotion\\vae_emotion_best_val_loss_neutral.pth.tar",
+                "--outputCSVLatent",
+                "finetunedLatentKL.csv"
+            ]
+        },
+        {
+            "name": "Python: Teste belonging",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/testBelonging.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--csvEmotions",
+                "hajer_categ.CSV",
+                "--datasetFiles",
+                "D:\\AffectNet"
+            ]
+        },
+        {
+            "name": "Python: Finetune VAE",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/fineTuneAutoencoderKL.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: VAE Feature Extraction",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/VAETest.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\AffectNet\\val_set",
+                "--outputCSVLatent",
+                "affWildLatentVAEKL.csv"
+            ]
+        },
+        {
+            "name": "Python: Evaluate Clusters Latent",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/evaluateClusters.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:\\PycharmProjects\\emotion_recognition\\ours_cluters_vae_cl_2",
+                "--pathDataset",
+                "D:\\AffectNet\\val_set",
+                "--typeAnnotation",
+                "original",
+                "--csvEmotions",
+                "classes.csv",
+                "--matlabPrint",
+                "True",
+                "--yLimit",
+                "500"
+            ]
+        },
+        {
+            "name": "Python: Cluster latent features",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "autoencoders/clusterWithLatent.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--latentCSV",
+                "fileFeaturesVAE_goodbad_cl.csv",
+                "--components",
+                "2",
+                "--type",
+                "predict",
+                "--dirCluster",
+                "ours_cluters_vae_cl_2"
+            ]
+        },
+        {
+            "name": "Python: Calculate statistics file",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/statisticsDataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathFile",
+                "D:/AffectNet/val_set",
+                "--csvMapping",
+                "categLevels.CSV"
+            ]
+        },
+        {
+            "name": "Python: Classify with reduce search space - with mimamo",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/classifyWithReducing.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--csvVA",
+                "va_affectnet_mimamo.csv",
+                "--csvMapping",
+                "categLevels.CSV",
+                "--output",
+                "classifiedGran_mimamo.csv"
+            ]
+        },
+        {
+            "name": "Python: ACC With Relabeling",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/verifyAccWithReducedSpace.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--csvClassification",
+                "classifiedGran.csv",
+                "--pathFile",
+                "D:/AffectNet/val_set",
+                "--annotationDir",
+                "relabel_joao",
+                "relabel"
+            ]
+        },
+        {
+            "name": "Python: Classify with reduce search space",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/classifyWithReducing.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--csvEmotions",
+                "va_affectnet_validation.csv",
+                "--csvVA",
+                "va_affectnet_val.csv",
+                "--csvMapping",
+                "categLevels.CSV",
+                "--output",
+                "classifiedGran.csv"
+            ]
+        },
+        {
+            "name": "Python: Do My Annotation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "helper/doMyAnnotation.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--affectNetFolder",
+                "D:/AffectNet",
+                "--csvEmotions",
+                "classes.csv",
+                "--csvMapping",
+                "categLevels.CSV"
+            ]
+        },
+        {
+            "name": "Python: Fix Annotation Files",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "helper/fixAnnotation.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--excelFiles",
+                "Relabel_AffectNet(1).xlsx",
+                "--affectNetFolder",
+                "D:/AffectNet"
+            ]
+        },
+        {
+            "name": "Python: Train encoder decoder",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/trainUnet.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/AffectNet",
+                "--batch",
+                "10",
+                "--epochs",
+                "10"
+            ]
+        },
+        {
+            "name": "Python: Measure acc evaluate",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/evaluateWithAffectNet.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dataWithPredictions",
+                "va_affectnet_validation.csv",
+                "--pathBase",
+                "D:/AffectNet/val_set"
+            ]
+        },
+        {
+            "name": "Python: Extract emotions from AffectNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/classifyToClasses.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--pathBase",
+                "D:/AffectNet/val_set",
+                "--batch",
+                "50",
+                "--output",
+                "va_affectnet_validation.csv",
+                "--dataset",
+                "AFFECTNET",
+                "--datasetPart",
+                "Validation_Set",
+                "--termsCSV",
+                "classes.csv",
+                "--danPretrained",
+                "D:/PycharmProjects/DAN/models/affecnet7_epoch6_acc0.6569.pth"
+            ]
+        },
+        {
+            "name": "Python: Generate csv mimamo",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/fixFileForClass.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/PycharmProjects/emotion_recognition/affcsvfile"
+            ]
+        },
+        {
+            "name": "Python: Finetune RESNET",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/finetuneRESNET.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/Affwild",
+                "--batch",
+                "50",
+                "--epochs",
+                "10",
+                "--output",
+                "finetunedTermsRESNET",
+            ]
+        },
+        {
+            "name": "Python: Join AffWild",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/joinAffWildIntoVideo.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:/Affwild",
+                "--annotationFile",
+                "D:/Affwild/annotations/TERMS_Set/Validation_Set"
+            ]
+        },
+        {
+            "name": "Python: Measure ACC from terms with folder",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/compareWithAffWild.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--datasetFolder",
+                "D:/Affwild/annotations/TERMS_Set_30/Validation_Set",
+                "--estimatedClass",
+                "affwild_mimamo_va_terms_30.csv"
+            ]
+        },
+        {
+            "name": "Python: Extract terms AffWild",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractTerms.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:/PycharmProjects/emotion_recognition/finetunedTermsDANAffect_70/DANTERM_best_loss.pth.tar",
+                "--pathBase",
+                "D:/Affwild/",
+                "--batch",
+                "100",
+                "--output",
+                "va_affwild_validation_70.csv",
+                "--dataset",
+                "AFFWILD2",
+                "--typeOutput",
+                "perFrame",
+                "--quantityOfTerms",
+                "70"
+            ]
+        },
+        {
+            "name": "Python: Finetune to terms AffectNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/trainToTerms.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/AffectNet",
+                "--batch",
+                "50",
+                "--epochs",
+                "15",
+                "--output",
+                "finetunedTermsDANAffect",
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--originalWeights",
+                "D:/PycharmProjects/DAN/models/affecnet8_epoch5_acc0.6209.pth",
+                "--dataset",
+                "AFFECTNET",
+                "--freeze",
+                "1"
+            ]
+        },
+        {
+            "name": "Python: Generate Annotation AffectNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/formatLabelsAffectNet.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/AffectNet/val_set/images",
+                "--annotationPath",
+                "D:/AffectNet/val_set/annotations_8",
+                "--annotationFile",
+                "csvAnnotationAffect_val_terms_8.csv",
+                "--lastClass",
+                "414797"
+            ]
+        },
+        {
+            "name": "Python: Extract features from terms AffWild2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/classifyToTerms.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:/PycharmProjects/emotion_recognition/finetunedTermsDAN/DANTERM_best_loss.pth.tar",
+                "--pathBase",
+                "D:/Affwild",
+                "--batch",
+                "50",
+                "--output",
+                "va_affwild2_validation.csv",
+                "--dataset",
+                "AFFWILD2",
+                "--termsCSV",
+                "hajer_categ.CSV"
+            ]
+        },
+        {
+            "name": "Python: Extract features from terms AffectNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/classifyToTerms.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:/PycharmProjects/emotion_recognition/finetunedTermsDAN/DANTERM_best_loss.pth.tar",
+                "--pathBase",
+                "D:/AffectNet/val_set",
+                "--batch",
+                "50",
+                "--output",
+                "va_affectnet_validation.csv",
+                "--dataset",
+                "AFFECTNET",
+                "--termsCSV",
+                "hajer_categ.CSV"
+            ]
+        },
+        {
+            "name": "Python: Finetune to Terms AffWild",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/trainToTerms.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/Affwild",
+                "--batch",
+                "100",
+                "--epochs",
+                "10",
+                "--output",
+                "finetunedAffWildTermsDAN",
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--originalWeights",
+                "D:/PycharmProjects/DAN/models/affecnet8_epoch5_acc0.6209.pth",
+                "--freeze",
+                "1",
+                "--quantityOfTerms",
+                "8"
+            ]
+        },
+        {
+            "name": "Python: Count changes",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/countChanges.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--csvFile",
+                "va_afewva_hajer_categ.csv_terms_blocksize_20_.csv"
+            ]
+        },
+        {
+            "name": "Python: Measure ACC from terms",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/calcAccWithCSVs.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--datasetClass",
+                "csvAnnotationAffect_val_terms_8.csv",
+                "--estimatedClass",
+                "va_affectnet_mimamo_terms_8.csv"
+            ]
+        },
+        {
+            "name": "Python: Output CSV from annotation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/generateCSVFromAnnotation.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--basePath",
+                "D:/AffectNet/train_set/annotations",
+                "--lastClass",
+                "414797",
+                "--outputFile",
+                "csvAnnotationAffect_train.csv"
+            ]
+        },
+        {
+            "name": "Python: Extract Features AffWild 2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractFeatures.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:/PycharmProjects/emotion_recognition/finetunedDAN/DAN_best_loss.pth.tar",
+                "--pathBase",
+                "D:/Affwild",
+                "--batch",
+                "50",
+                "--output",
+                "va_affwild_validation.csv",
+                "--dataset",
+                "AFFWILD2",
+                "--typeOutput",
+                "perFrame",
+                "--datasetPart",
+                "Validation_Set"
+            ]
+        },
+        {
+            "name": "Python: Extract Features AffectNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractFeatures.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:\\PycharmProjects\\emotion_recognition\\DAN\\models\\affecnet7_epoch6_acc0.6569.pth",
+                "--pathBase",
+                "D:/AffectNet/train_set",
+                "--batch",
+                "50",
+                "--output",
+                "va_affectnet_train.csv",
+                "--dataset",
+                "AFFECTNET",
+                "--typeOutput",
+                "perFrame"
+            ]
+        },
+        {
+            "name": "Python: Extract files from AFEWVA",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/extractFacesAFEWVA.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "C:/Users/joaoc/Downloads/afew-va"
+            ]
+        },
+        {
+            "name": "Python: Generate DBSCAN",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/generateDBSCAN.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--termsCSV",
+                "hajer_categ.CSV"
+            ]
+        },
+        {
+            "name": "Python: Generate KMeans",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/generateKMEANS.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--termsCSV",
+                "hajer_categ.CSV",
+                "--components",
+                "37"
+            ]
+        },
+        {
+            "name": "Python: Plot classes from distributions",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "plotGraph/plotDistributionsTerms.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--termFiles",
+                "hajer_categ.CSV"
+            ]
+        },
+        {
+            "name": "Python: Cluster for class",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/divisionVideos.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--termsCSV",
+                "joinedWithDistance.csv"
+            ]
+        },
+        {
+            "name": "Python: Generate clips with audio",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/separateClipsWithAudio.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/PycharmProjects/videos_dataset"
+            ]
+        },
+        {
+            "name": "Python: Generate Terms with distance",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/generateTermsWithDistance.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--termsCSV",
+                "hajer_categ.CSV",
+                "--quantityClusters",
+                "8"
+            ]
+        },
+        {
+            "name": "Python: Generate GMM",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/generateGMM.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--termsCSV",
+                "hajer_categ.CSV",
+                "--components",
+                "48"
+            ]
+        },
+        {
+            "name": "Python: Extracting faces",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/extractFacesFromOMG.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/PycharmProjects/OMGEmotionChallenge/validationDatasetOMG",
+            ]
+        },
+        {
+            "name": "Python: Extract Features AFEWVA",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractFeatures.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:/PycharmProjects/emotion_recognition/finetunedDAN/DAN_best_loss.pth.tar",
+                "--pathBase",
+                "C:/Users/joaoc/Downloads/afew-va",
+                "--batch",
+                "50",
+                "--output",
+                "D:/PycharmProjects/OMGEmotionChallenge/va_afewva.csv",
+                "--dataset",
+                "AFEWVA",
+                "--typeOutput",
+                "perFrame"
+            ]
+        },
+        {
+            "name": "Python: Extract Features Teaching",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractFeatures.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:/PycharmProjects/emotion_recognition/finetunedDAN/DAN_best_loss.pth.tar",
+                "--pathBase",
+                "D:/PycharmProjects/videos_dataset/clips",
+                "--batch",
+                "50",
+                "--output",
+                "D:/PycharmProjects/OMGEmotionChallenge/va_teaching.csv",
+                "--dataset",
+                "teaching",
+                "--rawData",
+                "D:/PycharmProjects/OMGEmotionChallenge/raw_va_teaching.csv",
+            ]
+        },
+        {
+            "name": "Python: Extract Features OMG",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/extractFeatures.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--weights",
+                "D:/PycharmProjects/emotion_recognition/finetunedDAN/DAN_best_loss.pth.tar",
+                "--pathBase",
+                "D:/PycharmProjects/OMGEmotionChallenge/validationDatasetOMG",
+                "--batch",
+                "50",
+                "--output",
+                "D:/PycharmProjects/OMGEmotionChallenge/va_affwild.csv",
+                "--annotationFile",
+                "D:/PycharmProjects/OMGEmotionChallenge/omg_ValidationVideos.csv"
+            ]
+        },
+        {
+            "name": "Python: Finetune DAN",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "networks/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--pathBase",
+                "D:/Affwild",
+                "--batch",
+                "50",
+                "--epochs",
+                "15",
+                "--output",
+                "finetunedDAN",
+                "--resnetPretrained",
+                "D:/PycharmProjects/DAN/models/resnet18_msceleb.pth",
+                "--originalWeights",
+                "D:/PycharmProjects/DAN/models/affecnet8_epoch5_acc0.6209.pth"
+            ]
+        },
+        {
+            "name": "Python: Write labels to video",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/labelVideo.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--videoFolders",
+                "D:/Affwild/videos/batch1",
+                "D:/Affwild/videos/batch2",
+                "--annotationFolders",
+                "D:/Affwild/annotations/TERMS_Set/Train_Set",
+                "D:/Affwild/annotations/TERMS_Set/Validation_Set"
+            ]
+        },
+        {
+            "name": "Python: Classify with terms and CSV",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "classificationTerms/classifyWithTerms.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--termsCSV",
+                "joinedWithDistance_8.csv",
+                "--classifyFiles",
+                "D:/Affwild/annotations/VA_Set/Train_Set",
+                "--sizeBlock",
+                "1",
+                "--dataset",
+                "AFFWILD"
+            ]
+        },
+        {
+            "name": "Python: Plot new classes",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "plotGraph/plotClasses.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Compare VA",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "plotGraph/compareVA.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Separate interaction from clips",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/separateClips.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:/videos_for_test",
+                "--outputPathVideo",
+                "selectedClips"
+            ]
+        },
+        {
+            "name": "Python: Remove relevant blocks from files",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/defineVideoRegions.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:/PycharmProjects/videos_dataset"
+            ]
+        },
+        {
+            "name": "Python: Join File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "datasetProcessing/joinToVideo.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:/PycharmProjects/emotion_recognition/52-30-1280x720",
+                "D:/PycharmProjects/emotion_recognition/46-30-484x360",
+                "D:/PycharmProjects/emotion_recognition/30-30-1920x1080",
+                "D:/PycharmProjects/emotion_recognition/10-60-1280x720"
+            ]
+        },
+        {
             "name": "Python: Extract Features",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "mimamo/extractFeatures.py",
             "console": "integratedTerminal"
         },
         {
             "name": "Python: Extract faces",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "datasetProcessing/extractFacesFromVideo.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "args": [
+                "--pathBase",
+                "D:/PycharmProjects/videos_dataset/clips"
+            ]
         },
         {
             "name": "Python: Track landmarks",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "datasetProcessing/defineVideoRegions.py",
             "console": "integratedTerminal"
         },
         {
             "name": "Python: Separate video in chuncks",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "datasetProcessing/separateVideo.py",
             "console": "integratedTerminal",
@@ -44,6 +1883,13 @@
                 "--sizeClip",
                 "5"
             ]
+        },
+        {
+            "name": "Python: Generate Graphs from CSV",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "plotGraph/plotFromCSV.py",
+            "console": "integratedTerminal"
         }
     ]
 }
