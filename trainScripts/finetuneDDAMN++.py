@@ -8,12 +8,30 @@ from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar, loadNeighFiles
 from torch import nn, optim
 from networks.DDAM import DDAMNet
-
-def getRanks(vaLabel,vaDists):
-    dists = torch.cdist(vaLabel,vaDists,p=2)
-    return dists
+from networks.sam import SAM
+import torch.nn.functional as F
 
 
+eps = sys.float_info.epsilon
+
+class AttentionLoss(nn.Module):
+    def __init__(self, ):
+        super(AttentionLoss, self).__init__()
+    
+    def forward(self, x):
+        num_head = len(x)
+        loss = 0
+        cnt = 0
+        if num_head > 1:
+            for i in range(num_head-1):
+                for j in range(i+1, num_head):
+                    mse = F.mse_loss(x[i], x[j])
+                    cnt = cnt+1
+                    loss = loss+mse
+            loss = cnt/(loss + eps)
+        else:
+            loss = 0
+        return loss
 
 def train():
     parser = argparse.ArgumentParser(description='Finetune resnet')
@@ -28,37 +46,19 @@ def train():
     parser.add_argument('--model_path', help='Freeze weights', required=False, default=0)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    classesDist = torch.from_numpy(np.array([
-        [0,0],
-        [0.81,0.51],
-        [-0.63,-0.27],
-        [0.4,0.67],
-        [-0.64,0.6],
-        [-0.6,0.35],
-        [-0.51,0.59],
-        [-0.23,0.31]
-    ])).type(torch.FloatTensor).to(device)
-    if not os.path.exists(args.output):
-        os.makedirs(args.output)
-    writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
-    model = DDAMNet(num_class=8,num_head=2,pretrained=False)
-    checkpoint = torch.load(args.model_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-    if args.freeze:
-        print("Freezing weights")
-        for param in model.parameters():
-            param.requires_grad = bool(args.freeze)
-    model.to(device)    
-    print("Model loaded")
-    print(model)
+    model = DDAMNet(num_class=8,num_head=2,pretrained=True)
+
     data_transforms = {
         'train': transforms.Compose([
             transforms.Resize((112, 112)),
             transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([
+                transforms.RandomAffine(20, scale=(0.8, 1), translate=(0.2, 0.2)),
+            ], p=0.7),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225]),
+            transforms.RandomErasing(p=1, scale=(0.05, 0.05))
         ]),
         'test' : transforms.Compose([
             transforms.Resize((112, 112)),
@@ -66,20 +66,38 @@ def train():
             transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
         ])
     }
+
+    if torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.enabled = True
+
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+    writer = SummaryWriter()    
+    #checkpoint = torch.load(args.model_path, map_location=device)
+    #model.load_state_dict(checkpoint['model_state_dict'])
+    model.to(device)
+    if args.freeze:
+        print("Freezing weights")
+        for param in model.parameters():
+            param.requires_grad = bool(args.freeze)
+
+    model.to(device)    
+    print("Model loaded")
+    #print(model)
     print("Loading trainig set")
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='BOTH',exchangeLabel=None)
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',exchangeLabel=None)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
 
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='BOTH',exchangeLabel=None)
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    if args.optimizer == 'sgd':
-        optimizer = optim.SGD(model.parameters(),lr = args.learningRate, momentum = 0.9)
-    elif args.optimizer == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
+    optimizer = SAM(model.parameters(),torch.optim.Adam,lr=args.learningRate,rho=0.05,adaptive=False)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
     criterion = nn.CrossEntropyLoss().to(device)
+    criterion_at = AttentionLoss()
 
     os.system('cls' if os.name == 'nt' else 'clear')
     print("Started traning")
@@ -91,35 +109,30 @@ def train():
         model.train()
         lossAcc = []
         ceLossHist = []
-        rankNetLossHist = []
         totalImages = 0
         iteration = 0
-        for currBatch, currTargetBatch, pathfile, vaBatch in train_loader:
+        for currBatch, currTargetBatch, _ in train_loader:
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
-            classification,_,_ = model(currBatch)
+            classification,_,heads = model(currBatch)
 
-            currRanking = getRanks(vaBatch.to(device),classesDist) 
-            lrank = rankNet(classification,currRanking) 
             clValue = criterion(classification, currTargetBatch)
-            loss = lrank * 0.4 + 0.6 * clValue
+            atValue = criterion_at(heads)
+            loss = clValue + 0.1*atValue
 
             optimizer.zero_grad()
             loss.backward()
-            optimizer.step()
+            optimizer.first_step(zero_grad=True)
 
             lossAcc.append(loss.item())
             ceLossHist.append(clValue.item())
-            rankNetLossHist.append(lrank.item())
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         ceLossHist = sum(ceLossHist) / len(ceLossHist)
-        rankNetLossHist = sum(rankNetLossHist) / len(rankNetLossHist)
         writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
         writer.add_scalar('RESNETAtt/CELoss/train', ceLossHist,ep)
-        writer.add_scalar('RESNETAtt/Ranknet/train', rankNetLossHist,ep)
         scheduler.step()
         model.eval()
         total = 0
@@ -131,19 +144,17 @@ def train():
         with torch.no_grad():
             for data in val_loader:
                 printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),length=50,prefix='Procesing face - testing')
-                images, labels, _, vaBatch = data
-                classification,_,_ = model(images.to(device))
+                images, labels, _  = data
+                classification,_,heads = model(images.to(device))
                 _, predicted = torch.max(classification.data, 1)
                 labels = labels.to(device)
 
-                currRanking = getRanks(vaBatch.to(device),classesDist) 
-                lrank = rankNet(classification,currRanking) 
                 clValue = criterion(classification, labels)
-                loss = lrank * 0.4 + 0.6 * clValue
+                atValue = criterion_at(heads)
+                loss = clValue + 0.1*atValue
 
                 loss_val.append(loss)
                 ceLossHist.append(clValue.item())
-                rankNetLossHist.append(lrank.item())
                 total += labels.size(0)
                 correct += (predicted == labels.to(device)).sum().item()
                 iteration += 1
@@ -151,10 +162,8 @@ def train():
         cResult = correct / total
         tLoss = sum(loss_val) / len(loss_val)
         ceLossHist = sum(ceLossHist) / len(ceLossHist)
-        rankNetLossHist = sum(rankNetLossHist) / len(rankNetLossHist)
         writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
         writer.add_scalar('RESNETAtt/CELoss/val', ceLossHist,ep)
-        writer.add_scalar('RESNETAtt/Ranknet/val', rankNetLossHist,ep)
         writer.add_scalar('RESNETAtt/Acc', cResult, ep)
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()

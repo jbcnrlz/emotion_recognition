@@ -5,6 +5,9 @@ from helper.function import getFilesInPath
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from huggingface_hub import login
+import warnings
+warnings.filterwarnings("ignore")
+
 
 def loadRanksFiles(datasetPath):
     returnRanksFiles = []
@@ -34,7 +37,7 @@ def main():
     else:
         ranks, files = loadRanksFiles(args.pathBase)
         
-    hf_token = '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'
+    hf_token = None
     login(hf_token)
 
     model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -51,12 +54,14 @@ def main():
     outputsToFile = []
 
     for idx2, r in enumerate(ranks):
-
+        if len(outputsToFile) >= 1302:
+            break
+        print(f"Doing file numer {idx2}")
         messageEmotions = ''
         for idx in range(len(r)):
             messageEmotions += f"{emotions[idx]}: {r[idx]:.2f}, "
 
-        messageEmotions[-2] = '.'
+        #messageEmotions[-2] = '.'
 
         messages = [
             {"role": "system", "content": "You are evaluating the display of different emotions based on their probabilities. Answer each input with a caption that better describes the emotions distribution"},
@@ -83,7 +88,8 @@ def main():
             top_p=0.9,
         )
         response = outputs[0][input_ids.shape[-1]:]
-        outputsToFile.append(tokenizer.decode(response, skip_special_tokens=True),files[idx2])        
+        print(tokenizer.decode(response, skip_special_tokens=True))
+        outputsToFile.append([tokenizer.decode(response, skip_special_tokens=True),files[idx2]])        
 
         
     with open('emotions.txt', 'w') as f:
