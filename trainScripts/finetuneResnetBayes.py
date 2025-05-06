@@ -95,6 +95,8 @@ def train():
         ibl = ibr = ibtl = ' '
         model.train()
         lossAcc = []
+        elboLoss = []
+        ceLoss = []
         totalImages = 0
         iteration = 0
         for currBatch, currTargetBatch, _ in train_loader:
@@ -103,21 +105,29 @@ def train():
             currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
 
             classification, vaValueEstim = model(currBatch)
-            loss = criterion(classification, currTargetBatch) + elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+            ceVal = criterion(classification, currTargetBatch)
+            elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+            loss = 0.999 * ceVal + 0.001 * elboVal
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             lossAcc.append(loss.item())
+            elboLoss.append(elboVal.item())
+            ceLoss.append(ceVal.item())
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
+        elboLoss = sum(elboLoss) / len(elboLoss)
+        ceLoss = sum(ceLoss) / len(ceLoss)
+        writer.add_scalar('RESNETAtt/CELoss/train',ceLoss, ep)
+        writer.add_scalar('RESNETAtt/ELBOLoss/train',elboLoss,ep)
         scheduler.step()
         model.eval()
-        total = 0
-        correct = 0
+        elboLoss = []
+        ceLoss = []
         loss_val = []
         iteration = 0
         with torch.no_grad():
@@ -128,13 +138,21 @@ def train():
                 currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
 
                 classification, vaValueEstim = model(currBatch)
-                loss = criterion(classification, currTargetBatch) + elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+                ceVal = criterion(classification, currTargetBatch)
+                elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+                loss = 0.999 * ceVal + 0.001 * elboVal
 
                 loss_val.append(loss.item())
+                elboLoss.append(elboVal.item())
+                ceLoss.append(ceVal.item())
                 iteration += 1
 
         tLoss = sum(loss_val) / len(loss_val)
         writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
+        elboLoss = sum(elboLoss) / len(elboLoss)
+        ceLoss = sum(ceLoss) / len(ceLoss)
+        writer.add_scalar('RESNETAtt/CELoss/val',ceLoss, ep)
+        writer.add_scalar('RESNETAtt/ELBOLoss/val',elboLoss,ep)
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
 
