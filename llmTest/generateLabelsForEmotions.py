@@ -1,7 +1,7 @@
 import numpy as np, os, sys, argparse, pandas as pd 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from helper.function import getFilesInPath
+from helper.function import getFilesInPath, printProgressBar
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from huggingface_hub import login
@@ -26,6 +26,7 @@ def loadRanksFiles(datasetPath):
 def main():
     parser = argparse.ArgumentParser(description='Generate Emotion Ranks')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
+    parser.add_argument('--limit', help='Path for valence and arousal dataset', required=True, type=int)
     args = parser.parse_args()
 
     ranks = None
@@ -54,7 +55,8 @@ def main():
     outputsToFile = []
 
     for idx2, r in enumerate(ranks):
-        if len(outputsToFile) >= 1302:
+        printProgressBar(idx2, args.limit, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        if len(outputsToFile) >= args.limit:
             break
         print(f"Doing file numer {idx2}")
         messageEmotions = ''
