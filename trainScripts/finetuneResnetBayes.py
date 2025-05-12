@@ -47,9 +47,8 @@ def train():
     parser.add_argument('--optimizer', help='Optimizer', required=False, default="sgd")
     parser.add_argument('--freeze', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--numberOfClasses', help='Freeze weights', required=False, type=int, default=0)
-    parser.add_argument('--additiveLoss', help='Adding additive Loss', required=False,default=None)
-    parser.add_argument('--neighsFiles', help='File with neighbours', required=False,default=None)
     parser.add_argument('--trainDataset', help='File with neighbours', required=False,default="affectnet")
+    parser.add_argument('--resumeWeights', help='File with neighbours', required=False,default=None)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -84,6 +83,15 @@ def train():
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
     criterion = nn.BCEWithLogitsLoss().to(device)
+    start_epoch = 0
+    if args.resumeWeights is not None:
+        print("Loading weights")
+        checkpoint = torch.load(args.resumeWeights)
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        start_epoch = checkpoint['epoch']
+        bestForFoldTLoss = checkpoint['bestForFoldTLoss']
+        print("Weights loaded")
 
     os.system('cls' if os.name == 'nt' else 'clear')
     print("Started traning")
@@ -91,7 +99,7 @@ def train():
     bestForFold = bestForFoldTLoss = 500000
     bestRankForFold = -1
     alpha = 0.1
-    for ep in range(args.epochs):
+    for ep in range(start_epoch,args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
         lossAcc = []
