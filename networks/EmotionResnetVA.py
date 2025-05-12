@@ -68,6 +68,6 @@ class ResnetWithBayesianHead(nn.Module):
         self.bayesianHead = BayesianNetworkVI(classes, 4, 2)
 
     def forward(self, x):        
-        feats = self.innerResnetModel(x)
-        va = self.bayesianHead(feats)
-        return feats, va
+        distributions = self.innerResnetModel(x)
+        va = self.bayesianHead(distributions)
+        return distributions, va

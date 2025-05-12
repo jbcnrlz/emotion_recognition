@@ -27,7 +27,7 @@ def gerar_grafico_com_imagem(url_imagem, descricao):
     plt.close()
 
 # Exemplo de uso
-with open("emotions_gt.txt",'r') as fil:
+with open("emotions.txt",'r') as fil:
     for f in fil:
         dadosImage = f.split(' - ')
         dados = os.path.join("C:\\Users\\joaoc\\AffectNet\\val_set\\images",dadosImage[1].strip())
