@@ -49,6 +49,7 @@ def train():
     parser.add_argument('--numberOfClasses', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--trainDataset', help='File with neighbours', required=False,default="affectnet")
     parser.add_argument('--resumeWeights', help='File with neighbours', required=False,default=None)
+    parser.add_argument('--resnetSize', help='File with neighbours', required=False,default=18,type=int)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -56,7 +57,7 @@ def train():
         os.makedirs(args.output)
     writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
-    model = ResnetWithBayesianHead(classes=args.numberOfClasses)
+    model = ResnetWithBayesianHead(classes=args.numberOfClasses,resnetModel=args.resnetSize)
 
     model.to(device)    
     print("Model loaded")

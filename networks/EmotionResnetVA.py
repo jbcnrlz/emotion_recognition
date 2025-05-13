@@ -60,10 +60,21 @@ class BayesianNetworkVI(nn.Module):
         return self.linear1.kl_div + self.linear2.kl_div
 
 class ResnetWithBayesianHead(nn.Module):
-    def __init__(self,classes,pretrained=None):        
+    def __init__(self,classes,pretrained=None,resnetModel=18):        
         super(ResnetWithBayesianHead,self).__init__()
-        self.innerResnetModel = models.resnet50(weights=pretrained)
-        self.innerResnetModel.fc = nn.Linear(2048, classes,bias=False)
+        if resnetModel == 18:
+            self.innerResnetModel = models.resnet18(weights=pretrained)
+        elif resnetModel == 34:
+            self.innerResnetModel = models.resnet34(weights=pretrained)
+        elif resnetModel == 50:
+            self.innerResnetModel = models.resnet50(weights=pretrained)
+        elif resnetModel == 101:
+            self.innerResnetModel = models.resnet101(weights=pretrained)
+        elif resnetModel == 152:
+            self.innerResnetModel = models.resnet152(weights=pretrained)
+        else:
+            raise ValueError("Invalid ResNet model specified.")        
+        self.innerResnetModel.fc = nn.Linear(self.innerResnetModel.fc.in_features, classes,bias=False)
 
         self.bayesianHead = BayesianNetworkVI(classes, 4, 2)
 
