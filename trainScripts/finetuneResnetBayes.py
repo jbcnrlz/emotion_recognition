@@ -90,7 +90,6 @@ def train():
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         start_epoch = checkpoint['epoch']
-        bestForFoldTLoss = checkpoint['bestForFoldTLoss']
         print("Weights loaded")
 
     os.system('cls' if os.name == 'nt' else 'clear')

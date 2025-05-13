@@ -62,8 +62,8 @@ class BayesianNetworkVI(nn.Module):
 class ResnetWithBayesianHead(nn.Module):
     def __init__(self,classes,pretrained=None):        
         super(ResnetWithBayesianHead,self).__init__()
-        self.innerResnetModel = models.resnet18(weights=pretrained)
-        self.innerResnetModel.fc = nn.Linear(512, classes,bias=False)
+        self.innerResnetModel = models.resnet50(weights=pretrained)
+        self.innerResnetModel.fc = nn.Linear(2048, classes,bias=False)
 
         self.bayesianHead = BayesianNetworkVI(classes, 4, 2)
 
