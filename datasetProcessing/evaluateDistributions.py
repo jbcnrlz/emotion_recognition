@@ -136,7 +136,7 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='BOTH',exchangeLabel=None)
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='VA',exchangeLabel=None)
     classesDist = np.array([
         [0,0,0,0],
         [0.81,0.21,0.51,0.26], #happy
@@ -184,9 +184,10 @@ def main():
     vas = None    
     pts = None
     for data in val_loader:
-        _, labels, paths, vaBatch = data
+        #_, labels, paths, vaBatch = data
+        _, vaBatch, paths = data
         probs = np.concatenate((probs,gmm.predict_proba(vaBatch.numpy()))) if probs is not None else gmm.predict_proba(vaBatch.numpy())
-        lbls = np.concatenate((lbls,labels.numpy())) if lbls is not None else labels.numpy()
+        #lbls = np.concatenate((lbls,labels.numpy())) if lbls is not None else labels.numpy()
         outputData = np.concatenate((outputData,vaBatch.numpy())) if outputData is not None else vaBatch.numpy()        
         vas = np.concatenate((vas,vaBatch.numpy())) if vas is not None else vaBatch.numpy()
         pts = np.concatenate((pts,paths)) if pts is not None else paths

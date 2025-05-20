@@ -38,7 +38,7 @@ def main():
     else:
         ranks, files = loadRanksFiles(args.pathBase)
         
-    hf_token = None
+    hf_token = "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"
     login(hf_token)
 
     model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -58,7 +58,6 @@ def main():
         printProgressBar(idx2, args.limit, prefix = 'Progress:', suffix = 'Complete', length = 50)
         if len(outputsToFile) >= args.limit:
             break
-        print(f"Doing file numer {idx2}")
         messageEmotions = ''
         for idx in range(len(r)):
             messageEmotions += f"{emotions[idx]}: {r[idx]:.2f}, "
@@ -90,7 +89,6 @@ def main():
             top_p=0.9,
         )
         response = outputs[0][input_ids.shape[-1]:]
-        print(tokenizer.decode(response, skip_special_tokens=True))
         outputsToFile.append([tokenizer.decode(response, skip_special_tokens=True),files[idx2]])        
 
         

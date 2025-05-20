@@ -13,8 +13,8 @@ def fillDictFromDataset(pathBaseForFaces):
         printProgressBar(iteration=cf, total=len(dirFaces), prefix='Loading annotations', suffix='Complete', length=50)
         folderName = d.split(os.path.sep)[-1][:-4]
         returnDict[folderName] = [int(fileName.split(os.path.sep)[-1][:-4]) for fileName in getFilesInPath(os.path.join(imagePath,folderName),imagesOnly=True)]
-        if len(returnDict) > 10:
-            break
+        returnDict[folderName].sort()
+    print("")
     return returnDict
 
 def loadAffWildDataset(pathAnnotations,filesIdx):    
@@ -23,20 +23,23 @@ def loadAffWildDataset(pathAnnotations,filesIdx):
     idxs = []
     fileName = []
     for cf, f in enumerate(files):
-        printProgressBar(iteration=cf, total=len(files), prefix='Loading annotations', suffix='Complete', length=50)
+        imageVA = []
+        printProgressBar(iteration=cf, total=len(files), prefix='Loading Files', suffix='Complete', length=50)
         fileName.append(f.split(os.path.sep)[-1])
         with open(f, 'r') as fct:
             for iLine, line in enumerate(fct):
                 line = line.split(',')
                 try:
                     line = list(map(float, line))
-                    if line not in vaValues:
-                        vaValues.append(line)
+                    if line not in imageVA:
                         idxs.append([filesIdx[fileName[-1][:-4]][iLine],fileName[-1]])
-                        if len(vaValues) > 5000:
-                            break
-                except:
-                    continue
+                        imageVA.append(line)
+                        vaValues.append(line)
+                except Exception as e:
+                    print(e)
+
+                if (len(vaValues) != len(idxs)):
+                    print("Isso não devia acontecer")
     return np.array(vaValues), idxs, fileName
 
 def calcular_densidade_pontos(limite_x, limite_y, pontos_total, mostrar_grafico=False):
@@ -101,7 +104,9 @@ def main():
     imageFiles.append('cropped_aligned')
     imageFiles = os.path.sep.join(imageFiles)
     annotationsValues = np.zeros((len(annFiles),2))
+    print("Loading VA Values for AffWild")
     for idx, a in enumerate(annFiles):
+        printProgressBar(iteration=idx, total=len(annFiles), prefix='Loading VA Files', suffix='Complete', length=50)
         fileName = a.split(os.path.sep)[-1].split('.')[0]
         annFolder = os.path.sep.join([args.pathBase,'annotations'])
         annotationsValues[idx][0] = np.load(os.path.join(annFolder,f'{fileName}_val.npy'))
@@ -114,6 +119,7 @@ def main():
 
     maxDensidade = max(densidades)
     # Load AffWild dataset
+    print("Loading AffWild dataset")
     vaValues, idxs, _ = loadAffWildDataset(args.pathWild,indexesImages)
     for idx, v in enumerate(vaValues):
         cQ = determinar_quadrante(v[0],v[1])

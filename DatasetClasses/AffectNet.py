@@ -16,12 +16,17 @@ class AffectNet(data.Dataset):
         self.typeExperiment = typeExperiment
         quantitylabels = None
         faces = getFilesInPath(os.path.join(afectdata,'images'),imagesOnly=True)
+        print(f"Loading {len(faces)} face images")
         for idx, f in enumerate(faces):
             printProgressBar(idx,len(faces),length=50,prefix='Loading Faces...')
             imageNumber = f.split(os.path.sep)[-1][:-4]
             if typeExperiment == "VA":
-                valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
-                aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+                try:
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+                except:
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
                 self.label.append([valValue,aroValue])
             elif typeExperiment == "EXP":
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
@@ -32,8 +37,12 @@ class AffectNet(data.Dataset):
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
                 if int(currLabel) == 7 and not loadLastLabel:
                     continue
-                valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
-                aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+                try:
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+                except:
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
                 self.label.append(currLabel)
                 self.seconLabel.append([valValue,aroValue])
             elif typeExperiment == 'RANK':
@@ -45,9 +54,14 @@ class AffectNet(data.Dataset):
                 currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank.txt' % (int(imageNumber)))
                 self.label.append(currLabel)
             elif typeExperiment == 'PROBS_VA':
-                currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank.txt' % (int(imageNumber)))
-                valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber)))).astype(np.float64)
-                aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber)))).astype(np.float64)
+                try:
+                    currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank.txt' % (int(imageNumber)))
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber)))).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber)))).astype(np.float64)
+                except:
+                    currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank.txt')
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
                 self.label.append([currLabel,valValue,aroValue])
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
