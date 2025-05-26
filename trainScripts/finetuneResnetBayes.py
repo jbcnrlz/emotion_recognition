@@ -57,7 +57,7 @@ def train():
         os.makedirs(args.output)
     writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
-    model = ResnetWithBayesianHead(classes=args.numberOfClasses,resnetModel=args.resnetSize)
+    model = ResnetWithBayesianHead(classes=args.numberOfClasses,resnetModel=args.resnetSize,softmax=True)
 
     model.to(device)    
     print("Model loaded")
@@ -83,7 +83,7 @@ def train():
     optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
-    criterion = nn.BCEWithLogitsLoss().to(device)
+    criterion = nn.NLLLoss().to(device)
     start_epoch = 0
     if args.resumeWeights is not None:
         print("Loading weights")

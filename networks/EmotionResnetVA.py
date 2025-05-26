@@ -60,7 +60,7 @@ class BayesianNetworkVI(nn.Module):
         return self.linear1.kl_div + self.linear2.kl_div
 
 class ResnetWithBayesianHead(nn.Module):
-    def __init__(self,classes,pretrained=None,resnetModel=18):        
+    def __init__(self,classes,pretrained=None,resnetModel=18,softmax=False):
         super(ResnetWithBayesianHead,self).__init__()
         if resnetModel == 18:
             self.innerResnetModel = models.resnet18(weights=pretrained)
@@ -77,8 +77,14 @@ class ResnetWithBayesianHead(nn.Module):
         self.innerResnetModel.fc = nn.Linear(self.innerResnetModel.fc.in_features, classes,bias=False)
 
         self.bayesianHead = BayesianNetworkVI(classes, 4, 2)
+        self.softmax = None
+        if (softmax):
+            self.softmax = nn.Softmax(dim=1)
+
 
     def forward(self, x):        
         distributions = self.innerResnetModel(x)
+        if self.softmax is not None:
+            distributions = self.softmax(distributions)
         va = self.bayesianHead(distributions)
         return distributions, va

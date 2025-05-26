@@ -23,12 +23,13 @@ def train():
     parser.add_argument('--batch', type=int, help='Size of the batch', required=True)
     parser.add_argument('--output', default=None, help='File to save csv', required=True)
     parser.add_argument('--dataset', help='Dataset for feature extractoin', required=False, default="OMG")
+    parser.add_argument('--resnetInnerModel', help='Model for feature extraction', required=False,type=int, default=18)
     args = parser.parse_args()
 
     checkpoint = torch.load(args.weights)
 
 
-    model = ResnetWithBayesianHead(13)
+    model = ResnetWithBayesianHead(13,resnetModel=args.resnetInnerModel)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
