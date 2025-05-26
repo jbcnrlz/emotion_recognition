@@ -88,3 +88,38 @@ class ResnetWithBayesianHead(nn.Module):
             distributions = self.softmax(distributions)
         va = self.bayesianHead(distributions)
         return distributions, va
+    
+class ResnetWithBayesianGMMHead(nn.Module):
+    def __init__(self,classes,pretrained=None,resnetModel=18):
+        super(ResnetWithBayesianHead,self).__init__()
+        if resnetModel == 18:
+            self.innerResnetModel = models.resnet18(weights=pretrained)
+        elif resnetModel == 34:
+            self.innerResnetModel = models.resnet34(weights=pretrained)
+        elif resnetModel == 50:
+            self.innerResnetModel = models.resnet50(weights=pretrained)
+        elif resnetModel == 101:
+            self.innerResnetModel = models.resnet101(weights=pretrained)
+        elif resnetModel == 152:
+            self.innerResnetModel = models.resnet152(weights=pretrained)
+        else:
+            raise ValueError("Invalid ResNet model specified.")
+        
+        out_features = self.innerResnetModel.fc.in_features
+        self.innerResnetModel.fc = nn.Identity()
+        self.gmm_head = nn.Sequential(
+            nn.Linear(out_features, 256),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(256, classes * 6),  # 6 parâmetros: peso, μx, μy, σx, σy, ρ
+            nn.Linear(classes * 6,classes)  # Saída para os parâmetros da GMM
+        )
+        self.bayesianHead = BayesianNetworkVI(classes, 4, 2)
+
+
+    def forward(self, x):        
+        distributions = self.innerResnetModel(x)
+        probs = self.gmm_head(distributions)
+        va = self.bayesianHead(distributions)
+        return probs, distributions, va
+    
