@@ -91,7 +91,7 @@ class ResnetWithBayesianHead(nn.Module):
     
 class ResnetWithBayesianGMMHead(nn.Module):
     def __init__(self,classes,pretrained=None,resnetModel=18):
-        super(ResnetWithBayesianHead,self).__init__()
+        super(ResnetWithBayesianGMMHead,self).__init__()
         if resnetModel == 18:
             self.innerResnetModel = models.resnet18(weights=pretrained)
         elif resnetModel == 34:
@@ -112,14 +112,18 @@ class ResnetWithBayesianGMMHead(nn.Module):
             nn.ReLU(),
             nn.Dropout(),
             nn.Linear(256, classes * 6),  # 6 parâmetros: peso, μx, μy, σx, σy, ρ
-            nn.Linear(classes * 6,classes)  # Saída para os parâmetros da GMM
         )
+
+        self.probabilities = nn.Linear(classes * 6,classes)  # Saída para os parâmetros da GMM
+
+
         self.bayesianHead = BayesianNetworkVI(classes, 4, 2)
 
 
     def forward(self, x):        
         distributions = self.innerResnetModel(x)
-        probs = self.gmm_head(distributions)
-        va = self.bayesianHead(distributions)
+        distributions = self.gmm_head(distributions)
+        probs = self.probabilities(distributions)
+        va = self.bayesianHead(probs)
         return probs, distributions, va
     
