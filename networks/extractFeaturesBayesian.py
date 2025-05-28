@@ -5,7 +5,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from torch import nn
-from networks.EmotionResnetVA import ResnetWithBayesianHead
+from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead
 
 def saveToCSV(preds,files,pathCSV):
     emotions = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
@@ -24,12 +24,16 @@ def train():
     parser.add_argument('--output', default=None, help='File to save csv', required=True)
     parser.add_argument('--dataset', help='Dataset for feature extractoin', required=False, default="OMG")
     parser.add_argument('--resnetInnerModel', help='Model for feature extraction', required=False,type=int, default=18)
+    parser.add_argument('--emotionModel', help='Model for feature extraction', required=False, default="resnetBayesGMM")
     args = parser.parse_args()
 
     checkpoint = torch.load(args.weights)
 
-
-    model = ResnetWithBayesianHead(13,resnetModel=args.resnetInnerModel)
+    model = None
+    if args.emotionModel == "resnetBayesGMM":
+        model = ResnetWithBayesianGMMHead(classes=13,resnetModel=args.resnetInnerModel)
+    elif args.emotionModel == "resnetBayes":
+        model = ResnetWithBayesianHead(13,resnetModel=args.resnetInnerModel)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
@@ -53,7 +57,7 @@ def train():
         for idxBtc, data in enumerate(val_loader):
             print("Extraction Batch %d" % (idxBtc))
             images, labels, pathsForFiles = data
-            outputs, _ = model(images.to(device))
+            outputs = model(images.to(device))[0]
             outputs = soft(outputs)
 
             prediction = outputs.cpu().detach().numpy()

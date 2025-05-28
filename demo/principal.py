@@ -1,10 +1,10 @@
-import cv2, torch
+import cv2, torch, argparse
 import torch, os, sys, numpy as np
 import matplotlib.pyplot as plt
 from torchvision import transforms
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from networks.EmotionResnetVA import ResnetWithBayesianHead
+from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 def getEmotionLabel(faceImage,model):
@@ -18,7 +18,7 @@ def getEmotionLabel(faceImage,model):
     faceImage = data_transforms(faceImage).to(device).unsqueeze(0)
     model.eval()
     with torch.no_grad():
-        outputs, _ = model(faceImage)
+        outputs = model(faceImage)[0]
         outputs = torch.nn.Softmax(dim=1)(outputs)
     # Aqui você pode mapear os índices de previsão para rótulos de emoção
     emotions = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
@@ -27,12 +27,21 @@ def getEmotionLabel(faceImage,model):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Demo for emotion recognition')
+    parser.add_argument('--model', help='Which model to use', required=True)
+    parser.add_argument('--wts', help='Weights to do FER', required=True)
+    args = parser.parse_args()
+
     model_file = 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'
     config_file = 'faceDetection/deploy.prototxt'
     net = cv2.dnn.readNetFromCaffe(config_file, model_file)
 
-    model = ResnetWithBayesianHead(13,resnetModel=18)
-    checkpoint = torch.load("resnetBayes_smaller_elbo_resnet18_fusedaffectnet/RESNETATT_best_val_loss.pth.tar")
+    model = None
+    if args.model == "resnetBayes":
+        model = ResnetWithBayesianHead(13,resnetModel=50)
+    elif args.model == "resnetBayesGMM":
+        model = ResnetWithBayesianGMMHead(classes=13,resnetModel=18)
+    checkpoint = torch.load(args.wts)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to("cuda")
 
@@ -86,7 +95,6 @@ def main():
                 espessura = 2
                 linetype = cv2.LINE_AA  # Anti-aliasing para texto mais suave
                 cv2.putText(frame, emoLabel, posicao, fonte, escala, cor, espessura, linetype)
-                print(ots)
                 emts = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
                 ax.clear()                
                 ax.bar(emts,ots,alpha=0.5, color='blue')

@@ -4,8 +4,10 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import getFilesInPath
 
 def getExpressionForImage(imageNumber,imagePaths):
+    if os.path.sep in imageNumber:
+        imageNumber = imageNumber.split(os.path.sep)[-1]
     for idx, path in enumerate(imagePaths):
-        fileName = path.split(os.path.sep)[-1]
+        fileName = path.split(os.path.sep)[-1]        
         if f"{imageNumber[:-4]}_exp.npy" == fileName:
             return int(np.load(path).item())
     return None
@@ -32,6 +34,8 @@ def train():
     with open(args.labelFile,'r') as fil:
         for f in fil:
             dadosImage = f.strip().split(' - ')
+            if os.path.sep in dadosImage[1]:
+                dadosImage[1] = dadosImage[1].split(os.path.sep)[-1]
             expressionImage = expressions[getExpressionForImage(dadosImage[1],annsFiles)]
             dadosImage.append(expressionImage)
             outputFile.append(dadosImage)
