@@ -111,7 +111,7 @@ def train():
     optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
-    criterion = regularized_gmm_loss
+    criterion = nn.NLLLoss().to(device)
     start_epoch = 0
     if args.resumeWeights is not None:
         print("Loading weights")
