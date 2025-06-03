@@ -78,6 +78,7 @@ def train():
     parser.add_argument('--trainDataset', help='File with neighbours', required=False,default="affectnet")
     parser.add_argument('--resumeWeights', help='File with neighbours', required=False,default=None)
     parser.add_argument('--resnetSize', help='File with neighbours', required=False,default=18,type=int)
+    parser.add_argument('--secondaryLossFunction', help='File with neighbours', required=False,default="ELBO")
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -110,8 +111,11 @@ def train():
 
     optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)        
     criterion = nn.BCEWithLogitsLoss().to(device)
+    secLoss = None
+    if args.secondaryLossFunction != "ELBO":
+        secLoss= nn.MSELoss().to(device)
     start_epoch = 0
     if args.resumeWeights is not None:
         print("Loading weights")
@@ -142,8 +146,12 @@ def train():
 
             classification, parameters, vaValueEstim = model(currBatch)
             ceVal = criterion(classification, currTargetBatch)
-            elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
-            loss = 0.999 * ceVal + 0.001 * elboVal
+            if args.secondaryLossFunction == "ELBO":
+                elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+                loss = 0.999 * ceVal + 0.001 * elboVal
+            else:
+                elboVal = secLoss(vaValueEstim, vaBatch)
+                loss = 0.5 * ceVal + 0.5 * elboVal
 
             optimizer.zero_grad()
             loss.backward()

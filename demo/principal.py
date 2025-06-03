@@ -30,6 +30,7 @@ def main():
     parser = argparse.ArgumentParser(description='Demo for emotion recognition')
     parser.add_argument('--model', help='Which model to use', required=True)
     parser.add_argument('--wts', help='Weights to do FER', required=True)
+    parser.add_argument('--resnetSize', help='Weights to do FER', required=False, type=int, default=18)
     args = parser.parse_args()
 
     model_file = 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'
@@ -38,9 +39,9 @@ def main():
 
     model = None
     if args.model == "resnetBayes":
-        model = ResnetWithBayesianHead(13,resnetModel=50)
+        model = ResnetWithBayesianHead(13,resnetModel=args.resnetSize)
     elif args.model == "resnetBayesGMM":
-        model = ResnetWithBayesianGMMHead(classes=13,resnetModel=18)
+        model = ResnetWithBayesianGMMHead(classes=13,resnetModel=args.resnetSize)
     checkpoint = torch.load(args.wts)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to("cuda")
