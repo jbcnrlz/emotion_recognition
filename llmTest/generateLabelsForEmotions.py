@@ -65,7 +65,7 @@ def main():
         #messageEmotions[-2] = '.'
 
         messages = [
-            {"role": "system", "content": "You are evaluating the display of different emotions based on their probabilities. Answer each input with a caption that better describes the emotions distribution"},
+            {"role": "system", "content": "You are evaluating the display of different emotions based on their probabilities. Answer each input with a caption that better describes the emotions distribution, be very succinct and do not output any probability number on your answer. In sense of being succinct, do not utilize unecessary words (such as a mix of emotion and so forth) - be direct"},
             {"role": "user", "content": f"Given the set of terms below describing the emotional state of a face, each term being associated with a probability, generate a caption describing the emotional state: {messageEmotions}."},
         ]
 

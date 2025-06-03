@@ -111,7 +111,7 @@ def train():
     optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)
-    criterion = nn.NLLLoss().to(device)
+    criterion = nn.BCEWithLogitsLoss().to(device)
     start_epoch = 0
     if args.resumeWeights is not None:
         print("Loading weights")
@@ -141,7 +141,7 @@ def train():
             currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
 
             classification, parameters, vaValueEstim = model(currBatch)
-            ceVal = criterion(classification, currTargetBatch,parameters, args.numberOfClasses)
+            ceVal = criterion(classification, currTargetBatch)
             elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
             loss = 0.999 * ceVal + 0.001 * elboVal
 
@@ -174,7 +174,7 @@ def train():
                 currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
 
                 classification, parameters, vaValueEstim = model(currBatch)
-                ceVal = criterion(classification, currTargetBatch,parameters, args.numberOfClasses)
+                ceVal = criterion(classification, currTargetBatch)
                 elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
                 loss = 0.999 * ceVal + 0.001 * elboVal
 
