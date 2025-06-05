@@ -115,7 +115,7 @@ def train():
     criterion = nn.BCEWithLogitsLoss().to(device)
     secLoss = None
     if args.secondaryLossFunction != "ELBO":
-        secLoss= nn.MSELoss().to(device)
+        secLoss= nn.L1Loss().to(device)
     start_epoch = 0
     if args.resumeWeights is not None:
         print("Loading weights")
@@ -183,8 +183,12 @@ def train():
 
                 classification, parameters, vaValueEstim = model(currBatch)
                 ceVal = criterion(classification, currTargetBatch)
-                elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
-                loss = 0.999 * ceVal + 0.001 * elboVal
+                if args.secondaryLossFunction == "ELBO":
+                    elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+                    loss = 0.999 * ceVal + 0.001 * elboVal
+                else:
+                    elboVal = secLoss(vaValueEstim, vaBatch)
+                    loss = 0.5 * ceVal + 0.5 * elboVal
 
                 loss_val.append(loss.item())
                 elboLoss.append(elboVal.item())
