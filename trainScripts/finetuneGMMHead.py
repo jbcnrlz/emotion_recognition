@@ -5,7 +5,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar
-from networks.EmotionResnetVA import ResnetWithBayesianGMMHead
+from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM
 from torch import nn, optim
 import torch.distributions as dist
 from torch.nn import functional as F
@@ -79,6 +79,7 @@ def train():
     parser.add_argument('--resumeWeights', help='File with neighbours', required=False,default=None)
     parser.add_argument('--resnetSize', help='File with neighbours', required=False,default=18,type=int)
     parser.add_argument('--secondaryLossFunction', help='File with neighbours', required=False,default="ELBO")
+    parser.add_argument('--model', help='File with neighbours', required=False,default="gmm")
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -86,7 +87,10 @@ def train():
         os.makedirs(args.output)
     writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
-    model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize)
+    if args.model == "gmm":
+        model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize)
+    elif args.model == "attgmm":
+        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses)
 
     model.to(device)    
     print("Model loaded")

@@ -2,7 +2,51 @@ from torchvision import models
 import torch
 import torch.nn as nn
 import torch.distributions as dist
-from torch.optim import Adam
+import torch.nn.functional as F
+
+class SpatialSelfAttention(nn.Module):
+    def __init__(self, in_channels):
+        super(SpatialSelfAttention, self).__init__()
+        self.in_channels = in_channels
+        
+        # Camadas para Q, K, V - agora operando nos canais
+        self.query_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        
+        # Fator de escala
+        self.gamma = nn.Parameter(torch.zeros(1))
+        
+    def forward(self, x, mask=None):
+        """
+        Input:
+            x: feature map com shape (batch, channels, height, width)
+            mask: optional, com shape (batch, height*width, height*width)
+        """
+        batch_size, C, H, W = x.shape
+        
+        # Gerar queries, keys e values
+        query = self.query_conv(x).view(batch_size, -1, H*W).permute(0, 2, 1)  # (B, N, C')
+        key = self.key_conv(x).view(batch_size, -1, H*W)  # (B, C', N)
+        value = self.value_conv(x).view(batch_size, -1, H*W)  # (B, C, N)
+        
+        # Calcular matriz de atenção
+        attention = torch.bmm(query, key)  # (B, N, N)
+        attention = attention / (self.in_channels ** 0.5)
+        
+        if mask is not None:
+            attention = attention.masked_fill(mask == 0, float("-1e20"))
+        
+        attention = F.softmax(attention, dim=-1)
+        
+        # Aplicar atenção aos values
+        out = torch.bmm(value, attention.permute(0, 2, 1))  # (B, C, N)
+        out = out.view(batch_size, C, H, W)
+        
+        # Conexão residual
+        out = self.gamma * out + x
+        
+        return out
 
 class BayesianLinearVI(nn.Module):
     def __init__(self, in_features, out_features):
@@ -127,3 +171,101 @@ class ResnetWithBayesianGMMHead(nn.Module):
         va = self.bayesianHead(probs)
         return probs, distributions, va
     
+
+class BottleneckWithAttention(nn.Module):
+    expansion = 4
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
+        super(BottleneckWithAttention, self).__init__()
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.attention = SpatialSelfAttention(planes)  # Atenção após a primeira conv
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                               padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, planes * self.expansion, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(planes * self.expansion)
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        
+        out = self.attention(out)  # Camada de atenção adicionada
+        
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
+class ResNet50WithAttentionGMM(nn.Module):
+    def __init__(self, num_classes=1000,pretrained=None):
+        super(ResNet50WithAttentionGMM, self).__init__()
+        
+        # Usar a arquitetura padrão mas com nossos bottlenecks modificados
+        self.model = models.resnet50(weights=pretrained)
+        
+        # Substituir os bottlenecks no layer2 e layer3
+        self._replace_bottlenecks()
+        
+        # Modificar camada final
+        out_features = self.model.fc.in_features
+        self.model.fc = nn.Identity()
+        self.gmm_head = nn.Sequential(
+            nn.Linear(out_features, 256),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(256, num_classes * 6),  # 6 parâmetros: peso, μx, μy, σx, σy, ρ
+        )
+
+        self.probabilities = nn.Linear(num_classes * 6,num_classes)  # Saída para os parâmetros da GMM
+
+
+        self.bayesianHead = BayesianNetworkVI(num_classes, 4, 2)
+
+
+    
+    def _replace_bottlenecks(self):
+        # Substituir os bottlenecks no layer2
+        for i in range(len(self.model.layer2)):
+            block = self.model.layer2[i]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer2[i] = new_block
+        
+        # Substituir os bottlenecks no layer3
+        for i in range(len(self.model.layer3)):
+            block = self.model.layer3[i]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer3[i] = new_block
+    
+    def forward(self, x):
+        distributions = self.model(x)
+        distributions = self.gmm_head(distributions)
+        probs = self.probabilities(distributions)
+        va = self.bayesianHead(probs)
+        return probs, distributions, va
