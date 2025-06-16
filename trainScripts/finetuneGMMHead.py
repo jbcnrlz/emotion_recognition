@@ -115,7 +115,10 @@ def train():
     criterion = nn.BCEWithLogitsLoss().to(device)
     secLoss = None
     if args.secondaryLossFunction != "ELBO":
+        print("Using secondary loss function: " + args.secondaryLossFunction)
         secLoss= nn.L1Loss().to(device)
+    else:
+        print("Using ELBO loss")
     start_epoch = 0
     if args.resumeWeights is not None:
         print("Loading weights")
