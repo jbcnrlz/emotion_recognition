@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from torchvision import transforms
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead
+from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 def getEmotionLabel(faceImage,model):
@@ -42,6 +42,8 @@ def main():
         model = ResnetWithBayesianHead(13,resnetModel=args.resnetSize)
     elif args.model == "resnetBayesGMM":
         model = ResnetWithBayesianGMMHead(classes=13,resnetModel=args.resnetSize)
+    elif args.model == "resnetAttentionGMM":        
+        model = ResNet50WithAttentionGMM(num_classes=13)
     checkpoint = torch.load(args.wts)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to("cuda")

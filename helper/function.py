@@ -1,6 +1,7 @@
 import os, torch, numpy as np, torch.nn.functional as F, matplotlib.pyplot as plt, cv2
 from shapely.geometry.polygon import Point
 from shapely import affinity
+from scipy.ndimage import zoom
 
 def saveLandmarks(ldns,filepath):
     with open(filepath,'w') as fp:
@@ -228,3 +229,62 @@ def loadNeighFiles(pathFile):
                 returnData[currFile]['neighbours'].append([float(fileComma[0]),float(fileComma[1]),int(fileComma[2])])
 
     return returnData
+
+
+def visualizeAttentionMaps(image_tensor, attention_maps, title="Mapas de Atenção", save_dir="attention_maps_output", image_name="input_image"):
+    # Cria o diretório de saída se ele não existir
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    num_maps = len(attention_maps)
+    
+    image_display = image_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy()
+    
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    image_display = image_display * std + mean
+    image_display = np.clip(image_display, 0, 1)
+
+    # Figura para exibir todos os mapas juntos
+    fig, axes = plt.subplots(1, num_maps + 1, figsize=(4 * (num_maps + 1), 4))
+    
+    # Salva a imagem original
+    plt.imsave(os.path.join(save_dir, f"{image_name}_original.png"), image_display)
+    axes[0].imshow(image_display)
+    axes[0].set_title("Imagem Original")
+    axes[0].axis('off')
+
+    for i, attention_map_tensor in enumerate(attention_maps):
+        attention_map_np = attention_map_tensor.squeeze().cpu().numpy()
+        
+        if attention_map_np.ndim == 3:
+            attention_map_np = np.mean(attention_map_np, axis=0)
+        
+        resized_attention_map = zoom(attention_map_np, 
+                                     (image_display.shape[0] / attention_map_np.shape[0],
+                                      image_display.shape[1] / attention_map_np.shape[1]),
+                                     order=3) 
+
+        # Cria uma nova figura para cada mapa de atenção para salvar individualmente
+        fig_single, ax_single = plt.subplots(1, 1, figsize=(6, 6))
+        ax_single.imshow(image_display)
+        # Salva o mapa de calor puro
+        plt.imsave(os.path.join(save_dir, f"{image_name}_attention_map_layer_{i+1}_heatmap_only.png"), resized_attention_map, cmap='jet')
+        
+        # Salva o mapa de atenção sobreposto à imagem original
+        ax_single.imshow(resized_attention_map, cmap='jet', alpha=0.5) 
+        ax_single.set_title(f"Atenção Layer {i+1}")
+        ax_single.axis('off')
+        plt.savefig(os.path.join(save_dir, f"{image_name}_attention_map_layer_{i+1}_overlay.png"), bbox_inches='tight', pad_inches=0)
+        plt.close(fig_single) # Fecha a figura individual para não sobrecarregar a memória
+
+        # Adiciona ao plot geral
+        axes[i+1].imshow(image_display) 
+        axes[i+1].imshow(resized_attention_map, cmap='jet', alpha=0.5) 
+        axes[i+1].set_title(f"Atenção Layer {i+1}")
+        axes[i+1].axis('off')
+
+    plt.suptitle(title, fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(os.path.join(save_dir, f"{image_name}_all_attention_maps.png"), bbox_inches='tight') # Salva a figura com todos os mapas
+    plt.show() # Exibe a figura com todos os mapas
