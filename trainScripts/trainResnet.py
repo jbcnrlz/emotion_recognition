@@ -67,7 +67,7 @@ def main():
         totalImages = 0
         iteration = 0
         for currBatch, currTargetBatch in train_loader:
-            printProgressBar(iteration,math.ceil(202599/args.batchSize),length=50,prefix='Procesing face - training')
+            printProgressBar(iteration,math.ceil(len(datasetTrain)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
@@ -90,7 +90,7 @@ def main():
         correct = 0
         with torch.no_grad():
             for currBatch, currTargetBatch in val_loader:
-                printProgressBar(iteration,math.ceil(202599/args.batchSize),length=50,prefix='Procesing face - testing')
+                printProgressBar(iteration,math.ceil(len(datasetTest)/args.batchSize),length=50,prefix='Procesing face - testing')
 
                 totalImages += currBatch.shape[0]
                 currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
