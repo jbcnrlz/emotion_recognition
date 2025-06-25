@@ -46,7 +46,7 @@ def main():
     print("Loading model -- Using " + str(device))
 
     model = resnet50(pretrained=False)
-    model.fc = nn.Linear(model.fc.in_features, 10177)  # Assuming 10 classes for CelebA identity
+    model.fc = nn.Linear(model.fc.in_features, 10178)  # Assuming 10 classes for CelebA identity
     model.to(device)    
 
     print("Model loaded")
