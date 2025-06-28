@@ -238,7 +238,7 @@ def visualizeAttentionMaps(image_tensor, attention_maps, title="Mapas de Aten√ß√
 
     num_maps = len(attention_maps)
     
-    image_display = image_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy()
+    image_display = image_tensor.permute(1, 2, 0).cpu().numpy()
     
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
@@ -287,4 +287,3 @@ def visualizeAttentionMaps(image_tensor, attention_maps, title="Mapas de Aten√ß√
     plt.suptitle(title, fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.savefig(os.path.join(save_dir, f"{image_name}_all_attention_maps.png"), bbox_inches='tight') # Salva a figura com todos os mapas
-    plt.show() # Exibe a figura com todos os mapas

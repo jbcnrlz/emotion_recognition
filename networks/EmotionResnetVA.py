@@ -3,7 +3,9 @@ import torch
 import torch.nn as nn
 import torch.distributions as dist
 import torch.nn.functional as F
-
+import os
+import numpy as np
+from matplotlib import pyplot as plt
 class SpatialSelfAttention(nn.Module):
     def __init__(self, in_channels):
         super(SpatialSelfAttention, self).__init__()
@@ -39,6 +41,8 @@ class SpatialSelfAttention(nn.Module):
         
         attention = F.softmax(attention, dim=-1)
         
+        attention_map_softmax = F.softmax(attention, dim=-1) 
+
         # Aplicar atenção aos values
         out = torch.bmm(value, attention.permute(0, 2, 1))  # (B, C, N)
         out = out.view(batch_size, C, H, W)
@@ -46,7 +50,10 @@ class SpatialSelfAttention(nn.Module):
         # Conexão residual
         out = self.gamma * out + x
         
-        return out
+        visual_attention_map = attention_map_softmax.sum(dim=1).view(batch_size, H, W)
+        visual_attention_map = visual_attention_map / visual_attention_map.max(dim=-1, keepdim=True)[0].max(dim=-2, keepdim=True)[0]
+
+        return out, visual_attention_map
 
 class BayesianLinearVI(nn.Module):
     def __init__(self, in_features, out_features):
@@ -191,12 +198,11 @@ class BottleneckWithAttention(nn.Module):
 
     def forward(self, x):
         identity = x
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
         
-        out = self.attention(out)  # Camada de atenção adicionada
+        out, atMap = self.attention(out)  # Camada de atenção adicionada
         
         out = self.conv2(out)
         out = self.bn2(out)
@@ -211,7 +217,7 @@ class BottleneckWithAttention(nn.Module):
         out += identity
         out = self.relu(out)
 
-        return out
+        return out  # Retorna o mapa de atenção junto com a saída
 
 class ResNet50WithAttentionGMM(nn.Module):
     def __init__(self, num_classes=1000,pretrained=None):
@@ -220,6 +226,9 @@ class ResNet50WithAttentionGMM(nn.Module):
         # Usar a arquitetura padrão mas com nossos bottlenecks modificados
         self.model = models.resnet50(weights=pretrained)
         
+        self.attention_maps = [] 
+        self._attention_hooks = [] 
+
         # Substituir os bottlenecks no layer2 e layer3
         self._replace_bottlenecks()
         
@@ -237,8 +246,6 @@ class ResNet50WithAttentionGMM(nn.Module):
 
 
         self.bayesianHead = BayesianNetworkVI(num_classes, 4, 2)
-
-
     
     def _replace_bottlenecks(self):
         # Substituir os bottlenecks no layer2
@@ -251,6 +258,9 @@ class ResNet50WithAttentionGMM(nn.Module):
                 block.downsample
             )
             self.model.layer2[i] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1]) 
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
         
         # Substituir os bottlenecks no layer3
         for i in range(len(self.model.layer3)):
@@ -262,8 +272,13 @@ class ResNet50WithAttentionGMM(nn.Module):
                 block.downsample
             )
             self.model.layer3[i] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1])
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
+            
     
     def forward(self, x):
+        self.attention_maps = []  # Limpar os mapas de atenção antes de cada forward
         distributions = self.model(x)
         distributions = self.gmm_head(distributions)
         probs = self.probabilities(distributions)
