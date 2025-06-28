@@ -4,6 +4,7 @@ from torchvision.models import resnet50
 from torch import nn, optim
 import torch.distributions as dist
 from torch.utils.data import DataLoader
+from networks.cosface import *
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import saveStatePytorch, printProgressBar
@@ -48,8 +49,7 @@ def main():
 
     print("Loading model -- Using " + str(device))
 
-    model = resnet50(pretrained=False)
-    model.fc = nn.Linear(model.fc.in_features, 10177)  # Assuming 10 classes for CelebA identity
+    model = ResNetCosFace(num_classes=10177, embedding_size=512)  # CelebA has 10177 identities    
     model.to(device)    
 
     print("Model loaded")
@@ -78,8 +78,8 @@ def main():
             currTargetBatch = currTargetBatch - 1
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-            classification = model(currBatch)
-            loss = criterion(classification, currTargetBatch)
+            classification, _  = model(currBatch)
+            loss = cosface_loss(classification, currTargetBatch)
 
             optimizer.zero_grad()
             loss.backward()
@@ -108,8 +108,8 @@ def main():
                 totalImages += currBatch.shape[0]
                 currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-                classification = model(currBatch)
-                loss = criterion(classification, currTargetBatch)                
+                classification< _ = model(currBatch)
+                loss = cosface_loss(classification, currTargetBatch)                
 
                 loss_val.append(loss.item())
 
