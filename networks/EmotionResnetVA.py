@@ -224,11 +224,10 @@ class ResNet50WithAttentionGMM(nn.Module):
         super(ResNet50WithAttentionGMM, self).__init__()
         
         # Usar a arquitetura padrão mas com nossos bottlenecks modificados
-        self.model = models.resnet50(weights=pretrained)
-        
-        self.attention_maps = [] 
-        self._attention_hooks = [] 
-
+        self.model = models.resnet50(weights=None)
+        if pretrained is not None:
+            print("Loading pretrained weights for ResNet50...")
+            #self.model.load_state_dict(checkpoint['state_dict'], strict=False)
         # Substituir os bottlenecks no layer2 e layer3
         self._replace_bottlenecks()
         
