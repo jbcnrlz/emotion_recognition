@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import saveStatePytorch, printProgressBar
+from torch.utils.tensorboard import SummaryWriter
 
 def main():
     parser = argparse.ArgumentParser(description='Finetune resnet')
@@ -15,7 +16,9 @@ def main():
     parser.add_argument('--output', default=None, help='Folder to save weights', required=True)
     parser.add_argument('--learningRate', help='Learning Rate', required=False, default=0.01, type=float)
     args = parser.parse_args()
-
+    writer = SummaryWriter()    
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
 
     trans = transforms.Compose([
             transforms.Resize((256, 256)),
@@ -46,7 +49,7 @@ def main():
     print("Loading model -- Using " + str(device))
 
     model = resnet50(pretrained=False)
-    model.fc = nn.Linear(model.fc.in_features, 10178)  # Assuming 10 classes for CelebA identity
+    model.fc = nn.Linear(model.fc.in_features, 10177)  # Assuming 10 classes for CelebA identity
     model.to(device)    
 
     print("Model loaded")
@@ -59,16 +62,20 @@ def main():
     os.system('cls' if os.name == 'nt' else 'clear')
     print("Started traning")
     print('Training Phase =================================================================== BTL  BVL BAC')
-
+    bestForFold = -9999.0
+    bestForFoldTLoss = 9999.0
+    bestForFold = 9999.0
     for ep in range(args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
         lossAvg = []
+        tAcc =0
         totalImages = 0
         iteration = 0
         for currBatch, currTargetBatch in train_loader:
             printProgressBar(iteration,math.ceil(len(datasetTrain)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
+            currTargetBatch = currTargetBatch - 1
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
             classification = model(currBatch)
@@ -79,9 +86,15 @@ def main():
             optimizer.step()
 
             lossAvg.append(loss.item())
+            _, classes_preditas = torch.max(classification, dim=1)
+            tAcc += (classes_preditas == currTargetBatch).sum().item()
+
             iteration += 1
 
         lossAvg = sum(lossAvg) / len(lossAvg)
+        writer.add_scalar('ResnetCELEBA/Loss/train', lossAvg, ep)
+        tAcc = tAcc / totalImages
+        writer.add_scalar('ResnetCELEBA/acc/train', tAcc, ep)
         scheduler.step()
 
         model.eval()
@@ -91,7 +104,7 @@ def main():
         with torch.no_grad():
             for currBatch, currTargetBatch in val_loader:
                 printProgressBar(iteration,math.ceil(len(datasetTest)/args.batchSize),length=50,prefix='Procesing face - testing')
-
+                currTargetBatch = currTargetBatch - 1
                 totalImages += currBatch.shape[0]
                 currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
@@ -107,6 +120,8 @@ def main():
 
         loss_val = sum(loss_val) / len(loss_val)
         cResult = correct / totalImages
+        writer.add_scalar('ResnetCELEBA/val/loss', loss_val, ep)
+        writer.add_scalar('ResnetCELEBA/val/acc', cResult, ep)
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
 
@@ -131,7 +146,7 @@ def main():
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFold = lossAvg        
 
-        print(f'[EPOCH {ep:03d}] Accuracy of the network f{cResult} Training Loss {lossAvg} Validation Loss {loss_val} [{ibr}] [{ibl}] [{ibtl}]')        
+        print(f'[EPOCH {ep:03d}] Accuracy of the network {cResult} Training Loss {lossAvg} Validation Loss {loss_val} [{ibr}] [{ibl}] [{ibtl}]')        
 
 
 if __name__ == "__main__":

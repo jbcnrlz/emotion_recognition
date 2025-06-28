@@ -80,17 +80,22 @@ def train():
     parser.add_argument('--resnetSize', help='File with neighbours', required=False,default=18,type=int)
     parser.add_argument('--secondaryLossFunction', help='File with neighbours', required=False,default="ELBO")
     parser.add_argument('--model', help='File with neighbours', required=False,default="gmm")
+    parser.add_argument('--pretrainedResnet', help='File with neighbours', required=False,default=None)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if args.pretrainedResnet is not None:
+        RecorderMeter = "oi"
+        checkpoint = torch.load(args.pretrainedResnet,weights_only=False)
 
     if not os.path.exists(args.output):
         os.makedirs(args.output)
     writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
     if args.model == "gmm":
-        model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize)
+        model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize,pretrained=args.pretrainedResnet)
     elif args.model == "attgmm":
-        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses)
+        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet)
 
     model.to(device)    
     print("Model loaded")
