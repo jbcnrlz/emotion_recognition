@@ -23,10 +23,10 @@ def main():
         os.makedirs(args.output)
 
     trans = transforms.Compose([
+            AlignFace('faceDetection/deploy.prototxt', 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'),
             transforms.Resize((256, 256)),
             transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            AlignFace('faceDetection/deploy.prototxt', 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'),
+            transforms.ToTensor(),            
             transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])    
     ])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -38,9 +38,9 @@ def main():
     )
 
     transVal = transforms.Compose([
+            AlignFace('faceDetection/deploy.prototxt', 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'),
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
-            AlignFace('faceDetection/deploy.prototxt', 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])
     datasetTest = datasets.CelebA(root='data', split='valid', download=True, transform=transVal, target_type='identity')   
