@@ -22,8 +22,7 @@ def main():
     if not os.path.exists(args.output):
         os.makedirs(args.output)
 
-    trans = transforms.Compose([
-            AlignFace('faceDetection/deploy.prototxt', 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'),
+    trans = transforms.Compose([            
             transforms.Resize((256, 256)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),            
@@ -37,8 +36,7 @@ def main():
         shuffle=True
     )
 
-    transVal = transforms.Compose([
-            AlignFace('faceDetection/deploy.prototxt', 'faceDetection/res10_300x300_ssd_iter_140000_fp16.caffemodel'),
+    transVal = transforms.Compose([            
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
