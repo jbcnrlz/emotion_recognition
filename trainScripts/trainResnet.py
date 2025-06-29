@@ -4,9 +4,9 @@ from torchvision.models import resnet50
 from torch import nn, optim
 import torch.distributions as dist
 from torch.utils.data import DataLoader
-from networks.cosface import *
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
+from networks.cosface import *
 from helper.function import saveStatePytorch, printProgressBar
 from torch.utils.tensorboard import SummaryWriter
 
@@ -78,7 +78,7 @@ def main():
             currTargetBatch = currTargetBatch - 1
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-            classification, _  = model(currBatch)
+            classification, _  = model(currBatch, currTargetBatch)
             loss = cosface_loss(classification, currTargetBatch)
 
             optimizer.zero_grad()
@@ -108,7 +108,7 @@ def main():
                 totalImages += currBatch.shape[0]
                 currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-                classification< _ = model(currBatch)
+                classification, _ = model(currBatch, currTargetBatch)
                 loss = cosface_loss(classification, currTargetBatch)                
 
                 loss_val.append(loss.item())
