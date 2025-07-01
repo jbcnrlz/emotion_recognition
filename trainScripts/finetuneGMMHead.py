@@ -4,10 +4,10 @@ from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
-from helper.function import saveStatePytorch, printProgressBar
+from helper.function import saveStatePytorch, printProgressBar, overlay_attention_maps
 from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM
 from torch import nn, optim
-import torch.distributions as dist
+import torch.distributions as dist, random
 from torch.nn import functional as F
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
@@ -95,7 +95,7 @@ def train():
     if args.model == "gmm":
         model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize,pretrained=args.pretrainedResnet)
     elif args.model == "attgmm":
-        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet)
+        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='first')
 
     model.to(device)    
     print("Model loaded")
@@ -186,12 +186,16 @@ def train():
         ceLoss = []
         loss_val = []
         iteration = 0
+        imageAttention = None
         with torch.no_grad():
             for currBatch, currTargetBatch, _ in val_loader:
                 printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),length=50,prefix='Procesing face - testing')
 
                 totalImages += currBatch.shape[0]
                 currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
+
+                if (random.randint(0, 100) < 5) and (imageAttention is None):
+                    imageAttention = currBatch[random.randint(0,currBatch.shape[0])].cpu().detach().numpy()
 
                 classification, parameters, vaValueEstim = model(currBatch)
                 ceVal = criterion(classification, currTargetBatch)
@@ -213,6 +217,11 @@ def train():
         ceLoss = sum(ceLoss) / len(ceLoss)
         writer.add_scalar('RESNETAtt/rgl/val',ceLoss, ep)
         writer.add_scalar('RESNETAtt/ELBOLoss/val',elboLoss,ep)
+        if imageAttention is not None:
+            attentionMaps = model.attention_maps
+            _, attMapsOv = overlay_attention_maps(imageAttention, attentionMaps)
+            for at in attMapsOv:
+                writer.add_image('RESNETAtt/AttentionMaps', at, ep, dataformats='HWC')
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
 

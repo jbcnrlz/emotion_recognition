@@ -287,3 +287,53 @@ def visualizeAttentionMaps(image_tensor, attention_maps, title="Mapas de Atenç�
     plt.suptitle(title, fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.savefig(os.path.join(save_dir, f"{image_name}_all_attention_maps.png"), bbox_inches='tight') # Salva a figura com todos os mapas
+
+def overlay_attention_maps(image_tensor, attention_maps):
+    """
+    Retorna imagens originais sobrepostas com mapas de atenção como arrays NumPy.
+    
+    Args:
+        image_tensor: torch.Tensor shape [C, H, W] (normalizado)
+        attention_maps: Lista de torch.Tensor com mapas de atenção
+        
+    Returns:
+        tuple: (image_np, overlays)
+            - image_np: imagem original como array [H, W, 3]
+            - overlays: lista de arrays [H, W, 3] com sobreposições
+    """
+    # Converte e desnormaliza a imagem
+    image_np = image_tensor.permute(1, 2, 0).cpu().numpy()
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    image_np = image_np * std + mean
+    image_np = np.clip(image_np, 0, 1)
+    
+    overlays = []
+    
+    for attention_map_tensor in attention_maps:
+        # Processa o mapa de atenção
+        attn_map = attention_map_tensor.squeeze().cpu().numpy()
+        
+        if attn_map.ndim == 3:
+            attn_map = np.mean(attn_map, axis=0)
+        
+        # Redimensiona para o tamanho da imagem
+        h_ratio = image_np.shape[0] / attn_map.shape[0]
+        w_ratio = image_np.shape[1] / attn_map.shape[1]
+        resized_attn = zoom(attn_map, (h_ratio, w_ratio), order=3)
+        
+        # Cria a sobreposição
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.imshow(image_np)
+        ax.imshow(resized_attn, cmap='jet', alpha=0.5)
+        ax.axis('off')
+        
+        # Converte a figura para array NumPy
+        fig.canvas.draw()
+        overlay_np = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        overlay_np = overlay_np.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        plt.close(fig)
+        
+        overlays.append(overlay_np)
+    
+    return image_np, overlays
