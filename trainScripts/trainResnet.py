@@ -147,7 +147,7 @@ def main():
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFold = lossAvg        
 
-        print(f'[EPOCH {ep:03d}] Accuracy of the network {cResult} Training Loss {lossAvg} Validation Loss {loss_val} [{ibr}] [{ibl}] [{ibtl}]')        
+        print(f'[EPOCH {ep:03d}] Accuracy of the network {cResult} Training Loss {lossAvg:.5f} Validation Loss {loss_val:.5f} [{ibr}] [{ibl}] [{ibtl}]')        
 
 
 if __name__ == "__main__":
