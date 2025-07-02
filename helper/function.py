@@ -302,7 +302,7 @@ def overlay_attention_maps(image_tensor, attention_maps):
             - overlays: lista de arrays [H, W, 3] com sobreposições
     """
     # Converte e desnormaliza a imagem
-    image_np = image_tensor.permute(1, 2, 0).cpu().numpy()
+    image_np = np.transpose(image_tensor, (1, 0, 2))
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
     image_np = image_np * std + mean
