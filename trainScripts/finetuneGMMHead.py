@@ -220,8 +220,8 @@ def train():
         if imageAttention is not None:
             attentionMaps = model.attention_maps
             _, attMapsOv = overlay_attention_maps(imageAttention, attentionMaps)
-            for at in attMapsOv:
-                writer.add_image('RESNETAtt/AttentionMaps', at, ep, dataformats='HWC')
+            for idx, at in enumerate(attMapsOv):
+                writer.add_image(f'RESNETAtt/AttentionMaps_{idx}', at, ep, dataformats='HWC')
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
 

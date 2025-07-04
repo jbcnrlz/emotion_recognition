@@ -202,7 +202,7 @@ class BottleneckWithAttention(nn.Module):
         out = self.bn1(out)
         out = self.relu(out)
         
-        out, atMap = self.attention(out)  # Camada de atenção adicionada
+        out, _ = self.attention(out)  # Camada de atenção adicionada
         
         out = self.conv2(out)
         out = self.bn2(out)
@@ -249,32 +249,30 @@ class ResNet50WithAttentionGMM(nn.Module):
     def _replace_bottlenecks(self,btn):
         # Substituir os bottlenecks no layer2
         if btn == 'first' or btn == 'both':
-            for i in range(len(self.model.layer2)):
-                block = self.model.layer2[i]
-                new_block = BottleneckWithAttention(
-                    block.conv1.in_channels,
-                    block.conv1.out_channels,
-                    block.stride,
-                    block.downsample
-                )
-                self.model.layer2[i] = new_block
-                def hook_fn(module, input, output):
-                    self.attention_maps.append(output[1]) 
-                self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
+            block = self.model.layer2[0]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer2[i] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1]) 
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
         if btn == 'second' or btn == 'both':
             # Substituir os bottlenecks no layer3
-            for i in range(len(self.model.layer3)):
-                block = self.model.layer3[i]
-                new_block = BottleneckWithAttention(
-                    block.conv1.in_channels,
-                    block.conv1.out_channels,
-                    block.stride,
-                    block.downsample
-                )
-                self.model.layer3[i] = new_block
-                def hook_fn(module, input, output):
-                    self.attention_maps.append(output[1])
-                self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
+            block = self.model.layer3[0]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer3[i] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1])
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
     
     def forward(self, x):
         self.attention_maps = []  # Limpar os mapas de atenção antes de cada forward
