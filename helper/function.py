@@ -302,7 +302,7 @@ def overlay_attention_maps(image_tensor, attention_maps):
             - overlays: lista de arrays [H, W, 3] com sobreposições
     """
     # Converte e desnormaliza a imagem
-    image_np = np.transpose(image_tensor, (1, 0, 2))
+    image_np = np.transpose(image_tensor, (1, 2, 0))
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
     image_np = image_np * std + mean
@@ -330,8 +330,11 @@ def overlay_attention_maps(image_tensor, attention_maps):
         
         # Converte a figura para array NumPy
         fig.canvas.draw()
-        overlay_np = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        overlay_np = overlay_np.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        
+        # Usando renderer.buffer_rgba() em vez de tostring_rgb()
+        buf = fig.canvas.buffer_rgba()
+        overlay_np = np.asarray(buf)
+        overlay_np = overlay_np[..., :3]  # Remove o canal alpha se existir
         plt.close(fig)
         
         overlays.append(overlay_np)
