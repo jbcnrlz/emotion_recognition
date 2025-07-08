@@ -95,7 +95,7 @@ def train():
     if args.model == "gmm":
         model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize,pretrained=args.pretrainedResnet)
     elif args.model == "attgmm":
-        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='first')
+        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none')
 
     model.to(device)    
     print("Model loaded")

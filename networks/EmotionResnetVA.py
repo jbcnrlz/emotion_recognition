@@ -19,6 +19,8 @@ class SpatialSelfAttention(nn.Module):
         # Fator de escala
         self.gamma = nn.Parameter(torch.zeros(1))
         
+        self.visual_attention_map = None  # Mapa de atenção visual
+
     def forward(self, x, mask=None):
         """
         Input:
@@ -51,9 +53,9 @@ class SpatialSelfAttention(nn.Module):
         out = self.gamma * out + x
         
         visual_attention_map = attention_map_softmax.sum(dim=1).view(batch_size, H, W)
-        visual_attention_map = visual_attention_map / visual_attention_map.max(dim=-1, keepdim=True)[0].max(dim=-2, keepdim=True)[0]
+        self.visual_attention_map = visual_attention_map / visual_attention_map.max(dim=-1, keepdim=True)[0].max(dim=-2, keepdim=True)[0]
 
-        return out, visual_attention_map
+        return out
 
 class BayesianLinearVI(nn.Module):
     def __init__(self, in_features, out_features):
@@ -202,7 +204,7 @@ class BottleneckWithAttention(nn.Module):
         out = self.bn1(out)
         out = self.relu(out)
         
-        out, _ = self.attention(out)  # Camada de atenção adicionada
+        out = self.attention(out)  # Camada de atenção adicionada
         
         out = self.conv2(out)
         out = self.bn2(out)
@@ -231,8 +233,22 @@ class ResNet50WithAttentionGMM(nn.Module):
         # Substituir os bottlenecks no layer2 e layer3
         self.attention_maps = []
         self._attention_hooks = []  # Lista para armazenar os hooks de atenção
-        self._replace_bottlenecks(bottleneck)
+        if bottleneck in ['first', 'second', 'both']:
+            self._replace_bottlenecks(bottleneck)
         
+        else:
+            out_features = 512
+            spa = SpatialSelfAttention(out_features)
+            existing_layers = list(self.model.layer2.children())
+            self.model.layer2 = nn.Sequential(
+                *existing_layers,
+                spa
+            )
+            def hook_fn(module, input, output):
+                self.attention_maps.append(module[4].visual_attention_map) 
+            self._attention_hooks.append(self.model.layer2.register_forward_hook(hook_fn))
+
+
         # Modificar camada final
         out_features = self.model.fc.in_features
         self.model.fc = nn.Identity()
@@ -256,7 +272,7 @@ class ResNet50WithAttentionGMM(nn.Module):
                 block.stride,
                 block.downsample
             )
-            self.model.layer2[i] = new_block
+            self.model.layer2[0] = new_block
             def hook_fn(module, input, output):
                 self.attention_maps.append(output[1]) 
             self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
@@ -269,7 +285,7 @@ class ResNet50WithAttentionGMM(nn.Module):
                 block.stride,
                 block.downsample
             )
-            self.model.layer3[i] = new_block
+            self.model.layer3[0] = new_block
             def hook_fn(module, input, output):
                 self.attention_maps.append(output[1])
             self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
