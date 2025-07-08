@@ -236,17 +236,14 @@ class ResNet50WithAttentionGMM(nn.Module):
         if bottleneck in ['first', 'second', 'both']:
             self._replace_bottlenecks(bottleneck)
         
-        else:
-            out_features = 512
-            spa = SpatialSelfAttention(out_features)
-            existing_layers = list(self.model.layer2.children())
-            self.model.layer2 = nn.Sequential(
-                *existing_layers,
-                spa
+        else:            
+            self.model.conv1 = nn.Sequential(
+                nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
+                SpatialSelfAttention(64)
             )
             def hook_fn(module, input, output):
-                self.attention_maps.append(module[4].visual_attention_map) 
-            self._attention_hooks.append(self.model.layer2.register_forward_hook(hook_fn))
+                self.attention_maps.append(module[-1].visual_attention_map) 
+            self._attention_hooks.append(self.model.conv1.register_forward_hook(hook_fn))
 
 
         # Modificar camada final
