@@ -1,4 +1,4 @@
-import argparse, torch, os, sys, numpy as np, math, random
+import argparse, torch, os, sys, numpy as np, math, random, re
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -125,12 +125,16 @@ def train():
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)        
     criterion = None
     if args.mainLossFunc == "BCE":
+        print("Using BCE loss")
         criterion = nn.BCEWithLogitsLoss().to(device)
     elif args.mainLossFunc == "MSE":
+        print("Using MSE loss")
         criterion = nn.MSELoss().to(device)
     elif args.mainLossFunc == "FOCAL":
+        print("Using Focal loss")        
         criterion = FocalLoss(alpha=0.25, gamma=2.0).to(device)
     secLoss = None
+    lossFuncName = re.sub(r'[^a-zA-Z0-9\s]', '', str(criterion))
     if args.secondaryLossFunction != "ELBO":
         print("Using secondary loss function: " + args.secondaryLossFunction)
         secLoss= nn.L1Loss().to(device)
@@ -186,7 +190,7 @@ def train():
         writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
         elboLoss = sum(elboLoss) / len(elboLoss)
         ceLoss = sum(ceLoss) / len(ceLoss)
-        writer.add_scalar('RESNETAtt/rgl/train',ceLoss, ep)
+        writer.add_scalar(f'RESNETAtt/{lossFuncName}/train',ceLoss, ep)
         writer.add_scalar('RESNETAtt/ELBOLoss/train',elboLoss,ep)
         scheduler.step()
         model.eval()
@@ -223,7 +227,7 @@ def train():
         writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
         elboLoss = sum(elboLoss) / len(elboLoss)
         ceLoss = sum(ceLoss) / len(ceLoss)
-        writer.add_scalar('RESNETAtt/rgl/val',ceLoss, ep)
+        writer.add_scalar(f'RESNETAtt/{lossFuncName}/val',ceLoss, ep)
         writer.add_scalar('RESNETAtt/ELBOLoss/val',elboLoss,ep)
         if imageAttention is not None:
             attentionMaps = model.attention_maps
