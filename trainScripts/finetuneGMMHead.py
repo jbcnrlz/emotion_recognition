@@ -194,8 +194,8 @@ def train():
                 totalImages += currBatch.shape[0]
                 currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
 
-                if (random.randint(0, 100) < 5) and (imageAttention is None):
-                    imageAttention = currBatch[random.randint(0,currBatch.shape[0])].cpu().detach().numpy()
+                if (random.randint(0, 100) < 5) or (imageAttention is None):
+                    imageAttention = currBatch[random.randint(0,currBatch.shape[0]-1)].cpu().detach().numpy()
 
                 classification, parameters, vaValueEstim = model(currBatch)
                 ceVal = criterion(classification, currTargetBatch)
