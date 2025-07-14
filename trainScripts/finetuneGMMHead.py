@@ -83,6 +83,7 @@ def train():
     parser.add_argument('--model', help='File with neighbours', required=False,default="gmm")
     parser.add_argument('--pretrainedResnet', help='File with neighbours', required=False,default=None)
     parser.add_argument('--mainLossFunc', help='File with neighbours', required=False,default="BCE")
+    parser.add_argument('--lambdaLASSO', help='File with neighbours', required=False,default=0,type=float)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -176,6 +177,10 @@ def train():
             else:
                 elboVal = secLoss(vaValueEstim, vaBatch)
                 loss = 0.5 * ceVal + 0.5 * elboVal
+
+            if args.lambdaLASSO > 0:
+                l1_norm = sum(p.abs().sum() for p in model.parameters())
+                loss += args.lambdaLASSO * l1_norm
 
             optimizer.zero_grad()
             loss.backward()
