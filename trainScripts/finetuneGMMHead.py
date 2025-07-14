@@ -9,6 +9,7 @@ from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAtte
 from torch import nn, optim
 import torch.distributions as dist, random
 from torch.nn import functional as F
+from loss.FocalLoss import FocalLoss
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
     """
@@ -81,6 +82,7 @@ def train():
     parser.add_argument('--secondaryLossFunction', help='File with neighbours', required=False,default="ELBO")
     parser.add_argument('--model', help='File with neighbours', required=False,default="gmm")
     parser.add_argument('--pretrainedResnet', help='File with neighbours', required=False,default=None)
+    parser.add_argument('--mainLossFunc', help='File with neighbours', required=False,default="BCE")
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -118,10 +120,16 @@ def train():
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
+    optimizer = optim.Adam(model.parameters(), lr=args.learningRate, weight_decay=1e-5)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)        
-    criterion = nn.BCEWithLogitsLoss().to(device)
+    criterion = None
+    if args.mainLossFunc == "BCE":
+        criterion = nn.BCEWithLogitsLoss().to(device)
+    elif args.mainLossFunc == "MSE":
+        criterion = nn.MSELoss().to(device)
+    elif args.mainLossFunc == "FOCAL":
+        criterion = FocalLoss(alpha=0.25, gamma=2.0).to(device)
     secLoss = None
     if args.secondaryLossFunction != "ELBO":
         print("Using secondary loss function: " + args.secondaryLossFunction)
