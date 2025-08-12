@@ -113,8 +113,8 @@ def main():
         annotationsValues[idx][1] = np.load(os.path.join(annFolder,f'{fileName}_aro.npy'))
 
     densidades = []
-
-    for i in [[(-1,0),(0,1)],[(0,1),(0,1)],[(0,1),(-1,0)],[(-1,0),(-1,0)]]:
+    quadsLims = [[(0,1),(0,1)],[(-1,0),(0,1)],[(-1,0),(-1,0)],[(0,1),(-1,0)]]
+    for i in quadsLims:
         densidades.append(calcular_densidade_pontos(i[0], i[1], annotationsValues, mostrar_grafico=False))        
 
     maxDensidade = max(densidades)
@@ -128,7 +128,8 @@ def main():
             shutil.copyfile(os.path.join(imageFiles,folderFile,"{:05d}.jpg".format(idxs[idx][0])), os.path.join(args.pathFusedDataset,'images',f"{idxs[idx][0]}_affwild.jpg"))
             np.save(os.path.join(args.pathFusedDataset,'annotations',f"{idxs[idx][0]}_affwild_val.npy"),v[0])
             np.save(os.path.join(args.pathFusedDataset,'annotations',f"{idxs[idx][0]}_affwild_aro.npy"),v[1])
-            densidades[cQ] += 1
+            annotationsValues = np.vstack((annotationsValues, v))
+            densidades[cQ] = calcular_densidade_pontos(quadsLims[cQ][0], quadsLims[cQ][1], annotationsValues, mostrar_grafico=False)
     print('vaValues',vaValues)
 
 if __name__ == '__main__':

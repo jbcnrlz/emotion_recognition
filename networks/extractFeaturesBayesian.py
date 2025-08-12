@@ -5,7 +5,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from torch import nn
-from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead
+from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM
+from helper.function import visualizeAttentionMaps
 
 def saveToCSV(preds,files,pathCSV):
     emotions = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
@@ -34,6 +35,8 @@ def train():
         model = ResnetWithBayesianGMMHead(classes=13,resnetModel=args.resnetInnerModel)
     elif args.emotionModel == "resnetBayes":
         model = ResnetWithBayesianHead(13,resnetModel=args.resnetInnerModel)
+    elif args.emotionModel == "resnetAttentionGMM":
+        model = ResNet50WithAttentionGMM(num_classes=13,bottleneck='none')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
@@ -64,7 +67,11 @@ def train():
             predictions = prediction if predictions is None else np.concatenate((prediction,predictions))
 
             pathFile = list(pathsForFiles) + pathFile
-
+            '''
+            if args.emotionModel == "resnetAttentionGMM":
+                for idx, am in enumerate(images):
+                    visualizeAttentionMaps(images[idx],model.attention_maps,image_name=f"attention_map_{args.emotionModel}_{args.resnetInnerModel}_{pathsForFiles[idx].split(os.path.sep)[-1]}.png")
+            '''
     saveToCSV(predictions,pathFile,args.output)
 
 if __name__ == '__main__':

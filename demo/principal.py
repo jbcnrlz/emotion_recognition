@@ -43,7 +43,7 @@ def main():
     elif args.model == "resnetBayesGMM":
         model = ResnetWithBayesianGMMHead(classes=13,resnetModel=args.resnetSize)
     elif args.model == "resnetAttentionGMM":        
-        model = ResNet50WithAttentionGMM(num_classes=13)
+        model = ResNet50WithAttentionGMM(num_classes=13,bottleneck='none')
     checkpoint = torch.load(args.wts)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to("cuda")
@@ -55,7 +55,7 @@ def main():
     canvas = FigureCanvasAgg(fig)
 
     # Inicializa a webcam (0 é a câmera padrão)
-    cap = cv2.VideoCapture( 2, cv2.CAP_DSHOW )
+    cap = cv2.VideoCapture( 3, cv2.CAP_DSHOW )
     
     # Verifica se a webcam foi aberta corretamente
     if not cap.isOpened():
