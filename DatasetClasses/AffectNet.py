@@ -28,6 +28,16 @@ class AffectNet(data.Dataset):
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
                 self.label.append([valValue,aroValue])
+            elif typeExperiment == "VAD":
+                try:
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
+                    domValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber))))
+                except:
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
+                    domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy'))
+                self.label.append([valValue,aroValue,domValue])
             elif typeExperiment == "EXP":
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
                 if int(currLabel) == 7 and not loadLastLabel:
@@ -62,6 +72,18 @@ class AffectNet(data.Dataset):
                     currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank.txt')
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
+                self.label.append([currLabel,valValue,aroValue])
+            elif typeExperiment == 'PROBS_VAD':
+                try:
+                    currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank.txt' % (int(imageNumber)))
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber)))).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber)))).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber)))).astype(np.float64)
+                except:
+                    currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank.txt')
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
                 self.label.append([currLabel,valValue,aroValue])
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
@@ -122,7 +144,10 @@ class AffectNet(data.Dataset):
                 torch.from_numpy(np.array(self.loadProbFile(self.label[idx][0])).astype(np.float32)).to(torch.float32),
                 torch.from_numpy(np.array([self.label[idx][1],self.label[idx][2]]))
             ]
-
+        elif self.typeExperiment == "VAD":
+            label = torch.from_numpy(
+                np.array( 
+                    [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32),self.label[idx][2].astype(np.float32)] )).to(torch.float32)
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:

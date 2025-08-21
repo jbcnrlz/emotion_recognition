@@ -84,21 +84,24 @@ def train():
     parser.add_argument('--pretrainedResnet', help='File with neighbours', required=False,default=None)
     parser.add_argument('--mainLossFunc', help='File with neighbours', required=False,default="BCE")
     parser.add_argument('--lambdaLASSO', help='File with neighbours', required=False,default=0,type=float)
+    parser.add_argument('--useDominance', help='File with neighbours', required=False,default=False,type=bool)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if args.pretrainedResnet is not None:
-        RecorderMeter = "oi"
         checkpoint = torch.load(args.pretrainedResnet,weights_only=False)
 
     if not os.path.exists(args.output):
         os.makedirs(args.output)
     writer = SummaryWriter()    
     print("Loading model -- Using " + str(device))
+    outVA = 2
+    if args.useDominance:
+        outVA = 3
     if args.model == "gmm":
         model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize,pretrained=args.pretrainedResnet)
     elif args.model == "attgmm":
-        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none')
+        model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none',bayesianHeadType='VA' if outVA == 2 else 'VAD')
 
     model.to(device)    
     print("Model loaded")
@@ -116,9 +119,9 @@ def train():
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])}
     print("Loading trainig set")
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VA')
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA')
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
     optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
