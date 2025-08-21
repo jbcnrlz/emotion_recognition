@@ -121,7 +121,7 @@ def train():
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    optimizer = optim.Adam(model.parameters(), lr=args.learningRate, weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)        
     criterion = None

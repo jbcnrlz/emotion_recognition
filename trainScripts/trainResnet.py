@@ -50,8 +50,9 @@ def main():
 
     print("Loading model -- Using " + str(device))
 
-    model = ResNetCosFace(num_classes=10177, embedding_size=512)  # CelebA has 10177 identities    
-    model.to(device)    
+    model = resnet50(pretrained=False)
+    model.fc = nn.Linear(model.fc.in_features, 10177)  # Assuming 10 classes for CelebA identity
+    model.to(device)   
 
     print("Model loaded")
     print(model)
@@ -79,8 +80,8 @@ def main():
             currTargetBatch = currTargetBatch - 1
             currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-            classification, _  = model(currBatch, currTargetBatch)
-            loss = cosface_loss(classification, currTargetBatch)
+            classification  = model(currBatch)
+            loss = criterion(classification, currTargetBatch)
 
             optimizer.zero_grad()
             loss.backward()
@@ -109,8 +110,8 @@ def main():
                 totalImages += currBatch.shape[0]
                 currTargetBatch, currBatch = currTargetBatch.to(device), currBatch.to(device)
 
-                classification, _ = model(currBatch, currTargetBatch)
-                loss = cosface_loss(classification, currTargetBatch)                
+                classification = model(currBatch)
+                loss = criterion(classification, currTargetBatch)
 
                 loss_val.append(loss.item())
 
