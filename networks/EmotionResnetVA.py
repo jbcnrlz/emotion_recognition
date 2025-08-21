@@ -222,7 +222,7 @@ class BottleneckWithAttention(nn.Module):
         return out  # Retorna o mapa de atenção junto com a saída
 
 class ResNet50WithAttentionGMM(nn.Module):
-    def __init__(self, num_classes=1000,pretrained=None,bottleneck='both'):
+    def __init__(self, num_classes=1000,pretrained=None,bottleneck='both',bayesianHeadType='VA'):
         super(ResNet50WithAttentionGMM, self).__init__()
         
         # Usar a arquitetura padrão mas com nossos bottlenecks modificados
@@ -260,7 +260,10 @@ class ResNet50WithAttentionGMM(nn.Module):
         )
 
         self.probabilities = nn.Linear(num_classes * 6,num_classes)  # Saída para os parâmetros da GMM
-        self.bayesianHead = BayesianNetworkVI(num_classes, 4, 2)
+        if bayesianHeadType == 'VA':
+            self.bayesianHead = BayesianNetworkVI(num_classes, 4, 2)
+        elif bayesianHeadType == 'VAD':
+            self.bayesianHead = BayesianNetworkVI(num_classes, 6, 3)
     
     def _replace_bottlenecks(self,btn):
         # Substituir os bottlenecks no layer2

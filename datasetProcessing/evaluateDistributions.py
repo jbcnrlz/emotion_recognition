@@ -1,4 +1,5 @@
 import numpy as np, argparse, torch, os, sys
+import pandas as pd
 from torchvision import transforms
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
@@ -130,48 +131,41 @@ def main():
     parser = argparse.ArgumentParser(description='Generate Emotion Ranks')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--batchSize', type=int, help='Size of the batch', required=True)
+    parser.add_argument('--distroFile', help='Size of the batch', required=True)    
     args = parser.parse_args()
+
+    classesDist = pd.read_csv(args.distroFile).drop(columns=['class']).to_numpy()
+    classesDist = np.vstack( (classesDist, np.array([[0,0,0,0,0,0]])) )
+
     data_transforms = transforms.Compose([
         transforms.Resize((256,256)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='VA',exchangeLabel=None)
-    classesDist = np.array([
-        [0,0,0,0],
-        [0.81,0.21,0.51,0.26], #happy
-        [-0.63,0.23,-0.27,0.34], #sad
-        [0.4,0.3,0.67,0.27], #surprised
-        [-0.64,0.2,0.6,0.32],#fear
-        [-0.6,0.2,0.35,0.41],#disgust
-        [-0.51,0.2,0.59,0.33],#angry
-        [-0.23,0.39,0.31,0.33],#contempt
-        [0.65,0.29,-0.33,0.36],#leisurely-protected-relaxed
-        [0.15,0.41,-0.18,0.30],#aloof-consoled-humble-modest-nonchalant-reserved-reverent-sheltered-solemn
-        [0.74,0.22,-0.13,0.32],#secure
-        [0.79,0.25,-0.01,0.46],#untroubled
-        [0.19,0.57,-0.4,0.21]#quiet
-    ])
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='VAD',exchangeLabel=None)
 
-    emotions = {"neutral" : [],"happy" : [] ,"sad" : [],"surprised" : [],"fear" : [],"disgust":[],"angry":[],"contempt": [], "serene" : [], "contemplative" : [], "secure" : [], "untroubled" : [], "quiet" : []}
+    #emotions = {"neutral" : [],"happy" : [] ,"sad" : [],"surprised" : [],"fear" : [],"disgust":[],"angry":[],"contempt": [], "serene" : [], "contemplative" : [], "secure" : [], "untroubled" : [], "quiet" : []}
     idx = -1
     covm = []
     means = []
-    for k in emotions:
-        idx += 1
-        emotions[k] = [[classesDist[idx][0],classesDist[idx][2]], [[classesDist[idx][1]**2,0],[0,classesDist[idx][3]**2]]]
-        covm.append([[classesDist[idx][1]**2,0],[0,classesDist[idx][3]**2]])
-        means.append([classesDist[idx][0],classesDist[idx][2]])
+    for k in classesDist:
+        idx += 1      
+        covm.append([
+            [k[1]**2,0,0],
+            [0,k[3]**2,0],
+            [0,0,k[5]**2]
+        ])
+        means.append([k[0],k[2],k[4]])
 
     X = []
     labels = []
-    for i, (emotion, (mean, cov)) in enumerate(emotions.items()):
-        samples = np.random.multivariate_normal(mean, cov, 1000)
+    for i in range(len(means)):
+        samples = np.random.multivariate_normal(means[i], covm[i], 1000)
         X.append(samples)
         labels.extend([i] * len(samples))
 
     X = np.vstack(X)
-    n_components = len(emotions)  # Número de estados emocionais
+    n_components = len(means)  # Número de estados emocionais
     gmm = GaussianMixture(n_components=n_components, covariance_type='full', random_state=42)
     gmm.fit(X)
     gmm.covariances_ = np.array(covm)
