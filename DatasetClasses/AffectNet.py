@@ -36,7 +36,10 @@ class AffectNet(data.Dataset):
                 except:
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
-                    domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy'))
+                    try:
+                        domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy'))
+                    except:
+                        continue
                 self.label.append([valValue,aroValue,domValue])
             elif typeExperiment == "EXP":
                 currLabel = np.load(os.path.join(afectdata,'annotations' ,'%d_exp.npy' % (int(imageNumber))))
@@ -83,7 +86,10 @@ class AffectNet(data.Dataset):
                     currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank.txt')
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
-                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
+                    try:
+                        aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
+                    except:
+                        continue
                 self.label.append([currLabel,valValue,aroValue])
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
@@ -143,6 +149,11 @@ class AffectNet(data.Dataset):
             label = [
                 torch.from_numpy(np.array(self.loadProbFile(self.label[idx][0])).astype(np.float32)).to(torch.float32),
                 torch.from_numpy(np.array([self.label[idx][1],self.label[idx][2]]))
+            ]
+        elif self.typeExperiment == 'PROBS_VAD':
+            label = [
+                torch.from_numpy(np.array(self.loadProbFile(self.label[idx][0])).astype(np.float32)).to(torch.float32),
+                torch.from_numpy(np.array([self.label[idx][1],self.label[idx][2],self.label[idx][3]]))
             ]
         elif self.typeExperiment == "VAD":
             label = torch.from_numpy(
