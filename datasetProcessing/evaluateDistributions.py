@@ -142,7 +142,7 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='VAD',exchangeLabel=None)
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='VAD',exchangeLabel=None)
 
     #emotions = {"neutral" : [],"happy" : [] ,"sad" : [],"surprised" : [],"fear" : [],"disgust":[],"angry":[],"contempt": [], "serene" : [], "contemplative" : [], "secure" : [], "untroubled" : [], "quiet" : []}
     idx = -1

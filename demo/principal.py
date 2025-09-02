@@ -21,7 +21,7 @@ def getEmotionLabel(faceImage,model):
         outputs = model(faceImage)[0]
         outputs = torch.nn.Softmax(dim=1)(outputs)
     # Aqui você pode mapear os índices de previsão para rótulos de emoção
-    emotions = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
+    emotions = ["happy","contempt","elated","surprised","love","protected","astonished","disgusted","angry","fearfull","sad","neutral"]
     _, predicted = torch.max(outputs.data, 1)
     return emotions[predicted], outputs.data.cpu().numpy()[0]
 
@@ -43,7 +43,7 @@ def main():
     elif args.model == "resnetBayesGMM":
         model = ResnetWithBayesianGMMHead(classes=13,resnetModel=args.resnetSize)
     elif args.model == "resnetAttentionGMM":        
-        model = ResNet50WithAttentionGMM(num_classes=13,bottleneck='none')
+        model = ResNet50WithAttentionGMM(num_classes=12,bottleneck='none',bayesianHeadType='VAD')
     checkpoint = torch.load(args.wts)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
     model.to("cuda")
@@ -98,7 +98,7 @@ def main():
                 espessura = 2
                 linetype = cv2.LINE_AA  # Anti-aliasing para texto mais suave
                 cv2.putText(frame, emoLabel, posicao, fonte, escala, cor, espessura, linetype)
-                emts = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
+                emts = ["happy","contempt","elated","surprised","love","protected","astonished","disgusted","angry","fearfull","sad","neutral"]
                 ax.clear()                
                 ax.bar(emts,ots,alpha=0.5, color='blue')
                 ax.set_title("Emotion distribution")

@@ -9,7 +9,7 @@ from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianG
 from helper.function import visualizeAttentionMaps
 
 def saveToCSV(preds,files,pathCSV):
-    emotions = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
+    emotions = ["happy","contempt","elated","surprised","love","protected","astonished","disgusted","angry","fearfull","sad","neutral"]
     with open(pathCSV,'w') as pcsv:
         pcsv.write('%s,file\n' % (','.join([emotions[f] for f in range(len(preds[0]))])))
         for idx, p in enumerate(preds):
@@ -36,7 +36,7 @@ def train():
     elif args.emotionModel == "resnetBayes":
         model = ResnetWithBayesianHead(13,resnetModel=args.resnetInnerModel)
     elif args.emotionModel == "resnetAttentionGMM":
-        model = ResNet50WithAttentionGMM(num_classes=13,bottleneck='none')
+        model = ResNet50WithAttentionGMM(num_classes=12,bottleneck='none',bayesianHeadType='VAD')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['state_dict'],strict=True)
@@ -50,11 +50,12 @@ def train():
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
         ])
     
-    dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms,typeExperiment='EXP')
+    dataset = AffectNet(afectdata=args.pathBase,transform=data_transforms,typeExperiment='PROBS')
     val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)
     model.eval()
     pathFile = []
     predictions = None
+    labelsGrouped = None
     soft =  nn.Softmax(dim=1)
     with torch.no_grad():
         for idxBtc, data in enumerate(val_loader):
@@ -66,6 +67,9 @@ def train():
             prediction = outputs.cpu().detach().numpy()
             predictions = prediction if predictions is None else np.concatenate((prediction,predictions))
 
+            currLabel = labels.cpu().detach().numpy()
+            labelsGrouped = currLabel if labelsGrouped is None else np.concatenate((currLabel,labelsGrouped))
+
             pathFile = list(pathsForFiles) + pathFile
             '''
             if args.emotionModel == "resnetAttentionGMM":
@@ -73,6 +77,7 @@ def train():
                     visualizeAttentionMaps(images[idx],model.attention_maps,image_name=f"attention_map_{args.emotionModel}_{args.resnetInnerModel}_{pathsForFiles[idx].split(os.path.sep)[-1]}.png")
             '''
     saveToCSV(predictions,pathFile,args.output)
+    saveToCSV(labelsGrouped,pathFile,args.output[:-4]+"_labels.csv")
 
 if __name__ == '__main__':
     train()
