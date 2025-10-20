@@ -102,7 +102,7 @@ class BayesianNetworkVI(nn.Module):
         super().__init__()
         self.linear1 = BayesianLinearVI(input_dim, hidden_dim)
         self.linear2 = BayesianLinearVI(hidden_dim, output_dim)
-        self.activation = nn.ReLU()
+        self.activation = nn.Tanh()
         
     def forward(self, x):
         x = self.activation(self.linear1(x))
