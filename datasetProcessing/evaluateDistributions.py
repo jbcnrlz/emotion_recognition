@@ -3,21 +3,196 @@ import pandas as pd
 from torchvision import transforms
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
+from matplotlib.patches import Ellipse
+from PIL import Image 
+from scipy.special import logsumexp
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from DatasetClasses.AffectNet import AffectNet
-from matplotlib.patches import Ellipse
-from matplotlib.patches import Ellipse
-from PIL import Image  # Para carregar imagens
+from DatasetClasses.AffectNet import AffectNet, OPTAffectNet
 
-def saveToCSV(preds,labels,files,pathCSV):
-    emotions = ["neutral","happy","sad","surprised","fear","disgust","angry","contempt","serene","contemplative","secure","untroubled","quiet"]
-    with open(pathCSV,'w') as pcsv:
-        pcsv.write('%s,exp,file\n' % (','.join([emotions[f] for f in range(len(preds[0]))])))
-        for idx, p in enumerate(preds):
-            for fp in p:
-                pcsv.write(f'{fp},')
-            pcsv.write(f"{emotions[labels[idx]]},{files[idx]}\n")
+
+def normal_pdf(x, mu, sigma):
+    """
+    Calcula o valor da PDF para um ponto x, dada a média mu e o desvio-padrão sigma.
+    f(x) = (1 / (sigma * sqrt(2*pi))) * exp(-0.5 * ((x - mu) / sigma)^2)
+    """
+    # Evita divisão por zero
+    if sigma == 0:
+        return np.inf if x == mu else 0.0
+
+    exponent = -0.5 * ((x - mu) / sigma) ** 2
+    return (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(exponent)
+
+
+def normal_pdf_stable(x, mu, sigma):
+    """
+    Versão estável da PDF normal que evita underflow
+    """
+    epsilon = 1e-8
+    sigma = max(sigma, epsilon)
+    
+    # Para valores muito distantes, retorna probabilidade muito baixa
+    z = (x - mu) / sigma
+    if np.abs(z) > 10:  # Mais de 10 desvios padrão
+        return epsilon
+    
+    exponent = -0.5 * z ** 2
+    normalization = 1.0 / (sigma * np.sqrt(2 * np.pi))
+    
+    return normalization * np.exp(exponent)
+
+
+def calculate_likelihood_probabilities(vaBatch, classesDist, use_log_space=True):
+    """
+    Calcula probabilidades usando likelihood de forma numericamente estável
+    
+    Args:
+        vaBatch: Tensor com valores VAD [batch_size, 3]
+        classesDist: Distribuições das classes [n_classes, 6] - [mu_v, std_v, mu_a, std_a, mu_d, std_d]
+        use_log_space: Se True, usa espaço logarítmico para evitar underflow
+    
+    Returns:
+        Probabilidades normalizadas [batch_size, n_classes]
+    """
+    batch_size = vaBatch.shape[0]
+    n_classes = classesDist.shape[0]
+    
+    if use_log_space:
+        # Cálculo em espaço logarítmico (mais estável)
+        log_probs = np.zeros((batch_size, n_classes))
+        
+        for c in range(n_classes):
+            mu_v, std_v, mu_a, std_a, mu_d, std_d = classesDist[c]
+            
+            # Evitar std zero adicionando epsilon
+            epsilon = 1e-8
+            std_v = max(std_v, epsilon)
+            std_a = max(std_a, epsilon)
+            std_d = max(std_d, epsilon)
+            
+            # PDF normal em espaço log
+            log_pdf_v = -0.5 * ((vaBatch[:, 0] - mu_v) / std_v) ** 2 - np.log(std_v * np.sqrt(2 * np.pi))
+            log_pdf_a = -0.5 * ((vaBatch[:, 1] - mu_a) / std_a) ** 2 - np.log(std_a * np.sqrt(2 * np.pi))
+            log_pdf_d = -0.5 * ((vaBatch[:, 2] - mu_d) / std_d) ** 2 - np.log(std_d * np.sqrt(2 * np.pi))
+            
+            # Soma das log-probabilidades (equivalente a multiplicação em espaço normal)
+            log_probs[:, c] = log_pdf_v + log_pdf_a + log_pdf_d
+        
+        # Normalizar usando logsumexp para evitar underflow/overflow
+        log_probs_normalized = log_probs - logsumexp(log_probs, axis=1, keepdims=True)
+        
+        # Converter de volta para probabilidades
+        probs = np.exp(log_probs_normalized)
+        
+    else:
+        # Versão em espaço normal (menos estável, mas mais direta)
+        probs = np.ones((batch_size, n_classes))
+        
+        for c in range(n_classes):
+            mu_v, std_v, mu_a, std_a, mu_d, std_d = classesDist[c]
+            
+            # Evitar std zero
+            epsilon = 1e-8
+            std_v = max(std_v, epsilon)
+            std_a = max(std_a, epsilon)
+            std_d = max(std_d, epsilon)
+            
+            # Calcular probabilidades
+            prob_v = normal_pdf_stable(vaBatch[:, 0], mu_v, std_v)
+            prob_a = normal_pdf_stable(vaBatch[:, 1], mu_a, std_a)
+            prob_d = normal_pdf_stable(vaBatch[:, 2], mu_d, std_d)
+            
+            probs[:, c] = prob_v * prob_a * prob_d
+        
+        # Normalizar as probabilidades
+        probs = probs / (probs.sum(axis=1, keepdims=True) + 1e-8)
+    
+    return probs
+
+
+def calculate_likelihood_vectorized(vaBatch, classesDist):
+    """
+    Versão vetorizada para melhor performance
+    """
+    batch_size = vaBatch.shape[0]
+    n_classes = classesDist.shape[0]
+    
+    # Expandir dimensões para broadcasting
+    va_expanded = vaBatch[:, np.newaxis, :]  # [batch_size, 1, 3]
+    means = classesDist[:, [0, 2, 4]]  # [n_classes, 3]
+    stds = classesDist[:, [1, 3, 5]]  # [n_classes, 3]
+    
+    # Evitar std zero
+    stds = np.maximum(stds, 1e-8)
+    
+    # Calcular log-probabilidades de forma vetorizada
+    z = (va_expanded - means) / stds  # [batch_size, n_classes, 3]
+    log_probs = -0.5 * z ** 2 - np.log(stds * np.sqrt(2 * np.pi))  # [batch_size, n_classes, 3]
+    
+    # Somar log-probs ao longo das dimensões VAD
+    log_probs_sum = np.sum(log_probs, axis=2)  # [batch_size, n_classes]
+    
+    # Normalizar
+    log_probs_normalized = log_probs_sum - logsumexp(log_probs_sum, axis=1, keepdims=True)
+    probs = np.exp(log_probs_normalized)
+    
+    return probs
+
+
+def validate_probabilities(probs):
+    """
+    Valida se as probabilidades estão corretas
+    """
+    print("Validação das Probabilidades:")
+    print(f"Shape: {probs.shape}")
+    print(f"Soma por linha (deve ser ~1.0): Min={probs.sum(axis=1).min():.6f}, Max={probs.sum(axis=1).max():.6f}")
+    print(f"Valores NaN: {np.isnan(probs).sum()}")
+    print(f"Valores infinitos: {np.isinf(probs).sum()}")
+    print(f"Range das probabilidades: Min={probs.min():.6f}, Max={probs.max():.6f}")
+    
+    # Verificar se alguma probabilidade é zero para todas as classes
+    zero_probs = (probs == 0).all(axis=1).sum()
+    print(f"Linhas com todas probabilidades zero: {zero_probs}")
+
+
+# Lista de emoções corrigida (14 emoções na ordem correta do GMM)
+# Ordem: 13 do CSV + 1 (neutral) adicionado no final
+CORRECT_EMOTIONS = ["happy", "contempt", "elated", "hopeful", "surprised", "proud", "loved", "angry", "astonished", "disgusted", "fearful", "sad", "fatigued", "neutral"]
+AFFECTNET_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
+
+
+def outputCSV(probs, vads, path, emos, outputFile):
+    new_data = []
+    
+    # Processar cada linha
+    for index, row in enumerate(probs):
+        # Projetar distribuição de emoções        
+        
+        # Criar nova linha com a distribuição projetada
+        newRow = {}
+        for c in range(len(CORRECT_EMOTIONS)):
+            newRow[CORRECT_EMOTIONS[c]] = row[c]
+
+        newRow['valence'] = vads[index][0]
+        newRow['arousal'] = vads[index][1]
+        newRow['dominance'] = vads[index][2]
+        newRow['emotion'] = emos[index]
+        newRow['path'] = path[index]
+
+        new_data.append(newRow)
+    
+    # Criar novo DataFrame
+    new_df = pd.DataFrame(new_data)
+    
+    # Salvar novo CSV
+    new_df.to_csv(outputFile, index=False)
+    
+    print(f"Arquivo salvo com sucesso: {outputFile}")
+    print(f"Total de registros processados: {len(new_df)}")
+    
+    return new_df
+
 
 def saveRankFile(probs,paths):
     for idx, p in enumerate(probs):
@@ -29,213 +204,105 @@ def saveRankFile(probs,paths):
             f.write(joinedProbs+'\n')
 
 
-def generateTextForLLM(values,txtFile,pathImage):
-    with open(txtFile,'a') as f:
-        f.write(f"File path: {pathImage} ")
-        f.write("Given the set of terms below describing the emotional state of the attached picture, each term being associated with a probability, generate a caption describing the emotional state. ")
-        for v in values:
-            f.write(f"{v}: {values[v]} ")
-        f.write("\n")
-
-def save_probability_histograms(probs, labels, classesDist, vas, face_images, output_folder='hist_probs'):
-    """
-    Salva histogramas das probabilidades para cada imagem, com anotação da emoção correta e a imagem da face.
-
-    Args:
-        probs (numpy.ndarray): Array de probabilidades com shape (n_imagens, n_emocoes).
-        labels (numpy.ndarray): Array de rótulos corretos com shape (n_imagens,).
-        classesDist (numpy.ndarray): Array com as médias e variâncias das distribuições.
-        vas (numpy.ndarray): Array de valores de Valence e Arousal para cada imagem.
-        face_images (list): Lista de caminhos ou arrays das imagens das faces.
-        output_folder (str): Pasta onde os histogramas serão salvos.
-    """
-    # Verifica se a pasta existe, caso contrário, cria a pasta
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    # Nomes das emoções (ajuste conforme necessário)
-    emotions = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt","serene","contemplative","secure","untroubled","quiet"]
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'yellow', 'cyan', 'magenta', 'brown', 'pink', 'gray', 'olive', 'lime']
-
-    # Itera sobre as probabilidades de cada imagem
-    for i, (prob, label, va, face_image) in enumerate(zip(probs, labels, vas, face_images)):
-        # Cria uma nova figura e subplots a cada iteração
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
-
-        # Subgráfico 1: Histograma das probabilidades
-        ax1.bar(emotions, prob, color='blue')
-        ax1.set_xlabel('Emotions')
-        ax1.set_ylabel('Probability')
-        ax1.set_title(f'Histogram of Probabilities - Image {i}')
-        ax1.tick_params(axis='x', rotation=45)  # Rotaciona os rótulos do eixo x
-
-        # Adiciona o texto da emoção correta
-        true_emotion = emotions[label]
-        ax1.text(
-            x=0.5, y=0.95,  # Posição do texto (normalizada entre 0 e 1)
-            s=f'Anotated Emotion: {true_emotion}',
-            transform=ax1.transAxes,  # Usa coordenadas do eixo do ax1
-            fontsize=12,
-            ha='center',  # Alinhamento horizontal
-            va='top',  # Alinhamento vertical
-            bbox=dict(facecolor='white', alpha=0.8, edgecolor='black')  # Caixa de fundo
-        )
-
-        # Subgráfico 2: Centros das distribuições e elipses
-        for idx, (emotion, dist) in enumerate(zip(emotions, classesDist)):
-            # Extrair centro (mean) e covariância (cov)
-            mean = [dist[0], dist[2]]  # Valence e Arousal
-            cov = [[dist[1]**2, 0], [0, dist[3]**2]]  # Matriz de covariância
-
-            # Plotar o centro da distribuição
-            ax2.scatter(mean[0], mean[1], color=colors[idx], label=emotion, s=100)
-
-            # Calcular ângulo e tamanho da elipse
-            lambda_, v = np.linalg.eig(cov)  # Autovalores e autovetores
-            angle = np.degrees(np.arctan2(v[1, 0], v[0, 0]))  # Ângulo de rotação
-            width, height = 2 * np.sqrt(lambda_)  # Tamanho da elipse
-
-            # Desenhar a elipse
-            ellipse = Ellipse(xy=mean, width=width, height=height, angle=angle,
-                              edgecolor=colors[idx], facecolor='none', linestyle='--', alpha=0.7)
-            ax2.add_patch(ellipse)
-
-        # Plotar o ponto de Valence e Arousal da imagem atual
-        ax2.scatter(va[0], va[1], color='black', label='Emotion Point', s=100)
-
-        # Configurações do subgráfico 2
-        ax2.set_xlabel('Valence')
-        ax2.set_ylabel('Arousal')
-        ax2.set_title('Distribution Centers with Ellipses')
-        ax2.grid(True)
-        #x2.legend(loc='lower right')
-        ax2.set_aspect('equal', 'box')
-
-        # Subgráfico 3: Imagem da face
-        if isinstance(face_image, str):  # Se for um caminho de arquivo
-            img = Image.open(face_image)
-        else:  # Se for um array NumPy (imagem já carregada)
-            img = face_image
-
-        ax3.imshow(img)
-        ax3.axis('off')  # Remove os eixos
-        ax3.set_title('Face Image')
-
-        # Ajustar layout e salvar a figura
-        plt.tight_layout()
-        output_path = os.path.join(output_folder, f'histogram_{i}.png')
-        fig.savefig(output_path)
-        plt.close(fig)  # Fecha a figura para liberar memória
-
 def main():
     parser = argparse.ArgumentParser(description='Generate Emotion Ranks')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--batchSize', type=int, help='Size of the batch', required=True)
-    parser.add_argument('--distroFile', help='Size of the batch', required=True)    
+    parser.add_argument('--distroFile', help='Size of the batch', required=True)
+    parser.add_argument('--typeEstimation', help='Type estimation',default="GMM", required=True)
+    parser.add_argument('--use_log_space', action='store_true', help='Use log space for stability')
+    parser.add_argument('--vectorized', action='store_true', help='Use vectorized computation')
+    parser.add_argument('--validate_probs', action='store_true', help='Validate probability outputs')
     args = parser.parse_args()
 
     classesDist = pd.read_csv(args.distroFile).drop(columns=['class']).to_numpy()
-    classesDist = np.vstack( (classesDist, np.array([[0,0,0,0,0,0]])) )
+    # Adiciona o componente 'neutral' no final (13 + 1 = 14)
+    classesDist = np.vstack( (classesDist, np.array([[0,0.1,0,0.1,0,0.1]])) )
 
     data_transforms = transforms.Compose([
         transforms.Resize((256,256)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms,typeExperiment='VAD',exchangeLabel=None)
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='VAD_EXP',exchangeLabel=None)
 
-    #emotions = {"neutral" : [],"happy" : [] ,"sad" : [],"surprised" : [],"fear" : [],"disgust":[],"angry":[],"contempt": [], "serene" : [], "contemplative" : [], "secure" : [], "untroubled" : [], "quiet" : []}
-    idx = -1
-    covm = []
-    means = []
-    for k in classesDist:
-        idx += 1      
-        covm.append([
-            [k[1]**2,0,0],
-            [0,k[3]**2,0],
-            [0,0,k[5]**2]
-        ])
-        means.append([k[0],k[2],k[4]])
+    if args.typeEstimation == "GMM":
+        idx = -1
+        covm = []
+        means = []
+        for k in classesDist:
+            idx += 1
+            covm.append([
+                [k[1]**2,0,0],
+                [0,k[3]**2,0],
+                [0,0,k[5]**2]
+            ])
+            means.append([k[0],k[2],k[4]])
 
-    X = []
-    labels = []
-    for i in range(len(means)):
-        samples = np.random.multivariate_normal(means[i], covm[i], 1000)
-        X.append(samples)
-        labels.extend([i] * len(samples))
+        X = []
+        labels = []
+        for i in range(len(means)):
+            samples = np.random.multivariate_normal(means[i], covm[i], 1000)
+            X.append(samples)
+            labels.extend([i] * len(samples))
 
-    X = np.vstack(X)
-    n_components = len(means)  # Número de estados emocionais
-    gmm = GaussianMixture(n_components=n_components, covariance_type='full', random_state=42)
-    gmm.fit(X)
-    gmm.covariances_ = np.array(covm)
-    gmm.means_ = np.array(means)
+        X = np.vstack(X)
+        n_components = len(means) # Número de estados emocionais (14)
+        gmm = GaussianMixture(n_components=n_components, covariance_type='full', random_state=42)
+        gmm.fit(X)
+        gmm.covariances_ = np.array(covm)
+        gmm.means_ = np.array(means)
 
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
     outputData = None
     probs = None
-    lbls = None
-    vas = None    
+    vas = None
     pts = None
+    lbls = []
+    
+    print(f"Usando método: {args.typeEstimation}")
+    if args.typeEstimation == "LIKELIHOOD":
+        print(f"Log space: {args.use_log_space}")
+        print(f"Vectorized: {args.vectorized}")
+    
     for data in val_loader:
         #_, labels, paths, vaBatch = data
         _, vaBatch, paths = data
-        probs = np.concatenate((probs,gmm.predict_proba(vaBatch.numpy()))) if probs is not None else gmm.predict_proba(vaBatch.numpy())
+        emotionsLabel = vaBatch[:,-1].numpy().astype(np.uint8)
+        vaBatch = vaBatch[:,:-1]
+        
+        if args.typeEstimation == "GMM":
+            probs = np.concatenate((probs,gmm.predict_proba(vaBatch.numpy()))) if probs is not None else gmm.predict_proba(vaBatch.numpy())
+        
+        elif args.typeEstimation == "LIKELIHOOD":
+            if args.vectorized:
+                # Usar versão vetorizada
+                batch_probs = calculate_likelihood_vectorized(vaBatch.numpy(), classesDist)
+            else:
+                # Usar a nova implementação
+                batch_probs = calculate_likelihood_probabilities(
+                    vaBatch.numpy(), 
+                    classesDist, 
+                    use_log_space=args.use_log_space
+                )
+            
+            probs = np.concatenate((probs, batch_probs)) if probs is not None else batch_probs
+        
         #lbls = np.concatenate((lbls,labels.numpy())) if lbls is not None else labels.numpy()
-        outputData = np.concatenate((outputData,vaBatch.numpy())) if outputData is not None else vaBatch.numpy()        
+        outputData = np.concatenate((outputData,vaBatch.numpy())) if outputData is not None else vaBatch.numpy()
         vas = np.concatenate((vas,vaBatch.numpy())) if vas is not None else vaBatch.numpy()
         pts = np.concatenate((pts,paths)) if pts is not None else paths
+        lbls = lbls + [AFFECTNET_EMOTIONS[int(x)] if int(x) != 255 else 'affwild' for x in emotionsLabel.tolist()]
 
-    #saveToCSV(probs,lbls,pts,'annotatedAffectNet.csv')
+    # Validar probabilidades se solicitado
+    if args.validate_probs and probs is not None:
+        validate_probabilities(probs)
 
-    #save_probability_histograms(probs, lbls, classesDist, vas, pts, output_folder='hist_probs')
     saveRankFile(probs,pts)
-    '''
-    for idx, p in enumerate(probs):
-        valuesGenerateText = {}
-        for idx2, v in enumerate(p):
-            valuesGenerateText[list(emotions.keys())[idx2]] = v
-        generateTextForLLM(valuesGenerateText,'llm.txt',pts[idx])
-    '''
-    '''
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'yellow', 'cyan', 'magenta', 'brown', 'pink']
-    emotions = list(emotions.keys())
-    # 📊 Visualizando os clusters e o novo ponto
-    added_labels = {}  # Dicionário para rastrear rótulos já adicionados
-    fig, ax = plt.subplots()
-    for idx, l in enumerate(outputData):
-        emotion_idx = (-probs[idx]).argsort()[0]
-        emotion_label = emotions[emotion_idx]
-        plot_two_color_point(ax, outputData[idx, 0], outputData[idx, 1], colors[emotion_idx], colors[lbls[idx]], size=2)
-    
-        if emotion_label not in added_labels:
-            plt.scatter(outputData[idx, 0], outputData[idx, 1], c=colors[emotion_idx], alpha=0.5, label=emotion_label)
-            added_labels[emotion_label] = True
-        else:
-            plt.scatter(outputData[idx, 0], outputData[idx, 1], c=colors[emotion_idx], alpha=0.5)
-    
-    plt.scatter(classesDist[:,0],classesDist[:,2],color='purple',marker='x',s=200,label="Distribution center")
-    #plt.scatter(outputData[:, 0], outputData[:, 1], color='red', marker='x', s=200, label="New point")
-    ax.set_aspect('equal', 'box')
-    plt.xlabel("Valence")
-    plt.ylabel("Arousal")
-    plt.title("Clusters de Emoções via GMM")
-    plt.legend()
-    plt.show()
-    '''
-# Função para criar um ponto com duas cores
-def plot_two_color_point(ax, x, y, color1, color2, size=100):
-    # Cria um semicírculo para a primeira cor
-    theta1 = np.linspace(0, np.pi, 100)
-    x1 = x + np.cos(theta1) * (size / 200)
-    y1 = y + np.sin(theta1) * (size / 200)
-    ax.fill(x1, y1, color=color1, edgecolor='none')
+    outputCSV(probs, vas, pts, lbls, 'val_set_emotion_distribution.csv')
 
-    # Cria um semicírculo para a segunda cor
-    theta2 = np.linspace(np.pi, 2 * np.pi, 100)
-    x2 = x + np.cos(theta2) * (size / 200)
-    y2 = y + np.sin(theta2) * (size / 200)
-    ax.fill(x2, y2, color=color2, edgecolor='none')
+    print("Processamento concluído com sucesso!")
+
 
 if __name__ == '__main__':
     main()

@@ -107,7 +107,7 @@ class BayesianNetworkVI(nn.Module):
     def forward(self, x):
         x = self.activation(self.linear1(x))
         x = self.linear2(x)
-        return x
+        return self.activation(x)
     
     def kl_divergence(self):
         return self.linear1.kl_div + self.linear2.kl_div

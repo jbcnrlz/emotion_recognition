@@ -180,9 +180,11 @@ def fuse_distributions(emotions_data, max_workers=None):
                 stdND = np.std(pts, axis=0)
                 
                 # Check all three std deviations
+                '''
                 if (stdND[0] > maxValence or stdND[1] > arousalMax or stdND[2] > dominanceMax):
                     print(f"Skipping {i} and {best_j} due to high std deviation.")
                     continue
+                '''
 
                 corrMatrixND = np.corrcoef(pts, rowvar=False)
 
@@ -225,6 +227,7 @@ def main():
     try:
         parser = argparse.ArgumentParser(description='Fuse distributions')
         parser.add_argument('--distFile', help='Path to emotion distribution file', required=True)    
+        parser.add_argument('--outputDistFile', help='Path to emotion distribution file', required=True)    
         args = parser.parse_args()
         # Load data with proper numeric columns
         emotions_data = pd.read_csv(args.distFile)
@@ -243,13 +246,13 @@ def main():
             before = len(emotions_data)
             print(f"Fusing {len(emotions_data)} distributions...")
             emotions_data = fuse_distributions(emotions_data, max_workers=8)
-            emotions_data.to_csv(f"fused_emotions_3d_{idx}.csv", index=False)
+            emotions_data.to_csv(f"{args.outputDistFile}_{idx}.csv", index=False)
             idx += 1            
         #fused_df = fuse_distributions(emotions_data)
         
         # Save results
-        emotions_data.to_csv("fused_emotions_3d.csv", index=False)
-        print("Fusion complete. Results saved to fused_emotions_3d.csv")
+        emotions_data.to_csv(f"{args.outputDistFile}.csv", index=False)
+        print(f"Fusion complete. Results saved to {args.outputDistFile}.csv")
         
         return 0
     except Exception as e:
