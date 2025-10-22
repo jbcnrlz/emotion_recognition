@@ -81,16 +81,16 @@ class AffectNet(data.Dataset):
                     currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank.txt' % (int(imageNumber)))
                     valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber)))).astype(np.float64)
                     aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber)))).astype(np.float64)
-                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber)))).astype(np.float64)
+                    domValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber)))).astype(np.float64)
                 except:
                     currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank.txt')
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
                     try:
-                        aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
+                        domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
                     except:
                         continue
-                self.label.append([currLabel,valValue,aroValue])
+                self.label.append([currLabel,valValue,aroValue,domValue])
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
