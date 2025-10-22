@@ -1,261 +1,80 @@
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
-import os
+import seaborn as sns
 import numpy as np
 from scipy.spatial.distance import jensenshannon
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+import os
+from PIL import Image
+import base64
+import io
+
+# Configuração da página
+st.set_page_config(
+    page_title="Emotion Distribution Comparison Viewer",
+    page_icon="😊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# CSS personalizado
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 10px;
+        margin: 0.5rem 0;
+        border-left: 4px solid #1f77b4;
+    }
+    .ground-truth { 
+        color: #1f77b4; 
+        font-weight: bold; 
+        border-left: 4px solid #1f77b4;
+    }
+    .predictions { 
+        color: #e74c3c; 
+        font-weight: bold; 
+        border-left: 4px solid #e74c3c;
+    }
+    .positive-diff { color: #2ecc71; font-weight: bold; }
+    .negative-diff { color: #e74c3c; font-weight: bold; }
+</style>
+""", unsafe_allow_html=True)
 
 class EmotionComparisonViewer:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Emotion Distribution Comparison Viewer")
-        self.root.geometry("1400x1000")
-        
+    def __init__(self):
         self.df1 = None
         self.df2 = None
-        self.current_index = 0
+        self.common_images = []
         
-        # Configure the interface
-        self.setup_ui()
-        
-    def setup_ui(self):
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Configure row and column weights
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.columnconfigure(3, weight=1)
-        main_frame.rowconfigure(3, weight=1)
-        
-        # Buttons to load CSVs
-        ttk.Label(main_frame, text="Ground Truth:").grid(row=0, column=0, pady=5, sticky=tk.W)
-        ttk.Button(main_frame, text="Load Ground Truth CSV", command=lambda: self.load_csv(1)).grid(row=0, column=1, pady=5, sticky=tk.W)
-        
-        ttk.Label(main_frame, text="Predictions:").grid(row=0, column=2, pady=5, sticky=tk.W)
-        ttk.Button(main_frame, text="Load Predictions CSV", command=lambda: self.load_csv(2)).grid(row=0, column=3, pady=5, sticky=tk.W)
-        
-        # Labels to show loaded files
-        self.file1_label = ttk.Label(main_frame, text="No file loaded", foreground="blue")
-        self.file1_label.grid(row=1, column=1, pady=5, sticky=tk.W)
-        
-        self.file2_label = ttk.Label(main_frame, text="No file loaded", foreground="red")
-        self.file2_label.grid(row=1, column=3, pady=5, sticky=tk.W)
-        
-        # Navigation controls
-        nav_frame = ttk.Frame(main_frame)
-        nav_frame.grid(row=2, column=0, columnspan=4, pady=10, sticky=tk.W)
-        
-        ttk.Button(nav_frame, text="First", command=self.first_image).pack(side=tk.LEFT, padx=5)
-        ttk.Button(nav_frame, text="Previous", command=self.previous_image).pack(side=tk.LEFT, padx=5)
-        ttk.Button(nav_frame, text="Next", command=self.next_image).pack(side=tk.LEFT, padx=5)
-        ttk.Button(nav_frame, text="Last", command=self.last_image).pack(side=tk.LEFT, padx=5)
-        
-        # Dropdown for direct selection
-        self.image_var = tk.StringVar()
-        self.image_dropdown = ttk.Combobox(nav_frame, textvariable=self.image_var, state="readonly", width=50)
-        self.image_dropdown.pack(side=tk.LEFT, padx=10)
-        self.image_dropdown.bind('<<ComboboxSelected>>', self.on_image_select)
-        
-        # Label to show current index
-        self.index_label = ttk.Label(nav_frame, text="0/0")
-        self.index_label.pack(side=tk.LEFT, padx=10)
-        
-        # Frame for images and charts
-        content_frame = ttk.Frame(main_frame)
-        content_frame.grid(row=3, column=0, columnspan=4, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
-        content_frame.columnconfigure(0, weight=1)
-        content_frame.columnconfigure(1, weight=1)
-        content_frame.rowconfigure(0, weight=1)
-        content_frame.rowconfigure(1, weight=1)
-        
-        # Frame for images
-        images_frame = ttk.Frame(content_frame)
-        images_frame.grid(row=0, column=0, columnspan=2, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
-        images_frame.columnconfigure(0, weight=1)
-        images_frame.columnconfigure(1, weight=1)
-        images_frame.rowconfigure(0, weight=1)
-        
-        # Frame for image 1 (Ground Truth)
-        self.image1_frame = ttk.LabelFrame(images_frame, text="Ground Truth Image", padding="5")
-        self.image1_frame.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.image1_frame.columnconfigure(0, weight=1)
-        self.image1_frame.rowconfigure(0, weight=1)
-        
-        self.image1_label = ttk.Label(self.image1_frame, text="Image not available", background="white")
-        self.image1_label.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Frame for image 2 (Predictions)
-        self.image2_frame = ttk.LabelFrame(images_frame, text="Prediction Image", padding="5")
-        self.image2_frame.grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.image2_frame.columnconfigure(0, weight=1)
-        self.image2_frame.rowconfigure(0, weight=1)
-        
-        self.image2_label = ttk.Label(self.image2_frame, text="Image not available", background="white")
-        self.image2_label.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Frame for charts
-        charts_frame = ttk.Frame(content_frame)
-        charts_frame.grid(row=1, column=0, columnspan=2, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
-        charts_frame.columnconfigure(0, weight=1)
-        charts_frame.columnconfigure(1, weight=1)
-        charts_frame.rowconfigure(0, weight=1)
-        
-        # Frame for comparison chart
-        self.comparison_frame = ttk.LabelFrame(charts_frame, text="Distribution Comparison", padding="5")
-        self.comparison_frame.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.comparison_frame.columnconfigure(0, weight=1)
-        self.comparison_frame.rowconfigure(0, weight=1)
-        
-        # Frame for difference chart
-        self.diff_frame = ttk.LabelFrame(charts_frame, text="Distribution Differences", padding="5")
-        self.diff_frame.grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.diff_frame.columnconfigure(0, weight=1)
-        self.diff_frame.rowconfigure(0, weight=1)
-        
-        # Frame for image information
-        info_frame = ttk.LabelFrame(main_frame, text="Comparative Information", padding="5")
-        info_frame.grid(row=4, column=0, columnspan=4, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
-        info_frame.columnconfigure(1, weight=1)
-        info_frame.columnconfigure(3, weight=1)
-        
-        # Ground Truth information
-        ttk.Label(info_frame, text="Ground Truth:", foreground="blue").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.file1_path_label = ttk.Label(info_frame, text="", foreground="blue")
-        self.file1_path_label.grid(row=0, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(info_frame, text="Dominant emotion:", foreground="blue").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.dominant_emotion1_label = ttk.Label(info_frame, text="", foreground="blue")
-        self.dominant_emotion1_label.grid(row=1, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(info_frame, text="Value:", foreground="blue").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.dominant_value1_label = ttk.Label(info_frame, text="", foreground="blue")
-        self.dominant_value1_label.grid(row=2, column=1, sticky=tk.W, pady=2)
-        
-        # Predictions information
-        ttk.Label(info_frame, text="Predictions:", foreground="red").grid(row=0, column=2, sticky=tk.W, pady=2)
-        self.file2_path_label = ttk.Label(info_frame, text="", foreground="red")
-        self.file2_path_label.grid(row=0, column=3, sticky=tk.W, pady=2)
-        
-        ttk.Label(info_frame, text="Dominant emotion:", foreground="red").grid(row=1, column=2, sticky=tk.W, pady=2)
-        self.dominant_emotion2_label = ttk.Label(info_frame, text="", foreground="red")
-        self.dominant_emotion2_label.grid(row=1, column=3, sticky=tk.W, pady=2)
-        
-        ttk.Label(info_frame, text="Value:", foreground="red").grid(row=2, column=2, sticky=tk.W, pady=2)
-        self.dominant_value2_label = ttk.Label(info_frame, text="", foreground="red")
-        self.dominant_value2_label.grid(row=2, column=3, sticky=tk.W, pady=2)
-        
-        # Error metrics frame
-        metrics_frame = ttk.LabelFrame(main_frame, text="Error Metrics", padding="5")
-        metrics_frame.grid(row=5, column=0, columnspan=4, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
-        metrics_frame.columnconfigure(1, weight=1)
-        metrics_frame.columnconfigure(3, weight=1)
-        
-        # Error metrics
-        ttk.Label(metrics_frame, text="Mean Absolute Error (MAE):").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.mae_label = ttk.Label(metrics_frame, text="")
-        self.mae_label.grid(row=0, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(metrics_frame, text="Root Mean Squared Error (RMSE):").grid(row=0, column=2, sticky=tk.W, pady=2)
-        self.rmse_label = ttk.Label(metrics_frame, text="")
-        self.rmse_label.grid(row=0, column=3, sticky=tk.W, pady=2)
-        
-        ttk.Label(metrics_frame, text="Jensen-Shannon Divergence:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.js_div_label = ttk.Label(metrics_frame, text="")
-        self.js_div_label.grid(row=1, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(metrics_frame, text="KL Divergence:").grid(row=1, column=2, sticky=tk.W, pady=2)
-        self.kl_div_label = ttk.Label(metrics_frame, text="")
-        self.kl_div_label.grid(row=1, column=3, sticky=tk.W, pady=2)
-        
-        ttk.Label(metrics_frame, text="Cosine Similarity:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.cosine_label = ttk.Label(metrics_frame, text="")
-        self.cosine_label.grid(row=2, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(metrics_frame, text="Correlation:").grid(row=2, column=2, sticky=tk.W, pady=2)
-        self.correlation_label = ttk.Label(metrics_frame, text="")
-        self.correlation_label.grid(row=2, column=3, sticky=tk.W, pady=2)
-        
-        ttk.Label(metrics_frame, text="Maximum Difference:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.max_diff_label = ttk.Label(metrics_frame, text="")
-        self.max_diff_label.grid(row=3, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(metrics_frame, text="Emotion with Max Difference:").grid(row=3, column=2, sticky=tk.W, pady=2)
-        self.max_diff_emotion_label = ttk.Label(metrics_frame, text="")
-        self.max_diff_emotion_label.grid(row=3, column=3, sticky=tk.W, pady=2)
-        
-        # Global metrics frame (for all images)
-        global_frame = ttk.LabelFrame(main_frame, text="Global Metrics (All Images)", padding="5")
-        global_frame.grid(row=6, column=0, columnspan=4, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
-        global_frame.columnconfigure(1, weight=1)
-        global_frame.columnconfigure(3, weight=1)
-        
-        ttk.Button(global_frame, text="Calculate Global Metrics", command=self.calculate_global_metrics).grid(row=0, column=0, pady=5, sticky=tk.W)
-        
-        ttk.Label(global_frame, text="Global MAE:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.global_mae_label = ttk.Label(global_frame, text="")
-        self.global_mae_label.grid(row=1, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(global_frame, text="Global RMSE:").grid(row=1, column=2, sticky=tk.W, pady=2)
-        self.global_rmse_label = ttk.Label(global_frame, text="")
-        self.global_rmse_label.grid(row=1, column=3, sticky=tk.W, pady=2)
-        
-        ttk.Label(global_frame, text="Avg JS Divergence:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.global_js_label = ttk.Label(global_frame, text="")
-        self.global_js_label.grid(row=2, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(global_frame, text="Accuracy (Top Emotion):").grid(row=2, column=2, sticky=tk.W, pady=2)
-        self.global_accuracy_label = ttk.Label(global_frame, text="")
-        self.global_accuracy_label.grid(row=2, column=3, sticky=tk.W, pady=2)
+        # Inicializar session state
+        if 'current_index' not in st.session_state:
+            st.session_state.current_index = 0
+        if 'global_metrics_calculated' not in st.session_state:
+            st.session_state.global_metrics_calculated = False
     
-    def load_csv(self, file_num):
-        file_path = filedialog.askopenfilename(
-            title=f"Select CSV File {file_num}",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
+    def clean_dataframe(self, df):
+        """Limpa o dataframe removendo linhas com problemas na coluna 'file'"""
+        if df is None:
+            return df
         
-        if file_path:
-            try:
-                if file_num == 1:
-                    self.df1 = pd.read_csv(file_path)
-                    self.file1_label.config(text=f"File: {os.path.basename(file_path)}")
-                else:
-                    self.df2 = pd.read_csv(file_path)
-                    self.file2_label.config(text=f"File: {os.path.basename(file_path)}")
-                
-                # Configure dropdown when both files are loaded
-                if self.df1 is not None and self.df2 is not None:
-                    # Find common images
-                    common_images = self.find_common_images()
-                    self.image_dropdown['values'] = common_images
-                    
-                    if common_images:
-                        self.current_index = 0
-                        self.update_display()
-                    else:
-                        messagebox.showwarning("Warning", "No common images found between the two files.")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Error loading file: {str(e)}")
-    
-    def find_common_images(self):
-        """Find common images between the two dataframes"""
-        if self.df1 is None or self.df2 is None:
-            return []
+        # Fazer uma cópia para não modificar o original
+        df_clean = df.copy()
         
-        # Extract base filenames
-        df1_files = [os.path.basename(row['file']) for _, row in self.df1.iterrows()]
-        df2_files = [os.path.basename(row['file']) for _, row in self.df2.iterrows()]
+        # Converter a coluna 'file' para string e remover linhas com valores NaN
+        df_clean['file'] = df_clean['file'].astype(str)
+        df_clean = df_clean[df_clean['file'] != 'nan']
+        df_clean = df_clean[df_clean['file'].str.strip() != '']
         
-        # Find intersection
-        common_files = list(set(df1_files) & set(df2_files))
-        return sorted(common_files)
+        return df_clean
     
     def calculate_error_metrics(self, values1, values2):
         """Calculate various error metrics between two distributions"""
@@ -298,95 +117,167 @@ class EmotionComparisonViewer:
             'max_difference_index': max_diff_index
         }
     
-    def update_display(self):
-        if self.df1 is None or self.df2 is None or len(self.df1) == 0 or len(self.df2) == 0:
-            return
+    def find_common_images(self):
+        """Find common images between the two dataframes"""
+        if self.df1 is None or self.df2 is None:
+            return []
         
-        # Get current filename
-        current_file = self.image_var.get()
-        if not current_file:
-            common_images = self.find_common_images()
-            if common_images:
-                current_file = common_images[0]
-                self.image_var.set(current_file)
-            else:
-                return
-        
-        # Find corresponding rows in both dataframes
-        row1 = None
-        row2 = None
-        
-        for _, row in self.df1.iterrows():
-            if os.path.basename(row['file']) == current_file:
-                row1 = row
-                break
+        try:
+            # Extrair nomes de arquivos válidos
+            df1_files = []
+            for _, row in self.df1.iterrows():
+                filename = str(row['file']).strip()
+                if filename and filename != 'nan' and not filename.startswith('nan'):
+                    df1_files.append(os.path.basename(filename))
+            
+            df2_files = []
+            for _, row in self.df2.iterrows():
+                filename = str(row['file']).strip()
+                if filename and filename != 'nan' and not filename.startswith('nan'):
+                    df2_files.append(os.path.basename(filename))
+            
+            # Encontrar interseção
+            common_files = list(set(df1_files) & set(df2_files))
+            return sorted(common_files)
+            
+        except Exception as e:
+            st.error(f"Erro ao encontrar imagens comuns: {str(e)}")
+            return []
+    
+    def load_image(self, image_path, max_size=400):
+        """Load and display image"""
+        try:
+            # Verificar se o caminho é válido
+            if not image_path or str(image_path).strip() in ['', 'nan']:
+                return None
                 
-        for _, row in self.df2.iterrows():
-            if os.path.basename(row['file']) == current_file:
-                row2 = row
-                break
+            image_path = str(image_path).strip()
+            
+            if os.path.exists(image_path):
+                img = Image.open(image_path)
+                # Redimensionar mantendo a proporção
+                img.thumbnail((max_size, max_size))
+                return img
+            else:
+                # Tentar encontrar o arquivo em outros locais
+                filename = os.path.basename(image_path)
+                possible_paths = [
+                    filename,  # Arquivo no diretório atual
+                    os.path.join('images', filename),
+                    os.path.join('data', filename),
+                    os.path.join('output', filename),
+                ]
+                
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        img = Image.open(path)
+                        img.thumbnail((max_size, max_size))
+                        return img
+                
+                return None
+        except Exception as e:
+            st.error(f"Erro ao carregar imagem: {str(e)}")
+            return None
+    
+    def create_comparison_chart(self, row1, row2, emotions):
+        """Create comparison chart"""
+        fig, ax = plt.subplots(figsize=(10, 6))
         
-        if row1 is None or row2 is None:
-            return
+        # Extrair valores, lidando com colunas possivelmente faltantes
+        values1 = []
+        values2 = []
+        available_emotions = []
         
-        # Update index
-        common_images = self.find_common_images()
-        self.current_index = common_images.index(current_file)
-        self.index_label.config(text=f"{self.current_index + 1}/{len(common_images)}")
+        for emotion in emotions:
+            if emotion in row1 and emotion in row2:
+                values1.append(row1[emotion])
+                values2.append(row2[emotion])
+                available_emotions.append(emotion)
         
-        # Try to load images
-        self.load_image(row1['file'], self.image1_label, self.image1_frame, 400)
-        self.load_image(row2['file'], self.image2_label, self.image2_frame, 400)
+        if not available_emotions:
+            ax.text(0.5, 0.5, 'No emotion data available', 
+                   ha='center', va='center', transform=ax.transAxes)
+            plt.tight_layout()
+            return fig
         
-        # Update image information
-        self.file1_path_label.config(text=row1['file'])
-        self.file2_path_label.config(text=row2['file'])
+        # Configurar posições das barras
+        x = np.arange(len(available_emotions))
+        width = 0.35
         
-        # Find dominant emotions
-        emotions = ['happy', 'contempt', 'elated', 'surprised', 'love', 'protected', 
-                   'astonished', 'disgusted', 'angry', 'fearfull', 'sad', 'neutral']
+        # Criar gráfico de barras comparativo
+        bars1 = ax.bar(x - width/2, values1, width, label='Ground Truth', color='blue', alpha=0.7)
+        bars2 = ax.bar(x + width/2, values2, width, label='Predictions', color='red', alpha=0.7)
         
-        # For file 1 (Ground Truth)
-        emotion_values1 = [row1[emotion] for emotion in emotions]
-        max_index1 = emotion_values1.index(max(emotion_values1))
-        dominant_emotion1 = emotions[max_index1]
-        dominant_value1 = emotion_values1[max_index1]
+        ax.set_title('Emotion Distribution Comparison', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Probability', fontsize=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(available_emotions, rotation=45, ha='right')
+        ax.legend()
+        ax.grid(axis='y', alpha=0.3)
         
-        self.dominant_emotion1_label.config(text=dominant_emotion1)
-        self.dominant_value1_label.config(text=f"{dominant_value1:.4f}")
+        # Adicionar valores nas barras
+        for bar, value in zip(bars1, values1):
+            height = bar.get_height()
+            if height > 0.05:  # Só mostrar texto se a barra for alta o suficiente
+                ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                        f'{value:.3f}', ha='center', va='bottom', fontsize=8)
         
-        # For file 2 (Predictions)
-        emotion_values2 = [row2[emotion] for emotion in emotions]
-        max_index2 = emotion_values2.index(max(emotion_values2))
-        dominant_emotion2 = emotions[max_index2]
-        dominant_value2 = emotion_values2[max_index2]
+        for bar, value in zip(bars2, values2):
+            height = bar.get_height()
+            if height > 0.05:  # Só mostrar texto se a barra for alta o suficiente
+                ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                        f'{value:.3f}', ha='center', va='bottom', fontsize=8)
         
-        self.dominant_emotion2_label.config(text=dominant_emotion2)
-        self.dominant_value2_label.config(text=f"{dominant_value2:.4f}")
+        plt.tight_layout()
+        return fig
+    
+    def create_diff_chart(self, row1, row2, emotions):
+        """Create difference chart"""
+        fig, ax = plt.subplots(figsize=(10, 6))
         
-        # Calculate error metrics
-        metrics = self.calculate_error_metrics(emotion_values1, emotion_values2)
+        # Calcular diferenças, lidando com colunas possivelmente faltantes
+        differences = []
+        available_emotions = []
         
-        # Update metrics display
-        self.mae_label.config(text=f"{metrics['mae']:.6f}")
-        self.rmse_label.config(text=f"{metrics['rmse']:.6f}")
-        self.js_div_label.config(text=f"{metrics['js_divergence']:.6f}")
-        self.kl_div_label.config(text=f"{metrics['kl_divergence']:.6f}")
-        self.cosine_label.config(text=f"{metrics['cosine_similarity']:.6f}")
-        self.correlation_label.config(text=f"{metrics['correlation']:.6f}")
-        self.max_diff_label.config(text=f"{metrics['max_difference']:.6f}")
-        self.max_diff_emotion_label.config(text=f"{emotions[metrics['max_difference_index']]}")
+        for emotion in emotions:
+            if emotion in row1 and emotion in row2:
+                diff = row1[emotion] - row2[emotion]
+                differences.append(diff)
+                available_emotions.append(emotion)
         
-        # Update charts
-        self.update_comparison_chart(row1, row2, emotions)
-        self.update_diff_chart(row1, row2, emotions)
+        if not available_emotions:
+            ax.text(0.5, 0.5, 'No emotion data available', 
+                   ha='center', va='center', transform=ax.transAxes)
+            plt.tight_layout()
+            return fig
+        
+        colors = ['green' if diff >= 0 else 'red' for diff in differences]
+        
+        # Criar gráfico de barras para diferenças
+        bars = ax.bar(available_emotions, differences, color=colors, alpha=0.7)
+        
+        ax.set_title('Distribution Differences (Ground Truth - Predictions)', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Difference', fontsize=12)
+        ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+        plt.xticks(rotation=45, ha='right')
+        ax.grid(axis='y', alpha=0.3)
+        
+        # Adicionar valores nas barras
+        for bar, value in zip(bars, differences):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., 
+                   height + (0.01 if height >= 0 else -0.02),
+                   f'{value:.3f}', 
+                   ha='center', 
+                   va='bottom' if height >= 0 else 'top', 
+                   fontsize=9, 
+                   fontweight='bold')
+        
+        plt.tight_layout()
+        return fig
     
     def calculate_global_metrics(self):
         """Calculate global metrics across all images"""
-        if self.df1 is None or self.df2 is None:
-            messagebox.showwarning("Warning", "Please load both files first.")
-            return
-        
         emotions = ['happy', 'contempt', 'elated', 'surprised', 'love', 'protected', 
                    'astonished', 'disgusted', 'angry', 'fearfull', 'sad', 'neutral']
         
@@ -396,175 +287,374 @@ class EmotionComparisonViewer:
         correct_predictions = 0
         total_predictions = 0
         
-        common_images = self.find_common_images()
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
-        for image_name in common_images:
-            # Find corresponding rows
+        for i, image_name in enumerate(self.common_images):
+            # Atualizar progresso
+            progress = (i + 1) / len(self.common_images)
+            progress_bar.progress(progress)
+            status_text.text(f"Processando: {os.path.basename(image_name)} ({i+1}/{len(self.common_images)})")
+            
+            # Encontrar linhas correspondentes
             row1 = None
             row2 = None
             
             for _, row in self.df1.iterrows():
-                if os.path.basename(row['file']) == image_name:
+                filename = str(row['file']).strip()
+                if filename and filename != 'nan' and os.path.basename(filename) == image_name:
                     row1 = row
                     break
                     
             for _, row in self.df2.iterrows():
-                if os.path.basename(row['file']) == image_name:
+                filename = str(row['file']).strip()
+                if filename and filename != 'nan' and os.path.basename(filename) == image_name:
                     row2 = row
                     break
             
             if row1 is not None and row2 is not None:
-                emotion_values1 = [row1[emotion] for emotion in emotions]
-                emotion_values2 = [row2[emotion] for emotion in emotions]
+                # Coletar apenas emoções disponíveis
+                emotion_values1 = []
+                emotion_values2 = []
+                available_emotions = []
                 
-                # Calculate metrics
-                metrics = self.calculate_error_metrics(emotion_values1, emotion_values2)
+                for emotion in emotions:
+                    if emotion in row1 and emotion in row2:
+                        emotion_values1.append(row1[emotion])
+                        emotion_values2.append(row2[emotion])
+                        available_emotions.append(emotion)
                 
-                all_mae.append(metrics['mae'])
-                all_rmse.append(metrics['rmse'])
-                all_js.append(metrics['js_divergence'])
-                
-                # Check if top emotion matches
-                gt_top = emotions[emotion_values1.index(max(emotion_values1))]
-                pred_top = emotions[emotion_values2.index(max(emotion_values2))]
-                
-                if gt_top == pred_top:
-                    correct_predictions += 1
-                total_predictions += 1
+                if available_emotions:
+                    # Calcular métricas
+                    metrics = self.calculate_error_metrics(emotion_values1, emotion_values2)
+                    
+                    all_mae.append(metrics['mae'])
+                    all_rmse.append(metrics['rmse'])
+                    all_js.append(metrics['js_divergence'])
+                    
+                    # Verificar se a emoção principal coincide
+                    gt_top = available_emotions[emotion_values1.index(max(emotion_values1))]
+                    pred_top = available_emotions[emotion_values2.index(max(emotion_values2))]
+                    
+                    if gt_top == pred_top:
+                        correct_predictions += 1
+                    total_predictions += 1
         
-        if total_predictions > 0:
-            # Calculate global averages
-            global_mae = np.mean(all_mae)
-            global_rmse = np.mean(all_rmse)
-            global_js = np.mean(all_js)
-            accuracy = correct_predictions / total_predictions
+        # Limpar barra de progresso
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Calcular médias globais
+        global_mae = np.mean(all_mae) if all_mae else 0
+        global_rmse = np.mean(all_rmse) if all_rmse else 0
+        global_js = np.mean(all_js) if all_js else 0
+        accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+        
+        return {
+            'global_mae': global_mae,
+            'global_rmse': global_rmse,
+            'global_js': global_js,
+            'accuracy': accuracy,
+            'correct_predictions': correct_predictions,
+            'total_predictions': total_predictions
+        }
+    
+    def render_interface(self):
+        """Render the main interface"""
+        st.markdown('<h1 class="main-header">😊 Emotion Distribution Comparison Viewer</h1>', unsafe_allow_html=True)
+        
+        # Seção de upload de arquivos
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📁 Ground Truth CSV")
+            uploaded_file1 = st.file_uploader("Select Ground Truth CSV", type=['csv'], key="file1")
+            if uploaded_file1:
+                try:
+                    self.df1 = pd.read_csv(uploaded_file1)
+                    self.df1 = self.clean_dataframe(self.df1)
+                    st.success(f"✅ Ground Truth loaded: {len(self.df1)} valid rows")
+                    
+                    # Mostrar prévia dos dados
+                    with st.expander("🔍 Preview Ground Truth Data"):
+                        st.dataframe(self.df1.head())
+                        
+                except Exception as e:
+                    st.error(f"❌ Error loading Ground Truth CSV: {str(e)}")
+        
+        with col2:
+            st.subheader("📁 Predictions CSV")
+            uploaded_file2 = st.file_uploader("Select Predictions CSV", type=['csv'], key="file2")
+            if uploaded_file2:
+                try:
+                    self.df2 = pd.read_csv(uploaded_file2)
+                    self.df2 = self.clean_dataframe(self.df2)
+                    st.success(f"✅ Predictions loaded: {len(self.df2)} valid rows")
+                    
+                    # Mostrar prévia dos dados
+                    with st.expander("🔍 Preview Predictions Data"):
+                        st.dataframe(self.df2.head())
+                        
+                except Exception as e:
+                    st.error(f"❌ Error loading Predictions CSV: {str(e)}")
+        
+        # Verificar se ambos os arquivos foram carregados
+        if self.df1 is not None and self.df2 is not None:
+            self.common_images = self.find_common_images()
             
-            # Update global metrics display
-            self.global_mae_label.config(text=f"{global_mae:.6f}")
-            self.global_rmse_label.config(text=f"{global_rmse:.6f}")
-            self.global_js_label.config(text=f"{global_js:.6f}")
-            self.global_accuracy_label.config(text=f"{accuracy:.4f} ({correct_predictions}/{total_predictions})")
+            if not self.common_images:
+                st.error("""
+                ❌ No common images found between the two files. Please check:
+                - Both files have a 'file' column with valid paths
+                - File names match between the two datasets
+                - There are no NaN values in the 'file' column
+                """)
+                
+                # Debug information
+                with st.expander("🔍 Debug Information"):
+                    st.write("Ground Truth files sample:", [str(f) for f in self.df1['file'].head().tolist()])
+                    st.write("Predictions files sample:", [str(f) for f in self.df2['file'].head().tolist()])
+                return
+            
+            # Controles de navegação
+            st.subheader("🎮 Navigation Controls")
+            nav_col1, nav_col2, nav_col3, nav_col4, nav_col5 = st.columns([1, 1, 1, 1, 2])
+            
+            with nav_col1:
+                if st.button("⏮️ First", use_container_width=True):
+                    st.session_state.current_index = 0
+                    st.rerun()
+            
+            with nav_col2:
+                if st.button("⬅️ Previous", use_container_width=True):
+                    st.session_state.current_index = max(0, st.session_state.current_index - 1)
+                    st.rerun()
+            
+            with nav_col3:
+                if st.button("Next ➡️", use_container_width=True):
+                    st.session_state.current_index = min(len(self.common_images) - 1, st.session_state.current_index + 1)
+                    st.rerun()
+            
+            with nav_col4:
+                if st.button("Last ⏭️", use_container_width=True):
+                    st.session_state.current_index = len(self.common_images) - 1
+                    st.rerun()
+            
+            with nav_col5:
+                selected_image = st.selectbox(
+                    "Select Image:",
+                    options=self.common_images,
+                    index=st.session_state.current_index,
+                    key="image_selector"
+                )
+                if selected_image and selected_image in self.common_images:
+                    new_index = self.common_images.index(selected_image)
+                    if new_index != st.session_state.current_index:
+                        st.session_state.current_index = new_index
+                        st.rerun()
+            
+            # Mostrar posição atual
+            st.info(f"📊 Showing image {st.session_state.current_index + 1} of {len(self.common_images)}")
+            
+            # Obter dados da imagem atual
+            current_file = self.common_images[st.session_state.current_index]
+            
+            # Encontrar linhas correspondentes
+            row1 = None
+            row2 = None
+            
+            for _, row in self.df1.iterrows():
+                filename = str(row['file']).strip()
+                if filename and filename != 'nan' and os.path.basename(filename) == current_file:
+                    row1 = row
+                    break
+                    
+            for _, row in self.df2.iterrows():
+                filename = str(row['file']).strip()
+                if filename and filename != 'nan' and os.path.basename(filename) == current_file:
+                    row2 = row
+                    break
+            
+            if row1 is None or row2 is None:
+                st.error("❌ Could not find matching data for selected image.")
+                return
+            
+            # Área principal de conteúdo
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                # Exibição da imagem
+                st.subheader("🖼️ Image Preview")
+                actual_path = row1['file'] if 'file' in row1 else ''
+                img = self.load_image(actual_path)
+                if img:
+                    st.image(img, use_column_width=True)
+                    st.caption(f"Image: {os.path.basename(str(actual_path))}")
+                else:
+                    st.warning("⚠️ Image not found or cannot be displayed")
+                    st.info(f"Tried to load: {actual_path}")
+                
+                # Caminhos dos arquivos
+                st.subheader("📁 File Information")
+                st.markdown(f'<div class="metric-card ground-truth">'
+                           f'<h4>Ground Truth Path:</h4>'
+                           f'<p style="word-wrap: break-word; font-size: 0.8em;">{actual_path}</p>'
+                           f'</div>', unsafe_allow_html=True)
+                
+                pred_path = row2['file'] if 'file' in row2 else ''
+                st.markdown(f'<div class="metric-card predictions">'
+                           f'<h4>Predictions Path:</h4>'
+                           f'<p style="word-wrap: break-word; font-size: 0.8em;">{pred_path}</p>'
+                           f'</div>', unsafe_allow_html=True)
+            
+            with col2:
+                # Análise de emoções
+                st.subheader("😊 Emotion Analysis")
+                
+                emotions = ['happy', 'contempt', 'elated', 'surprised', 'love', 'protected', 
+                           'astonished', 'disgusted', 'angry', 'fearfull', 'sad', 'neutral']
+                
+                # Emoções dominantes
+                col2_1, col2_2 = st.columns(2)
+                
+                with col2_1:
+                    # Emoção dominante do Ground Truth
+                    emotion_values1 = []
+                    available_emotions1 = []
+                    for emotion in emotions:
+                        if emotion in row1:
+                            emotion_values1.append(row1[emotion])
+                            available_emotions1.append(emotion)
+                    
+                    if available_emotions1:
+                        max_index1 = emotion_values1.index(max(emotion_values1))
+                        dominant_emotion1 = available_emotions1[max_index1]
+                        dominant_value1 = emotion_values1[max_index1]
+                        
+                        st.markdown(f'<div class="metric-card ground-truth">'
+                                   f'<h3>Ground Truth</h3>'
+                                   f'<p><strong>Dominant Emotion:</strong> {dominant_emotion1}</p>'
+                                   f'<p><strong>Value:</strong> {dominant_value1:.4f}</p>'
+                                   f'</div>', unsafe_allow_html=True)
+                    else:
+                        st.warning("No emotion data found in Ground Truth")
+                
+                with col2_2:
+                    # Emoção dominante das Predictions
+                    emotion_values2 = []
+                    available_emotions2 = []
+                    for emotion in emotions:
+                        if emotion in row2:
+                            emotion_values2.append(row2[emotion])
+                            available_emotions2.append(emotion)
+                    
+                    if available_emotions2:
+                        max_index2 = emotion_values2.index(max(emotion_values2))
+                        dominant_emotion2 = available_emotions2[max_index2]
+                        dominant_value2 = emotion_values2[max_index2]
+                        
+                        st.markdown(f'<div class="metric-card predictions">'
+                                   f'<h3>Predictions</h3>'
+                                   f'<p><strong>Dominant Emotion:</strong> {dominant_emotion2}</p>'
+                                   f'<p><strong>Value:</strong> {dominant_value2:.4f}</p>'
+                                   f'</div>', unsafe_allow_html=True)
+                    else:
+                        st.warning("No emotion data found in Predictions")
+                
+                # Métricas de erro
+                if available_emotions1 and available_emotions2:
+                    st.subheader("📊 Error Metrics")
+                    metrics = self.calculate_error_metrics(emotion_values1, emotion_values2)
+                    
+                    metric_col1, metric_col2 = st.columns(2)
+                    
+                    with metric_col1:
+                        st.metric("Mean Absolute Error (MAE)", f"{metrics['mae']:.6f}")
+                        st.metric("Jensen-Shannon Divergence", f"{metrics['js_divergence']:.6f}")
+                        st.metric("Cosine Similarity", f"{metrics['cosine_similarity']:.6f}")
+                        st.metric("Maximum Difference", f"{metrics['max_difference']:.6f}")
+                    
+                    with metric_col2:
+                        st.metric("Root Mean Squared Error (RMSE)", f"{metrics['rmse']:.6f}")
+                        st.metric("KL Divergence", f"{metrics['kl_divergence']:.6f}")
+                        st.metric("Correlation", f"{metrics['correlation']:.6f}")
+                        if available_emotions1:
+                            st.metric("Emotion with Max Difference", available_emotions1[metrics['max_difference_index']])
+            
+            # Seção de gráficos
+            if available_emotions1 and available_emotions2:
+                st.subheader("📈 Visualizations")
+                chart_col1, chart_col2 = st.columns(2)
+                
+                with chart_col1:
+                    fig1 = self.create_comparison_chart(row1, row2, emotions)
+                    st.pyplot(fig1)
+                    plt.close(fig1)
+                
+                with chart_col2:
+                    fig2 = self.create_diff_chart(row1, row2, emotions)
+                    st.pyplot(fig2)
+                    plt.close(fig2)
+            
+            # Seção de métricas globais
+            st.subheader("🌍 Global Metrics (All Images)")
+            
+            if st.button("📊 Calculate Global Metrics", type="primary"):
+                with st.spinner("Calculating global metrics across all images..."):
+                    global_metrics = self.calculate_global_metrics()
+                    st.session_state.global_metrics_calculated = True
+                    st.session_state.global_metrics = global_metrics
+                    st.rerun()
+            
+            if st.session_state.global_metrics_calculated and 'global_metrics' in st.session_state:
+                global_metrics = st.session_state.global_metrics
+                
+                global_col1, global_col2, global_col3, global_col4 = st.columns(4)
+                
+                with global_col1:
+                    st.metric("Global MAE", f"{global_metrics['global_mae']:.6f}")
+                
+                with global_col2:
+                    st.metric("Global RMSE", f"{global_metrics['global_rmse']:.6f}")
+                
+                with global_col3:
+                    st.metric("Avg JS Divergence", f"{global_metrics['global_js']:.6f}")
+                
+                with global_col4:
+                    st.metric("Accuracy (Top Emotion)", 
+                             f"{global_metrics['accuracy']:.4f}", 
+                             f"{global_metrics['correct_predictions']}/{global_metrics['total_predictions']}")
+        
         else:
-            messagebox.showwarning("Warning", "No common images found for global metrics calculation.")
-    
-    def load_image(self, image_path, label, frame, size=300):
-        try:
-            if os.path.exists(image_path):
-                img = Image.open(image_path)
-                # Resize while maintaining aspect ratio
-                img.thumbnail((size, size))
-                photo = ImageTk.PhotoImage(img)
-                label.config(image=photo, text="")
-                label.image = photo  # Keep a reference
-            else:
-                label.config(image="", text="Image not found")
-        except Exception as e:
-            label.config(image="", text=f"Error loading image: {str(e)}")
-    
-    def update_comparison_chart(self, row1, row2, emotions):
-        # Clear the chart frame
-        for widget in self.comparison_frame.winfo_children():
-            widget.destroy()
-        
-        # Create matplotlib figure
-        fig, ax = plt.subplots(figsize=(8, 5))
-        
-        # Extract values
-        values1 = [row1[emotion] for emotion in emotions]
-        values2 = [row2[emotion] for emotion in emotions]
-        
-        # Configure bar positions
-        x = np.arange(len(emotions))
-        width = 0.35
-        
-        # Create comparative bar chart
-        bars1 = ax.bar(x - width/2, values1, width, label='Ground Truth', color='blue', alpha=0.7)
-        bars2 = ax.bar(x + width/2, values2, width, label='Predictions', color='red', alpha=0.7)
-        
-        ax.set_title('Emotion Distribution Comparison')
-        ax.set_ylabel('Probability')
-        ax.set_xticks(x)
-        ax.set_xticklabels(emotions, rotation=45, ha='right')
-        ax.legend()
-        
-        # Adjust layout
-        plt.tight_layout()
-        
-        # Embed chart in Tkinter
-        canvas = FigureCanvasTkAgg(fig, master=self.comparison_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-    
-    def update_diff_chart(self, row1, row2, emotions):
-        # Clear the chart frame
-        for widget in self.diff_frame.winfo_children():
-            widget.destroy()
-        
-        # Create matplotlib figure
-        fig, ax = plt.subplots(figsize=(8, 5))
-        
-        # Calculate differences
-        differences = [row1[emotion] - row2[emotion] for emotion in emotions]
-        colors = ['green' if diff >= 0 else 'red' for diff in differences]
-        
-        # Create bar chart for differences
-        bars = ax.bar(emotions, differences, color=colors, alpha=0.7)
-        
-        ax.set_title('Distribution Differences (Ground Truth - Predictions)')
-        ax.set_ylabel('Difference')
-        ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
-        plt.xticks(rotation=45, ha='right')
-        
-        # Add values on bars
-        for bar, value in zip(bars, differences):
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height + (0.01 if height >= 0 else -0.02),
-                    f'{value:.3f}', ha='center', va='bottom' if height >= 0 else 'top', fontsize=8)
-        
-        # Adjust layout
-        plt.tight_layout()
-        
-        # Embed chart in Tkinter
-        canvas = FigureCanvasTkAgg(fig, master=self.diff_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-    
-    def first_image(self):
-        common_images = self.find_common_images()
-        if common_images:
-            self.current_index = 0
-            self.image_var.set(common_images[self.current_index])
-            self.update_display()
-    
-    def previous_image(self):
-        common_images = self.find_common_images()
-        if common_images:
-            self.current_index = max(0, self.current_index - 1)
-            self.image_var.set(common_images[self.current_index])
-            self.update_display()
-    
-    def next_image(self):
-        common_images = self.find_common_images()
-        if common_images:
-            self.current_index = min(len(common_images) - 1, self.current_index + 1)
-            self.image_var.set(common_images[self.current_index])
-            self.update_display()
-    
-    def last_image(self):
-        common_images = self.find_common_images()
-        if common_images:
-            self.current_index = len(common_images) - 1
-            self.image_var.set(common_images[self.current_index])
-            self.update_display()
-    
-    def on_image_select(self, event):
-        common_images = self.find_common_images()
-        if common_images:
-            selected_image = self.image_var.get()
-            self.current_index = common_images.index(selected_image)
-            self.update_display()
+            # Instruções quando nenhum arquivo está carregado
+            st.info("""
+            ### 📋 How to use this application:
+            
+            1. **Upload both CSV files**: 
+               - **Ground Truth CSV**: Contains the actual emotion distributions
+               - **Predictions CSV**: Contains the predicted emotion distributions
+            
+            2. **Navigate through images**: Use the navigation controls to browse through common images
+            
+            3. **Analyze results**: View detailed comparisons, error metrics, and visualizations
+            
+            4. **Calculate global metrics**: Get overall performance metrics across all images
+            
+            ### 🎯 Expected CSV format:
+            - Must contain a `file` column with image paths
+            - Emotion columns: `happy`, `contempt`, `elated`, `surprised`, `love`, `protected`, 
+              `astonished`, `disgusted`, `angry`, `fearfull`, `sad`, `neutral`
+            - Values should be probabilities between 0 and 1
+            
+            ### ⚠️ Troubleshooting:
+            - If you get errors, check that your CSV files have valid file paths
+            - Remove any rows with NaN values in the 'file' column
+            - Ensure both files have the same emotion column names
+            """)
+
+def main():
+    app = EmotionComparisonViewer()
+    app.render_interface()
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = EmotionComparisonViewer(root)
-    root.mainloop()
+    main()

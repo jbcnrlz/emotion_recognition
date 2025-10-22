@@ -107,7 +107,7 @@ class BayesianNetworkVI(nn.Module):
     def forward(self, x):
         x = self.activation(self.linear1(x))
         x = self.linear2(x)
-        return x
+        return self.activation(x)
     
     def kl_divergence(self):
         return self.linear1.kl_div + self.linear2.kl_div
@@ -221,21 +221,23 @@ class BottleneckWithAttention(nn.Module):
 
         return out  # Retorna o mapa de atenção junto com a saída
 
-class ResNet50WithAttentionGMM(nn.Module):
-    def __init__(self, num_classes=1000,pretrained=None,bottleneck='both',bayesianHeadType='VA'):
-        super(ResNet50WithAttentionGMM, self).__init__()
+class ResNet50WithAttentionLikelihood(nn.Module):
+    def __init__(self, num_classes=1000, pretrained=None, bottleneck='both', bayesianHeadType='VA', output_dim=2):
+        super(ResNet50WithAttentionLikelihood, self).__init__()
+        self.num_classes = num_classes
+        self.output_dim = output_dim  # Dimensão da saída (ex: 2 para valence/arousal)
         
         # Usar a arquitetura padrão mas com nossos bottlenecks modificados
         self.model = models.resnet50(weights=None)
         if pretrained is not None:
             print("Loading pretrained weights for ResNet50...")
             #self.model.load_state_dict(checkpoint['state_dict'], strict=False)
+        
         # Substituir os bottlenecks no layer2 e layer3
         self.attention_maps = []
         self._attention_hooks = []  # Lista para armazenar os hooks de atenção
         if bottleneck in ['first', 'second', 'both']:
             self._replace_bottlenecks(bottleneck)
-        
         else:            
             self.model.conv1 = nn.Sequential(
                 nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
@@ -248,25 +250,30 @@ class ResNet50WithAttentionGMM(nn.Module):
                 self.attention_maps.append(module[-1].visual_attention_map) 
             self._attention_hooks.append(self.model.conv1.register_forward_hook(hook_fn))
 
-
         # Modificar camada final
         out_features = self.model.fc.in_features
         self.model.fc = nn.Identity()
-        self.gmm_head = nn.Sequential(
+        
+        # Cabeça para parâmetros da distribuição gaussiana
+        # Para cada classe: média (output_dim) + covariância (output_dim * (output_dim + 1) / 2)
+        self.likelihood_head = nn.Sequential(
             nn.Linear(out_features, 256),
             nn.ReLU(),
             nn.Dropout(),
-            nn.Linear(256, num_classes * 6),  # 6 parâmetros: peso, μx, μy, σx, σy, ρ
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, num_classes * (output_dim + output_dim * (output_dim + 1) // 2))
         )
 
-        self.probabilities = nn.Linear(num_classes * 6,num_classes)  # Saída para os parâmetros da GMM
+        self.probabilities = nn.Linear(num_classes * (output_dim + output_dim * (output_dim + 1) // 2), num_classes)
+        
         if bayesianHeadType == 'VA':
             self.bayesianHead = BayesianNetworkVI(num_classes, 4, 2)
         elif bayesianHeadType == 'VAD':
             self.bayesianHead = BayesianNetworkVI(num_classes, 6, 3)
     
-    def _replace_bottlenecks(self,btn):
-        # Substituir os bottlenecks no layer2
+    def _replace_bottlenecks(self, btn):
+        # (Mantido igual ao original)
         if btn == 'first' or btn == 'both':
             block = self.model.layer2[0]
             new_block = BottleneckWithAttention(
@@ -280,7 +287,6 @@ class ResNet50WithAttentionGMM(nn.Module):
                 self.attention_maps.append(output[1]) 
             self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
         if btn == 'second' or btn == 'both':
-            # Substituir os bottlenecks no layer3
             block = self.model.layer3[0]
             new_block = BottleneckWithAttention(
                 block.conv1.in_channels,
@@ -295,8 +301,66 @@ class ResNet50WithAttentionGMM(nn.Module):
     
     def forward(self, x):
         self.attention_maps = []  # Limpar os mapas de atenção antes de cada forward
-        distributions = self.model(x)
-        distributions = self.gmm_head(distributions)
-        probs = self.probabilities(distributions)
+        features = self.model(x)
+        distribution_params = self.likelihood_head(features)
+        probs = self.probabilities(distribution_params)
         va = self.bayesianHead(probs)
-        return probs, distributions, va
+        return probs, distribution_params, va
+    
+    def get_distribution(self, x):
+        """Método para obter a distribuição gaussiana para inferência"""
+        with torch.no_grad():
+            features = self.model(x)
+            distribution_params = self.likelihood_head(features)
+            
+            # Separar médias e matrizes de covariância
+            batch_size = distribution_params.shape[0]
+            total_params = self.num_classes * (self.output_dim + self.output_dim * (self.output_dim + 1) // 2)
+            
+            # Reformatar os parâmetros
+            params_reshaped = distribution_params.view(batch_size, self.num_classes, -1)
+            
+            # Extrair médias (primeiros output_dim elementos)
+            means = params_reshaped[:, :, :self.output_dim]
+            
+            # Extrair elementos da matriz de covariância (triangular inferior)
+            cov_params = params_reshaped[:, :, self.output_dim:]
+            
+            # Construir matrizes de covariância positivas definidas
+            cov_matrices = []
+            for i in range(self.num_classes):
+                L = torch.zeros(batch_size, self.output_dim, self.output_dim, device=x.device)
+                tril_indices = torch.tril_indices(self.output_dim, self.output_dim)
+                L[:, tril_indices[0], tril_indices[1]] = cov_params[:, i, :]
+                
+                # Garantir que a diagonal seja positiva (usando softplus)
+                diag_indices = torch.arange(self.output_dim)
+                L[:, diag_indices, diag_indices] = torch.nn.functional.softplus(L[:, diag_indices, diag_indices])
+                
+                # Covariância = L * L^T (garante ser positiva definida)
+                cov_matrix = torch.bmm(L, L.transpose(1, 2))
+                cov_matrices.append(cov_matrix)
+            
+            cov_matrices = torch.stack(cov_matrices, dim=1)
+            
+            return means, cov_matrices
+    
+    def log_likelihood(self, x, targets):
+        """Calcula a log-likelihood dos targets dados os parâmetros da distribuição"""
+        means, cov_matrices = self.get_distribution(x)
+        batch_size = x.shape[0]
+        
+        log_likelihoods = []
+        for i in range(self.num_classes):
+            # Criar distribuição multivariada normal para cada classe
+            dist = torch.distributions.MultivariateNormal(
+                loc=means[:, i, :],
+                covariance_matrix=cov_matrices[:, i, :, :]
+            )
+            
+            # Calcular log-likelihood para os targets
+            log_prob = dist.log_prob(targets)
+            log_likelihoods.append(log_prob)
+        
+        log_likelihoods = torch.stack(log_likelihoods, dim=1)
+        return log_likelihoods

@@ -1,303 +1,271 @@
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.figure import Figure
-import tkinter as tk
-from tkinter import filedialog, ttk
-from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
-from matplotlib import cm
+from matplotlib.patches import Ellipse
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 
-class EmotionSphereVisualizer:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Visualizador de Esferas Emocionais 3D")
-        self.root.geometry("1200x900")
-        
-        self.df = None
-        self.current_figure = None
-        self.sphere_artists = []
-        self.label_artists = []  # Para armazenar os rótulos
-        self.show_labels = True  # Estado inicial - rótulos visíveis
-        
-        self.create_widgets()
-        
-        # Variáveis de controle 3D
-        self.elevation = 30
-        self.azimuth = 45
-        self.sphere_quality = 20
-    
-    def create_widgets(self):
-        # Frame principal
-        main_frame = tk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Frame de controles
-        control_frame = tk.Frame(main_frame, padx=10, pady=10, width=300)
-        control_frame.pack(side=tk.LEFT, fill=tk.Y)
-        
-        # Frame do gráfico
-        self.graph_frame = tk.Frame(main_frame)
-        self.graph_frame.pack(side=tk.RIGHT, expand=True, fill=tk.BOTH)
-        
-        # Controles de arquivo
-        file_frame = tk.LabelFrame(control_frame, text="Arquivo", padx=5, pady=5)
-        file_frame.pack(fill=tk.X, pady=5)
-        
-        tk.Button(file_frame, text="Carregar CSV", command=self.load_file).pack(fill=tk.X)
-        self.file_label = tk.Label(file_frame, text="Nenhum arquivo carregado")
-        self.file_label.pack(fill=tk.X)
-        
-        # Controles 3D
-        view_frame = tk.LabelFrame(control_frame, text="Visualização 3D", padx=5, pady=5)
-        view_frame.pack(fill=tk.X, pady=5)
-        
-        tk.Label(view_frame, text="Elevação:").pack()
-        self.elev_slider = tk.Scale(view_frame, from_=0, to=90, orient=tk.HORIZONTAL,
-                                   command=self.update_view)
-        self.elev_slider.set(30)
-        self.elev_slider.pack(fill=tk.X)
-        
-        tk.Label(view_frame, text="Azimute:").pack()
-        self.azim_slider = tk.Scale(view_frame, from_=0, to=360, orient=tk.HORIZONTAL,
-                                    command=self.update_view)
-        self.azim_slider.set(45)
-        self.azim_slider.pack(fill=tk.X)
-        
-        # Controles de visualização
-        display_frame = tk.LabelFrame(control_frame, text="Exibição", padx=5, pady=5)
-        display_frame.pack(fill=tk.X, pady=5)
-        
-        # Botão para mostrar/esconder rótulos
-        self.toggle_labels_btn = tk.Button(
-            display_frame, 
-            text="Ocultar Rótulos", 
-            command=self.toggle_labels
-        )
-        self.toggle_labels_btn.pack(fill=tk.X)
-        
-        # Controles de esferas
-        sphere_frame = tk.LabelFrame(control_frame, text="Configurações das Esferas", padx=5, pady=5)
-        sphere_frame.pack(fill=tk.X, pady=5)
-        
-        tk.Label(sphere_frame, text="Tamanho base:").pack()
-        self.size_slider = tk.Scale(sphere_frame, from_=0.1, to=2, resolution=0.1,
-                                   orient=tk.HORIZONTAL, command=self.update_spheres)
-        self.size_slider.set(0.5)
-        self.size_slider.pack(fill=tk.X)
-        
-        tk.Label(sphere_frame, text="Transparência:").pack()
-        self.alpha_slider = tk.Scale(sphere_frame, from_=0.1, to=1, resolution=0.1,
-                                    orient=tk.HORIZONTAL, command=self.update_spheres)
-        self.alpha_slider.set(0.6)
-        self.alpha_slider.pack(fill=tk.X)
-        
-        # Lista de emoções
-        emotion_frame = tk.LabelFrame(control_frame, text="Emoções", padx=5, pady=5)
-        emotion_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.emotion_listbox = tk.Listbox(emotion_frame, selectmode=tk.MULTIPLE, height=15)
-        self.emotion_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        scrollbar = tk.Scrollbar(emotion_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.emotion_listbox.config(yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self.emotion_listbox.yview)
-        
-        # Botões de ação
-        button_frame = tk.Frame(control_frame)
-        button_frame.pack(fill=tk.X, pady=5)
-        
-        tk.Button(button_frame, text="Selecionar Todas", command=self.select_all).pack(side=tk.LEFT, expand=True)
-        tk.Button(button_frame, text="Limpar Seleção", command=self.clear_selection).pack(side=tk.LEFT, expand=True)
-        tk.Button(button_frame, text="Plotar Esferas", command=self.plot_spheres).pack(side=tk.LEFT, expand=True)
-        tk.Button(button_frame, text="Salvar Visualização", command=self.save_visualization).pack(side=tk.LEFT, expand=True)
-    
-    def toggle_labels(self):
-        """Alterna a visibilidade dos rótulos"""
-        self.show_labels = not self.show_labels
-        
-        if self.current_figure:
-            for label in self.label_artists:
-                label.set_visible(self.show_labels)
-            
-            # Atualiza o texto do botão
-            self.toggle_labels_btn.config(
-                text="Mostrar Rótulos" if not self.show_labels else "Ocultar Rótulos"
-            )
-            
-            # Redesenha o canvas
-            self.current_figure.canvas.draw()
-    
-    def load_file(self):
-        filepath = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
-        if filepath:
-            try:
-                self.df = pd.read_csv(filepath)
-                
-                # Verificar e criar colunas de dominância se necessário
-                if 'dominance mean' not in self.df.columns:
-                    self.df['dominance mean'] = np.random.uniform(-1, 1, size=len(self.df))
-                if 'dominance std' not in self.df.columns:
-                    self.df['dominance std'] = np.random.uniform(0.1, 0.3, size=len(self.df))
-                
-                self.file_label.config(text=f"Arquivo: {filepath.split('/')[-1]}")
-                self.update_emotion_list()
-            except Exception as e:
-                tk.messagebox.showerror("Erro", f"Não foi possível carregar o arquivo:\n{str(e)}")
-    
-    def update_emotion_list(self):
-        if self.df is not None and 'class' in self.df.columns:
-            self.emotion_listbox.delete(0, tk.END)
-            for emotion in self.df['class']:
-                self.emotion_listbox.insert(tk.END, emotion)
-    
-    def select_all(self):
-        self.emotion_listbox.selection_set(0, tk.END)
-    
-    def clear_selection(self):
-        self.emotion_listbox.selection_clear(0, tk.END)
-    
-    def update_view(self, *args):
-        if self.current_figure:
-            self.elevation = self.elev_slider.get()
-            self.azimuth = self.azim_slider.get()
-            for artist in self.sphere_artists:
-                artist.remove()
-            self.sphere_artists = []
-            self.label_artists = []  # Limpa os rótulos antigos
-            self.plot_spheres()
-    
-    def update_spheres(self, *args):
-        if self.current_figure:
-            for artist in self.sphere_artists:
-                artist.remove()
-            self.sphere_artists = []
-            self.label_artists = []  # Limpa os rótulos antigos
-            self.plot_spheres()
-    
-    def plot_spheres(self):
-        if self.df is None:
-            tk.messagebox.showwarning("Aviso", "Por favor, carregue um arquivo CSV primeiro.")
-            return
-        
-        selected_indices = self.emotion_listbox.curselection()
-        if not selected_indices:
-            tk.messagebox.showwarning("Aviso", "Por favor, selecione pelo menos uma emoção.")
-            return
-        
-        emotions_to_plot = [self.emotion_listbox.get(i) for i in selected_indices]
-        df_plot = self.df[self.df['class'].isin(emotions_to_plot)]
-        
-        # Limpar frame do gráfico
-        for widget in self.graph_frame.winfo_children():
-            widget.destroy()
-        
-        # Criar figura 3D
-        fig = Figure(figsize=(10, 8), dpi=100)
-        ax = fig.add_subplot(111, projection='3d')
-        self.current_figure = fig
-        
-        # Configurar ângulo de visualização
-        self.elevation = self.elev_slider.get()
-        self.azimuth = self.azim_slider.get()
-        ax.view_init(elev=self.elevation, azim=self.azimuth)
-        
-        # Configurações de plotagem
-        base_size = self.size_slider.get()
-        alpha = self.alpha_slider.get()
-        
-        # Normalização para cores baseadas na valência
-        norm = plt.Normalize(-1, 1)
-        color_map = cm.coolwarm
-        
-        # Limpar lista de rótulos
-        self.label_artists = []
-        
-        # Plotar esferas para cada emoção
-        for _, row in df_plot.iterrows():
-            # Posição central
-            x, y, z = row['valence mean'], row['arousal mean'], row['dominance mean']
-            
-            # Tamanhos baseados no desvio padrão
-            dx, dy, dz = row['valence std'], row['arousal std'], row['dominance std']
-            radius = base_size * np.mean([dx, dy, dz])
-            
-            # Cor baseada na valência
-            color = color_map(norm(x))
-            
-            # Criar esfera
-            u = np.linspace(0, 2 * np.pi, self.sphere_quality)
-            v = np.linspace(0, np.pi, self.sphere_quality)
-            x_sphere = x + radius * np.outer(np.cos(u), np.sin(v)).flatten()
-            y_sphere = y + radius * np.outer(np.sin(u), np.sin(v)).flatten()
-            z_sphere = z + radius * np.outer(np.ones(np.size(u)), np.cos(v)).flatten()
-            
-            # Plotar esfera
-            sphere = ax.plot_surface(
-                x_sphere.reshape((self.sphere_quality, self.sphere_quality)),
-                y_sphere.reshape((self.sphere_quality, self.sphere_quality)),
-                z_sphere.reshape((self.sphere_quality, self.sphere_quality)),
-                color=color,
-                alpha=alpha,
-                shade=True
-            )
-            self.sphere_artists.append(sphere)
-            
-            # Rótulo (só adiciona se show_labels for True)
-            label = ax.text(
-                x, y, z, row['class'], 
-                fontsize=8, 
-                bbox=dict(facecolor='white', alpha=0.7, pad=1),
-                visible=self.show_labels
-            )
-            self.label_artists.append(label)
-        
-        # Configurações dos eixos
-        ax.set_xlim(-1.5, 1.5)
-        ax.set_ylim(-1.5, 1.5)
-        ax.set_zlim(-1.5, 1.5)
-        
-        ax.set_xlabel('Valence (Negativo ↔ Positivo)')
-        ax.set_ylabel('Arousal (Calmo ↔ Ativo)')
-        ax.set_zlabel('Dominance (Submisso ↔ Dominante)')
-        ax.set_title('Distribuições Emocionais como Esferas 3D')
-        
-        # Adicionar barra de cores
-        sm = plt.cm.ScalarMappable(cmap=color_map, norm=norm)
-        sm.set_array([])
-        fig.colorbar(sm, ax=ax, label='Valence (Vermelho: Negativo, Azul: Positivo)')
-        
-        # Adicionar canvas ao frame
-        canvas = FigureCanvasTkAgg(fig, master=self.graph_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        
-        # Adicionar toolbar de navegação
-        toolbar = NavigationToolbar2Tk(canvas, self.graph_frame)
-        toolbar.update()
-        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-    
-    def save_visualization(self):
-        if self.current_figure is None:
-            tk.messagebox.showwarning("Aviso", "Nenhuma visualização para salvar. Plote algumas esferas primeiro.")
-            return
-        
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[("PNG files", "*.png"), ("JPEG files", "*.jpg"), ("PDF files", "*.pdf"), ("All files", "*.*")],
-            title="Salvar visualização 3D"
-        )
-        
-        if filepath:
-            try:
-                self.current_figure.savefig(filepath, dpi=300, bbox_inches='tight')
-                tk.messagebox.showinfo("Sucesso", f"Visualização salva com sucesso em:\n{filepath}")
-            except Exception as e:
-                tk.messagebox.showerror("Erro", f"Não foi possível salvar o arquivo:\n{str(e)}")
+# Page configuration
+st.set_page_config(page_title="Emotion Dimensions Visualizer", layout="wide")
 
-# Executar a aplicação
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = EmotionSphereVisualizer(root)
-    root.mainloop()
+# Application title
+st.title("📊 Emotion Dimensions Visualizer")
+st.markdown("Upload a CSV file in the emotions format and visualize distributions in 2D or 3D.")
+
+# File upload
+uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+
+if uploaded_file is not None:
+    try:
+        # Load data
+        df = pd.read_csv(uploaded_file)
+        
+        # Check if required columns are present
+        required_columns = ['class', 'valence mean', 'valence std', 'arousal mean', 'arousal std']
+        if not all(col in df.columns for col in required_columns):
+            st.error(f"CSV file must contain the columns: {', '.join(required_columns)}")
+        else:
+            # Sidebar for settings
+            st.sidebar.header("Visualization Settings")
+            
+            # Dimension selection
+            dimension = st.sidebar.radio(
+                "Select dimensionality:",
+                ["2D (Valence-Arousal)", "3D (Valence-Arousal-Dominance)"]
+            )
+            
+            # Emotion selection for plotting
+            available_emotions = df['class'].unique().tolist()
+            selected_emotions = st.sidebar.multiselect(
+                "Select emotions to visualize:",
+                available_emotions,
+                default=available_emotions
+            )
+            
+            # Filter data based on selection
+            filtered_df = df[df['class'].isin(selected_emotions)]
+            
+            # Plot settings
+            st.sidebar.subheader("Plot Settings")
+            show_std = st.sidebar.checkbox("Show standard deviation", value=True)
+            
+            if dimension == "2D (Valence-Arousal)":
+                # Interactive 2D Plot with Plotly
+                fig = go.Figure()
+                
+                # Colors for different emotions
+                colors = px.colors.qualitative.Set3
+                
+                for i, (idx, row) in enumerate(filtered_df.iterrows()):
+                    color = colors[i % len(colors)]
+                    
+                    # Add mean point
+                    fig.add_trace(go.Scatter(
+                        x=[row['valence mean']],
+                        y=[row['arousal mean']],
+                        mode='markers+text',
+                        name=row['class'],
+                        marker=dict(
+                            size=15,
+                            color=color,
+                            line=dict(width=2, color='black')
+                        ),
+                        text=row['class'],
+                        textposition="top center",
+                        hoverinfo='text',
+                        hovertext=f"{row['class']}<br>Valence: {row['valence mean']:.2f}±{row['valence std']:.2f}<br>Arousal: {row['arousal mean']:.2f}±{row['arousal std']:.2f}"
+                    ))
+                    
+                    # Add standard deviation ellipse if requested
+                    if show_std:
+                        # Generate ellipse points
+                        theta = np.linspace(0, 2*np.pi, 100)
+                        x_ellipse = row['valence mean'] + row['valence std'] * np.cos(theta)
+                        y_ellipse = row['arousal mean'] + row['arousal std'] * np.sin(theta)
+                        
+                        fig.add_trace(go.Scatter(
+                            x=x_ellipse,
+                            y=y_ellipse,
+                            mode='lines',
+                            line=dict(color=color, width=1, dash='dot'),
+                            showlegend=False,
+                            hoverinfo='skip',
+                            opacity=0.5
+                        ))
+                
+                # Update layout
+                fig.update_layout(
+                    title='Emotion Dimensional Space (Valence-Arousal)',
+                    xaxis_title='Valence',
+                    yaxis_title='Arousal',
+                    width=800,
+                    height=600,
+                    showlegend=True,
+                    hovermode='closest'
+                )
+                
+                # Add reference lines
+                fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+                fig.add_vline(x=0, line_dash="dash", line_color="gray", opacity=0.5)
+                
+                # Set axis limits
+                fig.update_xaxes(range=[-1, 1])
+                fig.update_yaxes(range=[-1, 1])
+                
+                # Display the interactive plot
+                st.plotly_chart(fig, use_container_width=True)
+                
+            else:  # 3D
+                # Check if dominance columns are present
+                if 'dominance mean' not in df.columns or 'dominance std' not in df.columns:
+                    st.error("For 3D visualization, the file must contain 'dominance mean' and 'dominance std' columns")
+                else:
+                    # Interactive 3D Plot with Plotly
+                    fig = go.Figure()
+                    
+                    # Colors for different emotions
+                    colors = px.colors.qualitative.Set3
+                    
+                    # Additional 3D settings
+                    st.sidebar.subheader("3D Visualization Options")
+                    show_error_bars = st.sidebar.checkbox("Show error bars instead of ellipsoids", value=True)
+                    
+                    for i, (idx, row) in enumerate(filtered_df.iterrows()):
+                        color = colors[i % len(colors)]
+                        
+                        # Add mean point
+                        fig.add_trace(go.Scatter3d(
+                            x=[row['valence mean']],
+                            y=[row['arousal mean']],
+                            z=[row['dominance mean']],
+                            mode='markers+text',
+                            name=row['class'],
+                            marker=dict(
+                                size=8,
+                                color=color,
+                                line=dict(width=2, color='black')
+                            ),
+                            text=row['class'],
+                            textposition="top center",
+                            hoverinfo='text',
+                            hovertext=f"""
+                            {row['class']}<br>
+                            Valence: {row['valence mean']:.2f}±{row['valence std']:.2f}<br>
+                            Arousal: {row['arousal mean']:.2f}±{row['arousal std']:.2f}<br>
+                            Dominance: {row['dominance mean']:.2f}±{row['dominance std']:.2f}
+                            """
+                        ))
+                        
+                        # Add error bars or ellipsoids for standard deviation
+                        if show_std:
+                            if show_error_bars:
+                                # Add error bars (much clearer in 3D)
+                                fig.add_trace(go.Scatter3d(
+                                    x=[row['valence mean'], row['valence mean']],
+                                    y=[row['arousal mean'], row['arousal mean']],
+                                    z=[row['dominance mean'] - row['dominance std'], 
+                                       row['dominance mean'] + row['dominance std']],
+                                    mode='lines',
+                                    line=dict(color=color, width=4),
+                                    showlegend=False,
+                                    hoverinfo='skip'
+                                ))
+                                fig.add_trace(go.Scatter3d(
+                                    x=[row['valence mean'], row['valence mean']],
+                                    y=[row['arousal mean'] - row['arousal std'], 
+                                       row['arousal mean'] + row['arousal std']],
+                                    z=[row['dominance mean'], row['dominance mean']],
+                                    mode='lines',
+                                    line=dict(color=color, width=4),
+                                    showlegend=False,
+                                    hoverinfo='skip'
+                                ))
+                                fig.add_trace(go.Scatter3d(
+                                    x=[row['valence mean'] - row['valence std'], 
+                                       row['valence mean'] + row['valence std']],
+                                    y=[row['arousal mean'], row['arousal mean']],
+                                    z=[row['dominance mean'], row['dominance mean']],
+                                    mode='lines',
+                                    line=dict(color=color, width=4),
+                                    showlegend=False,
+                                    hoverinfo='skip'
+                                ))
+                            else:
+                                # Add transparent ellipsoid (optional - can be computationally heavy)
+                                # Generate ellipsoid points
+                                u = np.linspace(0, 2 * np.pi, 20)
+                                v = np.linspace(0, np.pi, 20)
+                                
+                                x_ellipsoid = row['valence mean'] + row['valence std'] * np.outer(np.cos(u), np.sin(v))
+                                y_ellipsoid = row['arousal mean'] + row['arousal std'] * np.outer(np.sin(u), np.sin(v))
+                                z_ellipsoid = row['dominance mean'] + row['dominance std'] * np.outer(np.ones(np.size(u)), np.cos(v))
+                                
+                                fig.add_trace(go.Surface(
+                                    x=x_ellipsoid,
+                                    y=y_ellipsoid,
+                                    z=z_ellipsoid,
+                                    colorscale=[[0, color], [1, color]],
+                                    showscale=False,
+                                    opacity=0.2,
+                                    hoverinfo='skip'
+                                ))
+                
+                    # Update 3D layout
+                    fig.update_layout(
+                        title='Three-Dimensional Emotion Space (Valence-Arousal-Dominance)',
+                        scene=dict(
+                            xaxis_title='Valence',
+                            yaxis_title='Arousal',
+                            zaxis_title='Dominance',
+                            xaxis=dict(range=[-1, 1]),
+                            yaxis=dict(range=[-1, 1]),
+                            zaxis=dict(range=[-1, 1]),
+                        ),
+                        width=800,
+                        height=700,
+                        showlegend=True
+                    )
+                    
+                    # Display the interactive 3D plot
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Add 3D interaction instructions
+                    st.sidebar.info("""
+                    **3D Interaction Guide:**
+                    - **Rotate**: Click and drag
+                    - **Zoom**: Scroll wheel
+                    - **Pan**: Shift + click and drag
+                    - **Reset**: Double click
+                    """)
+            
+            # Show tabular data in an expandable section
+            with st.expander("View Loaded Data"):
+                st.subheader("Loaded Data")
+                st.dataframe(filtered_df)
+                
+                st.subheader("Descriptive Statistics")
+                st.dataframe(filtered_df.describe())
+            
+    except Exception as e:
+        st.error(f"Error processing file: {str(e)}")
+else:
+    # Instructions when no file has been uploaded
+    st.info("""
+    ### Instructions:
+    1. **Upload** a CSV file in the specified format
+    2. **Select** dimensionality (2D or 3D)
+    3. **Choose** which emotions to visualize
+    4. **Adjust** plot settings as needed
+    
+    ### Expected CSV format:
+    - Columns: `class`, `valence mean`, `valence std`, `arousal mean`, `arousal std`
+    - For 3D: also `dominance mean` and `dominance std`
+    - Format example:
+    ```
+    class,valence mean,valence std,arousal mean,arousal std,dominance mean,dominance std
+    happy,0.81,0.21,0.51,0.26,0.46,0.38
+    sad,-0.63,0.23,-0.27,0.34,-0.33,0.22
+    ```
+    """)
