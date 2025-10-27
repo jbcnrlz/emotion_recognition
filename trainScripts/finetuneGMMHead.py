@@ -5,7 +5,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar, overlay_attention_maps
-from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM
+from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood
 from torch import nn, optim
 import torch.distributions as dist, random
 from torch.nn import functional as F
@@ -102,6 +102,8 @@ def train():
         model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize,pretrained=args.pretrainedResnet)
     elif args.model == "attgmm":
         model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none',bayesianHeadType='VA' if outVA == 2 else 'VAD')
+    elif args.model == 'attbayes':        
+        model = ResNet50WithAttentionLikelihood(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none',bayesianHeadType='VA' if outVA == 2 else 'VAD')
 
     model.to(device)    
     print("Model loaded")

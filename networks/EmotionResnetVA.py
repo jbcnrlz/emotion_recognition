@@ -364,3 +364,83 @@ class ResNet50WithAttentionGMM(nn.Module):
         
         log_likelihoods = torch.stack(log_likelihoods, dim=1)
         return log_likelihoods
+
+class ResNet50WithAttentionGMM(nn.Module):
+    def __init__(self, num_classes=1000,pretrained=None,bottleneck='both',bayesianHeadType='VA'):
+        super(ResNet50WithAttentionGMM, self).__init__()
+        
+        # Usar a arquitetura padrão mas com nossos bottlenecks modificados
+        self.model = models.resnet50(weights=None)
+        if pretrained is not None:
+            print("Loading pretrained weights for ResNet50...")
+            #self.model.load_state_dict(checkpoint['state_dict'], strict=False)
+        # Substituir os bottlenecks no layer2 e layer3
+        self.attention_maps = []
+        self._attention_hooks = []  # Lista para armazenar os hooks de atenção
+        if bottleneck in ['first', 'second', 'both']:
+            self._replace_bottlenecks(bottleneck)
+        
+        else:            
+            self.model.conv1 = nn.Sequential(
+                nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
+                nn.AvgPool2d(kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+                nn.BatchNorm2d(64),
+                nn.ReLU(inplace=True),
+                SpatialSelfAttention(64)
+            )
+            def hook_fn(module, input, output):
+                self.attention_maps.append(module[-1].visual_attention_map) 
+            self._attention_hooks.append(self.model.conv1.register_forward_hook(hook_fn))
+
+
+        # Modificar camada final
+        out_features = self.model.fc.in_features
+        self.model.fc = nn.Identity()
+        self.gmm_head = nn.Sequential(
+            nn.Linear(out_features, 256),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(256, num_classes * 6),  # 6 parâmetros: peso, μx, μy, σx, σy, ρ
+        )
+
+        self.probabilities = nn.Linear(num_classes * 6,num_classes)  # Saída para os parâmetros da GMM
+        if bayesianHeadType == 'VA':
+            self.bayesianHead = BayesianNetworkVI(num_classes, 4, 2)
+        elif bayesianHeadType == 'VAD':
+            self.bayesianHead = BayesianNetworkVI(num_classes, 6, 3)
+    
+    def _replace_bottlenecks(self,btn):
+        # Substituir os bottlenecks no layer2
+        if btn == 'first' or btn == 'both':
+            block = self.model.layer2[0]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer2[0] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1]) 
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
+        if btn == 'second' or btn == 'both':
+            # Substituir os bottlenecks no layer3
+            block = self.model.layer3[0]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer3[0] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1])
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
+    
+    def forward(self, x):
+        self.attention_maps = []  # Limpar os mapas de atenção antes de cada forward
+        distributions = self.model(x)
+        distributions = self.gmm_head(distributions)
+        probs = self.probabilities(distributions)
+        va = self.bayesianHead(probs)
+        return probs, distributions, va
