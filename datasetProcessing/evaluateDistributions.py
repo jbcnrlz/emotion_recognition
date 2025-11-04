@@ -158,7 +158,8 @@ def validate_probabilities(probs):
 
 # Lista de emoções corrigida (14 emoções na ordem correta do GMM)
 # Ordem: 13 do CSV + 1 (neutral) adicionado no final
-CORRECT_EMOTIONS = ["happy", "contempt", "elated", "hopeful", "surprised", "proud", "loved", "angry", "astonished", "disgusted", "fearful", "sad", "fatigued", "neutral"]
+#CORRECT_EMOTIONS = ["happy", "contempt", "elated", "hopeful", "surprised", "proud", "loved", "angry", "astonished", "disgusted", "fearful", "sad", "fatigued", "neutral"]
+CORRECT_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
 AFFECTNET_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
 
 
@@ -194,12 +195,12 @@ def outputCSV(probs, vads, path, emos, outputFile):
     return new_df
 
 
-def saveRankFile(probs,paths):
+def saveRankFile(probs,paths,extensionNameFile=""):
     for idx, p in enumerate(probs):
         splitedPath = paths[idx].split(os.path.sep)
         fileName = splitedPath[-1].split(".")[0]
         annotationsFolder = os.path.join(os.path.sep.join(splitedPath[0:-2]),'annotations')
-        with open(os.path.join(annotationsFolder,f"{fileName}_prob_rank.txt"),'w') as f:
+        with open(os.path.join(annotationsFolder,f"{fileName}_prob_rank{extensionNameFile}.txt"),'w') as f:
             joinedProbs = ','.join([str(x) for x in p])
             f.write(joinedProbs+'\n')
 
@@ -213,6 +214,7 @@ def main():
     parser.add_argument('--use_log_space', action='store_true', help='Use log space for stability')
     parser.add_argument('--vectorized', action='store_true', help='Use vectorized computation')
     parser.add_argument('--validate_probs', action='store_true', help='Validate probability outputs')
+    parser.add_argument('--extensionForAnnotations', default="", help='Extension for annotation files')
     args = parser.parse_args()
 
     classesDist = pd.read_csv(args.distroFile).drop(columns=['class']).to_numpy()
@@ -298,7 +300,7 @@ def main():
     if args.validate_probs and probs is not None:
         validate_probabilities(probs)
 
-    saveRankFile(probs,pts)
+    saveRankFile(probs,pts,args.extensionForAnnotations)
     outputCSV(probs, vas, pts, lbls, 'val_set_emotion_distribution.csv')
 
     print("Processamento concluído com sucesso!")

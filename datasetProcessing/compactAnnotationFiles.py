@@ -14,7 +14,7 @@ def main():
         probsFiles = getFilesInPath(f'C:\\Users\\joaoc\\AffectNetFusedDifferent\\{f}\\annotations')
         compactFiles = []
         for p in probsFiles:
-            if '_dom.npy' in p or 'prob_rank.txt':
+            if '_prob_rank_universal.txt' in p:
                 compactFiles.append(p)
 
         compactar_tar_bz2(compactFiles,f'{f}_comp.tgz')

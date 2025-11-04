@@ -5,7 +5,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from torch import nn
-from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM
+from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood
 from helper.function import visualizeAttentionMaps
 
 def saveToCSV(preds,files,pathCSV,vad):
@@ -42,6 +42,9 @@ def train():
         model = ResnetWithBayesianHead(13,resnetModel=args.resnetInnerModel)
     elif args.emotionModel == "resnetAttentionGMM":
         model = ResNet50WithAttentionGMM(num_classes=14,bottleneck='none',bayesianHeadType='VAD')
+    elif args.emotionModel == "resnetAttentionLikelihood":
+        model = ResNet50WithAttentionLikelihood(num_classes=14,bottleneck='none',bayesianHeadType='VAD')
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(args.weights)
     model.load_state_dict(checkpoint['state_dict'],strict=True)

@@ -107,6 +107,9 @@ class AffectNet(data.Dataset):
                     except:
                         self.label[-1].append(255)
                     
+            elif typeExperiment == 'UNIVERSAL':
+                currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank_universal.txt' % (int(imageNumber)))
+                self.label.append(currLabel)
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
@@ -160,6 +163,8 @@ class AffectNet(data.Dataset):
         elif self.typeExperiment == "RANDOM":
             label = torch.from_numpy(np.array(np.random.randint(0,8))).to(torch.long)
         elif self.typeExperiment == "PROBS":
+            label = torch.from_numpy(np.array(self.loadProbFile(self.label[idx])).astype(np.float32)).to(torch.float32)
+        elif self.typeExperiment == "UNIVERSAL":
             label = torch.from_numpy(np.array(self.loadProbFile(self.label[idx])).astype(np.float32)).to(torch.float32)
         elif self.typeExperiment == 'PROBS_VA':
             label = [
