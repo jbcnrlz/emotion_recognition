@@ -221,9 +221,9 @@ class BottleneckWithAttention(nn.Module):
 
         return out  # Retorna o mapa de atenção junto com a saída
 
-class ResNet50WithAttentionGMM(nn.Module):
+class ResNet50WithAttentionLikelihood(nn.Module):
     def __init__(self, num_classes=1000, pretrained=None, bottleneck='both', bayesianHeadType='VA', output_dim=2):
-        super(ResNet50WithAttentionGMM, self).__init__()
+        super(ResNet50WithAttentionLikelihood, self).__init__()
         self.num_classes = num_classes
         self.output_dim = output_dim  # Dimensão da saída (ex: 2 para valence/arousal)
         
