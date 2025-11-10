@@ -31,7 +31,7 @@ class AffectNet(data.Dataset):
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
                 self.label.append([valValue,aroValue])
-            elif "VAD" in typeExperiment and 'PROBS_' not in typeExperiment:
+            elif "VAD" in typeExperiment and 'PROBS_' not in typeExperiment and 'UNIVERSAL_' not in typeExperiment:
                 try:
                     valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
                     aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
@@ -119,7 +119,8 @@ class AffectNet(data.Dataset):
                 except:
                     currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank_universal.txt')
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
-                    domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
+                    domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
                     try:
                         domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
                     except:
