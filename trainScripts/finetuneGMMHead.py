@@ -5,7 +5,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar, overlay_attention_maps
-from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood
+from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithAttentionLikelihoodNoVA
 from torch import nn, optim
 import torch.distributions as dist, random
 from torch.nn import functional as F
@@ -104,7 +104,8 @@ def train():
         model = ResNet50WithAttentionGMM(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none',bayesianHeadType='VA' if outVA == 2 else 'VAD')
     elif args.model == 'attbayes':        
         model = ResNet50WithAttentionLikelihood(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none',bayesianHeadType='VA' if outVA == 2 else 'VAD')
-
+    elif args.model == 'simpleNetwork':
+        model = ResNet50WithAttentionLikelihoodNoVA(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none')
     model.to(device)    
     print("Model loaded")
     print(model)
@@ -123,9 +124,11 @@ def train():
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])}
     print("Loading trainig set")
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
+    #dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='UNIVERSAL_VAD')
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
+    #datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='UNIVERSAL_VAD')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
     optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
@@ -175,35 +178,40 @@ def train():
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
+            if isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+                classification = model(currBatch)
+                loss = criterion(classification, currTargetBatch)
+            else:                                
+                classification, parameters, vaValueEstim = model(currBatch)
+                ceVal = criterion(classification, currTargetBatch)
+                if args.secondaryLossFunction == "ELBO":
+                    elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+                    loss = 0.999 * ceVal + 0.001 * elboVal
+                else:
+                    elboVal = secLoss(vaValueEstim, vaBatch)
+                    loss = 0.5 * ceVal + 0.5 * elboVal
 
-            classification, parameters, vaValueEstim = model(currBatch)
-            ceVal = criterion(classification, currTargetBatch)
-            if args.secondaryLossFunction == "ELBO":
-                elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
-                loss = 0.999 * ceVal + 0.001 * elboVal
-            else:
-                elboVal = secLoss(vaValueEstim, vaBatch)
-                loss = 0.5 * ceVal + 0.5 * elboVal
-
-            if args.lambdaLASSO > 0:
-                l1_norm = sum(p.abs().sum() for p in model.parameters())
-                loss += args.lambdaLASSO * l1_norm
+                if args.lambdaLASSO > 0:
+                    l1_norm = sum(p.abs().sum() for p in model.parameters())
+                    loss += args.lambdaLASSO * l1_norm
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             lossAcc.append(loss.item())
-            elboLoss.append(elboVal.item())
-            ceLoss.append(ceVal.item())
+            if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+                elboLoss.append(elboVal.item())            
+                ceLoss.append(ceVal.item())
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
-        elboLoss = sum(elboLoss) / len(elboLoss)
-        ceLoss = sum(ceLoss) / len(ceLoss)
-        writer.add_scalar(f'RESNETAtt/{lossFuncName}/train',ceLoss, ep)
-        writer.add_scalar('RESNETAtt/ELBOLoss/train',elboLoss,ep)
+        if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+            elboLoss = sum(elboLoss) / len(elboLoss)
+            ceLoss = sum(ceLoss) / len(ceLoss)
+            writer.add_scalar(f'RESNETAtt/{lossFuncName}/train',ceLoss, ep)
+            writer.add_scalar('RESNETAtt/ELBOLoss/train',elboLoss,ep)
         scheduler.step()
         model.eval()
         elboLoss = []
@@ -221,26 +229,32 @@ def train():
                 if (random.randint(0, 100) < 5) or (imageAttention is None):
                     imageAttention = currBatch[random.randint(0,currBatch.shape[0]-1)].cpu().detach().numpy()
 
-                classification, parameters, vaValueEstim = model(currBatch)
-                ceVal = criterion(classification, currTargetBatch)
-                if args.secondaryLossFunction == "ELBO":
-                    elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
-                    loss = 0.999 * ceVal + 0.001 * elboVal
+                if isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+                    classification = model(currBatch)
+                    loss = criterion(classification, currTargetBatch)
                 else:
-                    elboVal = secLoss(vaValueEstim, vaBatch)
-                    loss = 0.5 * ceVal + 0.5 * elboVal
+
+                    classification, parameters, vaValueEstim = model(currBatch)
+                    ceVal = criterion(classification, currTargetBatch)
+                    if args.secondaryLossFunction == "ELBO":
+                        elboVal = elbo_loss(vaValueEstim,vaBatch,model.bayesianHead)
+                        loss = 0.999 * ceVal + 0.001 * elboVal
+                    else:
+                        elboVal = secLoss(vaValueEstim, vaBatch)
+                        loss = 0.5 * ceVal + 0.5 * elboVal
+                    elboLoss.append(elboVal.item())                
+                    ceLoss.append(ceVal.item())
 
                 loss_val.append(loss.item())
-                elboLoss.append(elboVal.item())
-                ceLoss.append(ceVal.item())
                 iteration += 1
 
         tLoss = sum(loss_val) / len(loss_val)
         writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
-        elboLoss = sum(elboLoss) / len(elboLoss)
-        ceLoss = sum(ceLoss) / len(ceLoss)
-        writer.add_scalar(f'RESNETAtt/{lossFuncName}/val',ceLoss, ep)
-        writer.add_scalar('RESNETAtt/ELBOLoss/val',elboLoss,ep)
+        if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+            elboLoss = sum(elboLoss) / len(elboLoss)
+            ceLoss = sum(ceLoss) / len(ceLoss)
+            writer.add_scalar(f'RESNETAtt/{lossFuncName}/val',ceLoss, ep)
+            writer.add_scalar('RESNETAtt/ELBOLoss/val',elboLoss,ep)
         if imageAttention is not None:
             attentionMaps = model.attention_maps
             _, attMapsOv = overlay_attention_maps(imageAttention, attentionMaps)

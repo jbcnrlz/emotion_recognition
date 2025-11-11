@@ -444,3 +444,80 @@ class ResNet50WithAttentionGMM(nn.Module):
         probs = self.probabilities(distributions)
         va = self.bayesianHead(probs)
         return probs, distributions, va
+
+class ResNet50WithAttentionLikelihoodNoVA(nn.Module):
+    def __init__(self, num_classes=1000, pretrained=None, bottleneck='both'):
+        super(ResNet50WithAttentionLikelihoodNoVA, self).__init__()
+        self.num_classes = num_classes
+        
+        # Usar a arquitetura padrão mas com nossos bottlenecks modificados
+        self.model = models.resnet50(weights=None)
+        if pretrained is not None:
+            print("Loading pretrained weights for ResNet50...")
+            #self.model.load_state_dict(checkpoint['state_dict'], strict=False)
+        
+        # Substituir os bottlenecks no layer2 e layer3
+        self.attention_maps = []
+        self._attention_hooks = []  # Lista para armazenar os hooks de atenção
+        if bottleneck in ['first', 'second', 'both']:
+            self._replace_bottlenecks(bottleneck)
+        else:            
+            self.model.conv1 = nn.Sequential(
+                nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
+                nn.AvgPool2d(kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+                nn.BatchNorm2d(64),
+                nn.ReLU(inplace=True),
+                SpatialSelfAttention(64)
+            )
+            def hook_fn(module, input, output):
+                self.attention_maps.append(module[-1].visual_attention_map) 
+            self._attention_hooks.append(self.model.conv1.register_forward_hook(hook_fn))
+
+        # Modificar camada final
+        out_features = self.model.fc.in_features
+        self.model.fc = nn.Identity()
+        
+        # Cabeça para parâmetros da distribuição gaussiana
+        # Para cada classe: média (output_dim) + covariância (output_dim * (output_dim + 1) / 2)
+        self.likelihood_head = nn.Sequential(
+            nn.Linear(out_features, 256),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, num_classes)
+        )
+    
+    def _replace_bottlenecks(self, btn):
+        # (Mantido igual ao original)
+        if btn == 'first' or btn == 'both':
+            block = self.model.layer2[0]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer2[0] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1]) 
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
+        if btn == 'second' or btn == 'both':
+            block = self.model.layer3[0]
+            new_block = BottleneckWithAttention(
+                block.conv1.in_channels,
+                block.conv1.out_channels,
+                block.stride,
+                block.downsample
+            )
+            self.model.layer3[0] = new_block
+            def hook_fn(module, input, output):
+                self.attention_maps.append(output[1])
+            self._attention_hooks.append(new_block.register_forward_hook(hook_fn))
+    
+    def forward(self, x):
+        self.attention_maps = []  # Limpar os mapas de atenção antes de cada forward
+        features = self.model(x)
+        distribution_params = self.likelihood_head(features)
+        return distribution_params
+    
