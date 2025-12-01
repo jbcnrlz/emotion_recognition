@@ -117,6 +117,116 @@ def safe_kl_divergence(true_probs, pred_probs):
     except Exception as e:
         return 0.0
 
+def calculate_chebyshev_distance(true_probs, pred_probs):
+    """Calculates Chebyshev distance between two probability distributions"""
+    try:
+        true_probs = np.array(true_probs, dtype=np.float64)
+        pred_probs = np.array(pred_probs, dtype=np.float64)
+        
+        # Normalize to ensure they are proper probability distributions
+        true_probs = true_probs / np.sum(true_probs)
+        pred_probs = pred_probs / np.sum(pred_probs)
+        
+        # Chebyshev distance is the maximum absolute difference
+        chebyshev = np.max(np.abs(true_probs - pred_probs))
+        
+        return chebyshev
+        
+    except Exception as e:
+        return 0.0
+
+def calculate_clark_distance(true_probs, pred_probs):
+    """Calculates Clark distance between two probability distributions"""
+    try:
+        true_probs = np.array(true_probs, dtype=np.float64)
+        pred_probs = np.array(pred_probs, dtype=np.float64)
+        
+        # Normalize to ensure they are proper probability distributions
+        true_probs = true_probs / np.sum(true_probs)
+        pred_probs = pred_probs / np.sum(pred_probs)
+        
+        # Clark distance formula
+        numerator = np.abs(true_probs - pred_probs)
+        denominator = np.abs(true_probs + pred_probs)
+        
+        # Avoid division by zero
+        denominator = np.where(denominator == 0, 1e-12, denominator)
+        
+        clark = np.sqrt(np.sum((numerator / denominator) ** 2))
+        
+        return clark
+        
+    except Exception as e:
+        return 0.0
+
+def calculate_canberra_distance(true_probs, pred_probs):
+    """Calculates Canberra distance between two probability distributions"""
+    try:
+        true_probs = np.array(true_probs, dtype=np.float64)
+        pred_probs = np.array(pred_probs, dtype=np.float64)
+        
+        # Normalize to ensure they are proper probability distributions
+        true_probs = true_probs / np.sum(true_probs)
+        pred_probs = pred_probs / np.sum(pred_probs)
+        
+        # Canberra distance formula
+        numerator = np.abs(true_probs - pred_probs)
+        denominator = np.abs(true_probs) + np.abs(pred_probs)
+        
+        # Avoid division by zero
+        denominator = np.where(denominator == 0, 1e-12, denominator)
+        
+        canberra = np.sum(numerator / denominator)
+        
+        return canberra
+        
+    except Exception as e:
+        return 0.0
+
+def calculate_cosine_similarity(true_probs, pred_probs):
+    """Calculates Cosine similarity between two probability distributions"""
+    try:
+        true_probs = np.array(true_probs, dtype=np.float64)
+        pred_probs = np.array(pred_probs, dtype=np.float64)
+        
+        # Normalize to ensure they are proper probability distributions
+        true_probs = true_probs / np.sum(true_probs)
+        pred_probs = pred_probs / np.sum(pred_probs)
+        
+        # Cosine similarity formula
+        dot_product = np.sum(true_probs * pred_probs)
+        norm_true = np.sqrt(np.sum(true_probs ** 2))
+        norm_pred = np.sqrt(np.sum(pred_probs ** 2))
+        
+        # Avoid division by zero
+        if norm_true == 0 or norm_pred == 0:
+            return 0.0
+            
+        cosine_sim = dot_product / (norm_true * norm_pred)
+        
+        return cosine_sim
+        
+    except Exception as e:
+        return 0.0
+
+def calculate_intersection_similarity(true_probs, pred_probs):
+    """Calculates Intersection similarity between two probability distributions"""
+    try:
+        true_probs = np.array(true_probs, dtype=np.float64)
+        pred_probs = np.array(pred_probs, dtype=np.float64)
+        
+        # Normalize to ensure they are proper probability distributions
+        true_probs = true_probs / np.sum(true_probs)
+        pred_probs = pred_probs / np.sum(pred_probs)
+        
+        # Intersection similarity is the sum of minimums
+        intersection = np.sum(np.minimum(true_probs, pred_probs))
+        
+        return intersection
+        
+    except Exception as e:
+        return 0.0
+
 def calculate_arousal_valence_metrics(estimates_df, labels_df, emotion_columns, emotion_labels):
     """Calculates arousal and valence metrics for each face"""
     results = {
@@ -309,6 +419,34 @@ def calculate_distribution_metrics(estimates_df, labels_df, emotion_columns, emo
     
     avg_kl = np.mean(kl_scores) if kl_scores else 0
     
+    # Calculate new distance metrics
+    chebyshev_scores = []
+    clark_scores = []
+    canberra_scores = []
+    
+    # Calculate new similarity metrics
+    cosine_scores = []
+    intersection_scores = []
+    
+    for true_probs, pred_probs in zip(all_true_probs, all_pred_probs):
+        chebyshev = calculate_chebyshev_distance(true_probs, pred_probs)
+        clark = calculate_clark_distance(true_probs, pred_probs)
+        canberra = calculate_canberra_distance(true_probs, pred_probs)
+        cosine = calculate_cosine_similarity(true_probs, pred_probs)
+        intersection = calculate_intersection_similarity(true_probs, pred_probs)
+        
+        chebyshev_scores.append(chebyshev)
+        clark_scores.append(clark)
+        canberra_scores.append(canberra)
+        cosine_scores.append(cosine)
+        intersection_scores.append(intersection)
+    
+    avg_chebyshev = np.mean(chebyshev_scores) if chebyshev_scores else 0
+    avg_clark = np.mean(clark_scores) if clark_scores else 0
+    avg_canberra = np.mean(canberra_scores) if canberra_scores else 0
+    avg_cosine = np.mean(cosine_scores) if cosine_scores else 0
+    avg_intersection = np.mean(intersection_scores) if intersection_scores else 0
+    
     return {
         'accuracy': accuracy,
         'f1_macro': f1_macro,
@@ -316,10 +454,20 @@ def calculate_distribution_metrics(estimates_df, labels_df, emotion_columns, emo
         'confusion_matrix': cm,
         'avg_emd': avg_emd,
         'avg_kl': avg_kl,
+        'avg_chebyshev': avg_chebyshev,
+        'avg_clark': avg_clark,
+        'avg_canberra': avg_canberra,
+        'avg_cosine': avg_cosine,
+        'avg_intersection': avg_intersection,
         'true_emotions': all_true_emotions,
         'pred_emotions': all_pred_emotions,
         'true_probs': all_true_probs,
-        'pred_probs': all_pred_probs
+        'pred_probs': all_pred_probs,
+        'all_chebyshev': chebyshev_scores,
+        'all_clark': clark_scores,
+        'all_canberra': canberra_scores,
+        'all_cosine': cosine_scores,
+        'all_intersection': intersection_scores
     }
 
 def main():
@@ -347,6 +495,7 @@ def main():
     generate_plots = st.sidebar.checkbox("📊 Generate plots", value=True)
     show_details = st.sidebar.checkbox("🔍 Show file details", value=False)
     show_per_emotion = st.sidebar.checkbox("🎭 Show per-emotion metrics", value=True)
+    show_distribution_metrics = st.sidebar.checkbox("📏 Show distribution metrics", value=True)
     
     # Emotion columns
     emotion_columns = ['happy', 'contempt', 'surprised', 'angry', 'disgusted', 'fearful', 'sad', 'neutral']
@@ -458,6 +607,33 @@ def main():
                     with col5:
                         st.metric("F1-Score Weighted", f"{dist_results['f1_weighted']:.4f}")
                 
+                # Distribution Metrics Section
+                if show_distribution_metrics:
+                    st.markdown("---")
+                    st.subheader("📏 Distribution Metrics")
+                    
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    
+                    with col1:
+                        st.metric("Chebyshev Distance", f"{dist_results['avg_chebyshev']:.4f}",
+                                help="Maximum absolute difference between distributions")
+                    
+                    with col2:
+                        st.metric("Clark Distance", f"{dist_results['avg_clark']:.4f}",
+                                help="Square root of sum of squared relative differences")
+                    
+                    with col3:
+                        st.metric("Canberra Distance", f"{dist_results['avg_canberra']:.4f}",
+                                help="Sum of absolute differences divided by sum of absolute values")
+                    
+                    with col4:
+                        st.metric("Cosine Similarity", f"{dist_results['avg_cosine']:.4f}",
+                                help="Cosine of angle between distribution vectors")
+                    
+                    with col5:
+                        st.metric("Intersection Similarity", f"{dist_results['avg_intersection']:.4f}",
+                                help="Sum of minimum values between distributions")
+                
                 # Per-emotion metrics
                 if show_per_emotion and av_results['per_emotion_accuracy']:
                     st.markdown("---")
@@ -519,6 +695,46 @@ def main():
                     ax.set_title(f'Arousal (CCC = {arousal_ccc:.3f})')
                     ax.grid(True, alpha=0.3)
                     st.pyplot(fig)
+                    
+                    # Distribution metrics comparison
+                    st.markdown("#### Distribution Metrics Comparison")
+                    
+                    # Create a dataframe for distribution metrics
+                    dist_metrics_data = {
+                        'Metric': ['Chebyshev', 'Clark', 'Canberra', 'KL Divergence', 'EMD', 'Cosine', 'Intersection'],
+                        'Value': [
+                            dist_results['avg_chebyshev'],
+                            dist_results['avg_clark'],
+                            dist_results['avg_canberra'],
+                            dist_results['avg_kl'],
+                            dist_results['avg_emd'],
+                            dist_results['avg_cosine'],
+                            dist_results['avg_intersection']
+                        ],
+                        'Type': ['Distance', 'Distance', 'Distance', 'Distance', 'Distance', 'Similarity', 'Similarity']
+                    }
+                    
+                    dist_metrics_df = pd.DataFrame(dist_metrics_data)
+                    
+                    # Plot distribution metrics
+                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+                    
+                    # Distances
+                    distances_df = dist_metrics_df[dist_metrics_df['Type'] == 'Distance']
+                    ax1.bar(distances_df['Metric'], distances_df['Value'], color='lightcoral', alpha=0.7)
+                    ax1.set_title('Distance Metrics (Lower is Better)')
+                    ax1.set_ylabel('Value')
+                    ax1.tick_params(axis='x', rotation=45)
+                    
+                    # Similarities
+                    similarities_df = dist_metrics_df[dist_metrics_df['Type'] == 'Similarity']
+                    ax2.bar(similarities_df['Metric'], similarities_df['Value'], color='lightgreen', alpha=0.7)
+                    ax2.set_title('Similarity Metrics (Higher is Better)')
+                    ax2.set_ylabel('Value')
+                    ax2.tick_params(axis='x', rotation=45)
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
                 
                 # File details
                 if show_details:
@@ -534,7 +750,12 @@ def main():
                             'Valence_Pred': valence_pred[i],
                             'Arousal_True': arousal_true[i],
                             'Arousal_Pred': arousal_pred[i],
-                            'Emotion_Correct': av_results['emotion_accuracy'][i]
+                            'Emotion_Correct': av_results['emotion_accuracy'][i],
+                            'Chebyshev_Distance': dist_results['all_chebyshev'][i] if i < len(dist_results['all_chebyshev']) else 0,
+                            'Clark_Distance': dist_results['all_clark'][i] if i < len(dist_results['all_clark']) else 0,
+                            'Canberra_Distance': dist_results['all_canberra'][i] if i < len(dist_results['all_canberra']) else 0,
+                            'Cosine_Similarity': dist_results['all_cosine'][i] if i < len(dist_results['all_cosine']) else 0,
+                            'Intersection_Similarity': dist_results['all_intersection'][i] if i < len(dist_results['all_intersection']) else 0
                         })
                     
                     detailed_df = pd.DataFrame(detailed_results)
@@ -580,6 +801,8 @@ def main():
         - **Arousal and Valence Metrics** (CCC, Pearson, Spearman)
         - **Classification Metrics** (Accuracy, F1-Score, Confusion Matrix)
         - **Distribution Metrics** (Earth Mover's Distance, KL Divergence)
+        - **New Distance Metrics** (Chebyshev, Clark, Canberra)
+        - **New Similarity Metrics** (Cosine, Intersection)
         - **Interactive Visualizations**
         
         ### 📁 How to use:
