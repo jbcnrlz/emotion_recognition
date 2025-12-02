@@ -481,10 +481,12 @@ class ResNet50WithAttentionLikelihoodNoVA(nn.Module):
         # Para cada classe: média (output_dim) + covariância (output_dim * (output_dim + 1) / 2)
         self.likelihood_head = nn.Sequential(
             nn.Linear(out_features, 256),
-            nn.ReLU(),
+            nn.BatchNorm1d(256),
+            nn.Sigmoid(),
             nn.Dropout(),
             nn.Linear(256, 128),
-            nn.ReLU(),
+            nn.BatchNorm1d(128),
+            nn.Sigmoid(),
             nn.Linear(128, num_classes)
         )
     
