@@ -10,6 +10,7 @@ from torch import nn, optim
 import torch.distributions as dist, random
 from torch.nn import functional as F
 from loss.FocalLoss import FocalLoss
+from loss.FocalConsistencyLoss import FocalConsistencyLoss
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
     """
@@ -131,9 +132,9 @@ def train():
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='UNIVERSAL_VAD')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
+    optimizer = optim.AdamW(model.parameters(), lr=args.learningRate, weight_decay=1e-2)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)        
+    scheduler = optim.lr_scheduler.StepLR(optimizer, args.epochs // 5, gamma=0.1)        
     criterion = None
     if args.mainLossFunc == "BCE":
         print("Using BCE loss")
@@ -144,6 +145,9 @@ def train():
     elif args.mainLossFunc == "FOCAL":
         print("Using Focal loss")        
         criterion = FocalLoss(alpha=0.25, gamma=2.0).to(device)
+    elif args.mainLossFunc == "FOCALCONSISTENCY":
+        print("Using Focal Consistency loss")        
+        criterion = FocalConsistencyLoss(alpha=0.25, gamma=2.0, conflict_weight=0.5).to(device)
     secLoss = None
     lossFuncName = re.sub(r'[^a-zA-Z0-9\s]', '', str(criterion))
     if args.secondaryLossFunction != "ELBO":
