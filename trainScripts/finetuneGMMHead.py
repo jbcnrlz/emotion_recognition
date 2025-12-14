@@ -131,9 +131,9 @@ def train():
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='UNIVERSAL_VAD')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    optimizer = optim.Adam(model.parameters(), lr=args.learningRate)
+    optimizer = optim.AdamW(model.parameters(), lr=args.learningRate)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 20, gamma=0.1)        
+    scheduler = optim.lr_scheduler.StepLR(optimizer, 5, gamma=0.1)        
     criterion = None
     if args.mainLossFunc == "BCE":
         print("Using BCE loss")
@@ -144,6 +144,9 @@ def train():
     elif args.mainLossFunc == "FOCAL":
         print("Using Focal loss")        
         criterion = FocalLoss(alpha=0.25, gamma=2.0).to(device)
+    elif args.mainLossFunc == "CE":
+        print("Using Cross Entropy loss")        
+        criterion = nn.CrossEntropyLoss().to(device)
     secLoss = None
     lossFuncName = re.sub(r'[^a-zA-Z0-9\s]', '', str(criterion))
     if args.secondaryLossFunction != "ELBO":
