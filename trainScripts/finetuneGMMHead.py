@@ -148,6 +148,9 @@ def train():
     elif args.mainLossFunc == "FOCALCONSISTENCY":
         print("Using Focal Consistency loss")        
         criterion = FocalConsistencyLoss(alpha=0.25, gamma=2.0, conflict_weight=0.5).to(device)
+    elif args.mainLossFunc == "CE":
+        print("Using Cross Entropy loss")        
+        criterion = nn.CrossEntropyLoss().to(device)
     secLoss = None
     lossFuncName = re.sub(r'[^a-zA-Z0-9\s]', '', str(criterion))
     if args.secondaryLossFunction != "ELBO":
