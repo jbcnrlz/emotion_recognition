@@ -113,6 +113,34 @@ def create_covariance_matrix(valence_std, arousal_std, dominance_std=None):
         variances = [valence_std**2, arousal_std**2]
         return np.diag(variances)
 
+def create_russell_circumplex_background():
+    """Creates Russell's Circumplex Model as background for 2D plot"""
+    # Define quadrants and emotions in Russell's Circumplex
+    quadrants = {
+        'High Arousal, Positive Valence': {'x_range': [0, 1], 'y_range': [0, 1], 'color': 'rgba(255, 200, 200, 0.1)'},
+        'High Arousal, Negative Valence': {'x_range': [-1, 0], 'y_range': [0, 1], 'color': 'rgba(200, 200, 255, 0.1)'},
+        'Low Arousal, Negative Valence': {'x_range': [-1, 0], 'y_range': [-1, 0], 'color': 'rgba(200, 255, 200, 0.1)'},
+        'Low Arousal, Positive Valence': {'x_range': [0, 1], 'y_range': [-1, 0], 'color': 'rgba(255, 255, 200, 0.1)'}
+    }
+    
+    # Russell's circumplex model - typical emotional positions
+    russell_emotions = {
+        'Excited': {'valence': 0.8, 'arousal': 0.8},
+        'Happy': {'valence': 0.7, 'arousal': 0.4},
+        'Content': {'valence': 0.6, 'arousal': 0.1},
+        'Relaxed': {'valence': 0.4, 'arousal': -0.3},
+        'Calm': {'valence': 0.2, 'arousal': -0.6},
+        'Bored': {'valence': -0.2, 'arousal': -0.7},
+        'Sad': {'valence': -0.6, 'arousal': -0.4},
+        'Depressed': {'valence': -0.8, 'arousal': -0.2},
+        'Distressed': {'valence': -0.7, 'arousal': 0.3},
+        'Angry': {'valence': -0.6, 'arousal': 0.7},
+        'Afraid': {'valence': -0.4, 'arousal': 0.8},
+        'Aroused': {'valence': 0.1, 'arousal': 0.9}
+    }
+    
+    return quadrants, russell_emotions
+
 # Main interface
 st.sidebar.header("📁 File Upload")
 file1 = st.sidebar.file_uploader("First CSV file", type=['csv'])
@@ -128,6 +156,9 @@ threshold = st.sidebar.slider(
     min_value=0.0, max_value=1.0, value=0.7, step=0.05,
     help="Similarity above this value is considered high"
 )
+
+# Add option to show emotion labels
+show_emotion_labels = st.sidebar.checkbox("Show emotion labels on plot", value=True)
 
 if file1 and file2:
     try:
@@ -363,53 +394,233 @@ if file1 and file2:
         with tab3:
             st.header("Graphical Visualizations")
             
-            # Mean comparison chart
-            fig = make_subplots(
-                rows=2, cols=2,
-                subplot_titles=('Valence', 'Arousal', 'Dominance', '2D Comparison'),
-                specs=[[{'type': 'box'}, {'type': 'box'}],
-                       [{'type': 'box'}, {'type': 'scatter'}]]
+            # Create Russell Circumplex background
+            quadrants, russell_emotions = create_russell_circumplex_background()
+            
+            # Create the 2D plot with Russell Circumplex
+            fig_circumplex = go.Figure()
+            
+            # Add quadrant backgrounds
+            for quadrant_name, quadrant_data in quadrants.items():
+                fig_circumplex.add_shape(
+                    type="rect",
+                    x0=quadrant_data['x_range'][0],
+                    y0=quadrant_data['y_range'][0],
+                    x1=quadrant_data['x_range'][1],
+                    y1=quadrant_data['y_range'][1],
+                    fillcolor=quadrant_data['color'],
+                    line=dict(width=0),
+                    layer="below"
+                )
+            
+            # Add axis lines
+            fig_circumplex.add_shape(
+                type="line",
+                x0=-1, y0=0, x1=1, y1=0,
+                line=dict(color="gray", width=1, dash="dash")
+            )
+            fig_circumplex.add_shape(
+                type="line",
+                x0=0, y0=-1, x1=0, y1=1,
+                line=dict(color="gray", width=1, dash="dash")
             )
             
-            # Box plots for each dimension
-            for idx, dim in enumerate(['valence mean', 'arousal mean', 'dominance mean']):
-                row = (idx // 2) + 1
-                col = (idx % 2) + 1
+            # Add Russell's emotion labels
+            for emotion, coords in russell_emotions.items():
+                fig_circumplex.add_annotation(
+                    x=coords['valence'],
+                    y=coords['arousal'],
+                    text=emotion,
+                    showarrow=False,
+                    font=dict(size=9, color="rgba(100, 100, 100, 0.7)"),
+                    xshift=10,
+                    yshift=10
+                )
+            
+            # Prepare data for plotting
+            # Add data points from both files with different markers and labels
+            if show_emotion_labels:
+                # With labels
+                fig_circumplex.add_trace(go.Scatter(
+                    x=df1['valence mean'],
+                    y=df1['arousal mean'],
+                    mode='markers+text',
+                    name='File 1',
+                    text=df1['class'],
+                    textposition="top center",
+                    marker=dict(size=12, color='blue', symbol='circle'),
+                    showlegend=True
+                ))
                 
+                fig_circumplex.add_trace(go.Scatter(
+                    x=df2['valence mean'],
+                    y=df2['arousal mean'],
+                    mode='markers+text',
+                    name='File 2',
+                    text=df2['class'],
+                    textposition="bottom center",
+                    marker=dict(size=10, color='red', symbol='x'),
+                    showlegend=True
+                ))
+            else:
+                # Without labels
+                fig_circumplex.add_trace(go.Scatter(
+                    x=df1['valence mean'],
+                    y=df1['arousal mean'],
+                    mode='markers',
+                    name='File 1',
+                    text=df1['class'],
+                    marker=dict(size=12, color='blue', symbol='circle'),
+                    showlegend=True
+                ))
+                
+                fig_circumplex.add_trace(go.Scatter(
+                    x=df2['valence mean'],
+                    y=df2['arousal mean'],
+                    mode='markers',
+                    name='File 2',
+                    text=df2['class'],
+                    marker=dict(size=10, color='red', symbol='x'),
+                    showlegend=True
+                ))
+            
+            # Add error bars for File 1
+            for idx, row in df1.iterrows():
+                fig_circumplex.add_shape(
+                    type="circle",
+                    x0=row['valence mean'] - row['valence std'],
+                    y0=row['arousal mean'] - row['arousal std'],
+                    x1=row['valence mean'] + row['valence std'],
+                    y1=row['arousal mean'] + row['arousal std'],
+                    line=dict(color="blue", width=1, dash="dot"),
+                    fillcolor="rgba(0, 0, 255, 0.1)",
+                    opacity=0.3
+                )
+            
+            # Add error bars for File 2
+            for idx, row in df2.iterrows():
+                fig_circumplex.add_shape(
+                    type="circle",
+                    x0=row['valence mean'] - row['valence std'],
+                    y0=row['arousal mean'] - row['arousal std'],
+                    x1=row['valence mean'] + row['valence std'],
+                    y1=row['arousal mean'] + row['arousal std'],
+                    line=dict(color="red", width=1, dash="dot"),
+                    fillcolor="rgba(255, 0, 0, 0.1)",
+                    opacity=0.3
+                )
+            
+            # Add connecting lines between corresponding emotions
+            for idx, (row1, row2) in enumerate(zip(df1.iterrows(), df2.iterrows())):
+                _, r1 = row1
+                _, r2 = row2
+                
+                if r1['class'] == r2['class']:
+                    fig_circumplex.add_trace(go.Scatter(
+                        x=[r1['valence mean'], r2['valence mean']],
+                        y=[r1['arousal mean'], r2['arousal mean']],
+                        mode='lines',
+                        line=dict(color='gray', width=1, dash='dash'),
+                        showlegend=(idx == 0),
+                        name='Distance between files',
+                        opacity=0.5
+                    ))
+            
+            # Update layout
+            fig_circumplex.update_layout(
+                title="2D Emotional Distribution on Russell's Circumplex Model",
+                xaxis_title="Valence (Negative ↔ Positive)",
+                yaxis_title="Arousal (Calm ↔ Excited)",
+                xaxis=dict(range=[-1.1, 1.1]),
+                yaxis=dict(range=[-1.1, 1.1]),
+                height=600,
+                showlegend=True,
+                plot_bgcolor='white',
+                hovermode='closest'
+            )
+            
+            # Add hover information
+            fig_circumplex.update_traces(
+                hovertemplate="<b>%{text}</b><br>Valence: %{x:.3f}<br>Arousal: %{y:.3f}<extra></extra>"
+            )
+            
+            # Add quadrant labels
+            fig_circumplex.add_annotation(
+                x=0.75, y=0.75,
+                text="High Arousal<br>Positive Valence",
+                showarrow=False,
+                font=dict(size=10, color="darkred"),
+                bgcolor="rgba(255, 255, 255, 0.7)"
+            )
+            fig_circumplex.add_annotation(
+                x=-0.75, y=0.75,
+                text="High Arousal<br>Negative Valence",
+                showarrow=False,
+                font=dict(size=10, color="darkblue"),
+                bgcolor="rgba(255, 255, 255, 0.7)"
+            )
+            fig_circumplex.add_annotation(
+                x=-0.75, y=-0.75,
+                text="Low Arousal<br>Negative Valence",
+                showarrow=False,
+                font=dict(size=10, color="darkgreen"),
+                bgcolor="rgba(255, 255, 255, 0.7)"
+            )
+            fig_circumplex.add_annotation(
+                x=0.75, y=-0.75,
+                text="Low Arousal<br>Positive Valence",
+                showarrow=False,
+                font=dict(size=10, color="darkorange"),
+                bgcolor="rgba(255, 255, 255, 0.7)"
+            )
+            
+            st.plotly_chart(fig_circumplex, use_container_width=True)
+            
+            # Add explanation about the plot
+            with st.expander("About this visualization"):
+                st.markdown("""
+                **Russell's Circumplex Model of Emotions:**
+                - **Valence (X-axis):** Negative (left) to Positive (right) emotional experience
+                - **Arousal (Y-axis):** Calm/Low energy (bottom) to Excited/High energy (top)
+                
+                **What you're seeing:**
+                - **Blue circles (File 1):** First file's emotional distributions
+                - **Red X marks (File 2):** Second file's emotional distributions  
+                - **Gray dashed lines:** Connect corresponding emotions between files
+                - **Faded circles:** Represent ±1 standard deviation (uncertainty)
+                - **Quadrant colors:** Different emotional categories in Russell's model
+                
+                **Interpretation:**
+                - Emotions close together = similar distributions
+                - Long connecting lines = significant differences
+                - Large circles = high uncertainty/variability
+                """)
+            
+            # Original box plots
+            st.subheader("Dimensional Comparison")
+            
+            fig = make_subplots(
+                rows=1, cols=3,
+                subplot_titles=('Valence', 'Arousal', 'Dominance'),
+                specs=[[{'type': 'box'}, {'type': 'box'}, {'type': 'box'}]]
+            )
+            
+            for idx, dim in enumerate(['valence mean', 'arousal mean', 'dominance mean']):
                 fig.add_trace(go.Box(
                     y=df1[dim],
                     name='File 1',
                     marker_color='blue',
                     showlegend=(idx == 0)
-                ), row=row, col=col)
+                ), row=1, col=idx+1)
                 
                 fig.add_trace(go.Box(
                     y=df2[dim],
                     name='File 2',
                     marker_color='red',
                     showlegend=(idx == 0)
-                ), row=row, col=col)
+                ), row=1, col=idx+1)
             
-            # 2D scatter plot
-            fig.add_trace(go.Scatter(
-                x=df1['valence mean'],
-                y=df1['arousal mean'],
-                mode='markers+text',
-                name='File 1',
-                text=df1['class'],
-                marker=dict(size=12, color='blue')
-            ), row=2, col=2)
-            
-            fig.add_trace(go.Scatter(
-                x=df2['valence mean'],
-                y=df2['arousal mean'],
-                mode='markers',
-                name='File 2',
-                text=df2['class'],
-                marker=dict(size=8, color='red', symbol='x')
-            ), row=2, col=2)
-            
-            fig.update_layout(height=800, showlegend=True)
+            fig.update_layout(height=400, showlegend=True)
             st.plotly_chart(fig, use_container_width=True)
             
             # Correlation heatmap
@@ -475,7 +686,7 @@ if file1 and file2:
             df_all_metrics = pd.DataFrame(all_metrics)
             st.dataframe(df_all_metrics, use_container_width=True)
             
-            # Download option
+            # Option to download
             csv = df_all_metrics.to_csv(index=False)
             st.download_button(
                 label="📥 Download complete metrics as CSV",
