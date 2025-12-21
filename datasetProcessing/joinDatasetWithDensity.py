@@ -6,7 +6,7 @@ from helper.function import getFilesInPath, printProgressBar, getDirectoriesInPa
 import matplotlib.pyplot as plt
 
 def fillDictFromDataset(pathBaseForFaces):
-    imagePath = os.path.join(os.path.sep.join(pathBaseForFaces.split(os.path.sep)[:-3]),'cropped_aligned')
+    imagePath = os.path.join(os.path.sep.join(pathBaseForFaces.split(os.path.sep)[:-4]),'cropped_aligned')
     returnDict = {}
     dirFaces = getFilesInPath(pathBaseForFaces)
     for cf, d in enumerate(dirFaces):
@@ -36,7 +36,7 @@ def loadAffWildDataset(pathAnnotations,filesIdx):
                         imageVA.append(line)
                         vaValues.append(line)
                 except Exception as e:
-                    print(e)
+                    continue
 
                 if (len(vaValues) != len(idxs)):
                     print("Isso não devia acontecer")
@@ -100,7 +100,7 @@ def main():
 
     annFiles = getFilesInPath(os.path.join(args.pathBase,'images'))
     indexesImages = fillDictFromDataset(args.pathWild)
-    imageFiles = args.pathWild.split(os.path.sep)[:-3]
+    imageFiles = args.pathWild.split(os.path.sep)[:-4]
     imageFiles.append('cropped_aligned')
     imageFiles = os.path.sep.join(imageFiles)
     annotationsValues = np.zeros((len(annFiles),2))
@@ -125,12 +125,35 @@ def main():
         cQ = determinar_quadrante(v[0],v[1])
         if (densidades[cQ] < maxDensidade):
             folderFile = idxs[idx][-1][:-4]
-            shutil.copyfile(os.path.join(imageFiles,folderFile,"{:05d}.jpg".format(idxs[idx][0])), os.path.join(args.pathFusedDataset,'images',f"{idxs[idx][0]}_affwild.jpg"))
-            np.save(os.path.join(args.pathFusedDataset,'annotations',f"{idxs[idx][0]}_affwild_val.npy"),v[0])
-            np.save(os.path.join(args.pathFusedDataset,'annotations',f"{idxs[idx][0]}_affwild_aro.npy"),v[1])
-            annotationsValues = np.vstack((annotationsValues, v))
-            densidades[cQ] = calcular_densidade_pontos(quadsLims[cQ][0], quadsLims[cQ][1], annotationsValues, mostrar_grafico=False)
+            emotionAnnotation = getEmotionAnnotation(args.pathWild,idxs[idx][1],idxs[idx][0])
+            if emotionAnnotation is not None:
+                shutil.copyfile(os.path.join(imageFiles,folderFile,"{:05d}.jpg".format(idxs[idx][0])), os.path.join(args.pathFusedDataset,'images',f"{folderFile}_{idxs[idx][0]}_affwild.jpg"))
+                np.save(os.path.join(args.pathFusedDataset,'annotations',f"{folderFile}_{idxs[idx][0]}_affwild_val.npy"),v[0])
+                np.save(os.path.join(args.pathFusedDataset,'annotations',f"{folderFile}_{idxs[idx][0]}_affwild_aro.npy"),v[1])
+                np.save(os.path.join(args.pathFusedDataset,'annotations',f"{folderFile}_{idxs[idx][0]}_affwild_exp.npy"),emotionAnnotation)
+                annotationsValues = np.vstack((annotationsValues, v))
+                densidades[cQ] = calcular_densidade_pontos(quadsLims[cQ][0], quadsLims[cQ][1], annotationsValues, mostrar_grafico=False)
     print('vaValues',vaValues)
+
+def getEmotionAnnotation(pathAffWild,annotationFileName,frameIdx):
+    emotions = {'Neutral' : 0,'Anger' : 6,'Disgust' : 5,'Fear' : 4,'Happiness' : 1,'Sadness' : 2,'Surprise' : 3}
+    pathEmotion = pathAffWild.replace('VA_Set','EXPR_Set')
+    annotationFile = os.path.join(pathEmotion,annotationFileName)
+    try:
+        with open(annotationFile, 'r') as fct:
+            emotionHeader = None
+            for iLine, line in enumerate(fct):
+                if iLine == 0:
+                    emotionHeader = line.split(',')
+                    continue
+                if iLine == frameIdx:
+                    emotion = int(line.strip())
+                    if emotion == -1:
+                        return None
+                    return emotions[emotionHeader[emotion]]
+    except Exception as e:
+        return None
+    return None
 
 if __name__ == '__main__':
     main()

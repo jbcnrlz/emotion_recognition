@@ -28,6 +28,8 @@ class FocalConsistencyLoss(nn.Module):
             (0, 3), # Happy vs Angry
             (0, 4), # Happy vs Disgusted
             (0, 5), # Happy vs Fearful
+            (2, 4), # Surprised vs Disgusted
+            (2, 5), # Surprised vs Fearful
             # Opcional: Neutral (7) vs Todas as outras fortes.
             # Se a rede diz que é muito Neutral, não deve ser muito Angry.
             (7, 3), (7, 0), (7, 6) 
