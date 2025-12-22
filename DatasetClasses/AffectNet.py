@@ -23,7 +23,7 @@ class AffectNet(data.Dataset):
         for idx, f in enumerate(faces):
             printProgressBar(idx,len(faces),length=50,prefix='Loading Faces...')
             imageNumber = f.split(os.path.sep)[-1][:-4]
-            if typeExperiment == "VA":
+            if "VA" in typeExperiment and 'VAD' not in typeExperiment and 'PROBS_' not in typeExperiment and 'UNIVERSAL_' not in typeExperiment:
                 try:
                     valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
                     aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber))))
@@ -31,6 +31,12 @@ class AffectNet(data.Dataset):
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
                 self.label.append([valValue,aroValue])
+                if '_EXP' in typeExperiment:
+                    try:
+                        lbl = np.load(os.path.join(afectdata,'annotations' ,f'{imageNumber}_exp.npy'))
+                        self.label[-1].append(int(lbl))
+                    except:
+                        self.label[-1].append(255)
             elif "VAD" in typeExperiment and 'PROBS_' not in typeExperiment and 'UNIVERSAL_' not in typeExperiment:
                 try:
                     valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
@@ -219,6 +225,13 @@ class AffectNet(data.Dataset):
             label = torch.from_numpy(
                 np.array( 
                     [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32),self.label[idx][2].astype(np.float32)] )).to(torch.float32)
+            if '_EXP' in self.typeExperiment:
+                label_part2 = torch.from_numpy(np.array(self.label[idx][-1]).astype(np.uint8)).to(torch.long)
+                label = torch.cat([label, label_part2.unsqueeze(0)])                
+        elif "VA" in self.typeExperiment:
+            label = torch.from_numpy(
+                np.array( 
+                    [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
             if '_EXP' in self.typeExperiment:
                 label_part2 = torch.from_numpy(np.array(self.label[idx][-1]).astype(np.uint8)).to(torch.long)
                 label = torch.cat([label, label_part2.unsqueeze(0)])

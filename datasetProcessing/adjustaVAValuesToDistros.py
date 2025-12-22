@@ -110,7 +110,7 @@ if __name__ == "__main__":
     print("Loading training set")
     dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),
                        transform=data_transforms,
-                       typeExperiment='PROBS_VA_EXP')
+                       typeExperiment='VA_EXP')
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=20, shuffle=False)
     
     # Carregar distribuições emocionais
@@ -124,8 +124,8 @@ if __name__ == "__main__":
     total_batches = len(train_loader)
     
     for batch_idx, (images, values, pathFiles) in enumerate(train_loader):
-        va_values = values[1]
-        class_indices = values[2]
+        va_values = values[:,:-1]
+        class_indices = values[:,-1].type(torch.uint8)
         printProgressBar(batch_idx + 1, total_batches, prefix='Progress:', suffix='Complete', length=50)
         
         batch_size = va_values.shape[0]
