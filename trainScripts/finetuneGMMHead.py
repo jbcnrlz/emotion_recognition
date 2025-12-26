@@ -1,4 +1,5 @@
 import argparse, torch, os, sys, numpy as np, math, random, re
+import matplotlib.pyplot as plt
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -10,7 +11,7 @@ from torch import nn, optim
 import torch.distributions as dist, random
 from torch.nn import functional as F
 from loss.FocalLoss import FocalLoss
-from loss.FocalConsistencyLoss import FocalConsistencyLoss
+from loss.FocalConsistencyLoss import FocalConsistencyLoss, RegularizedLearnedConsistencyLoss
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
     """
@@ -86,6 +87,17 @@ def train():
     parser.add_argument('--mainLossFunc', help='File with neighbours', required=False,default="BCE")
     parser.add_argument('--lambdaLASSO', help='File with neighbours', required=False,default=0,type=float)
     parser.add_argument('--useDominance', help='File with neighbours', required=False,default=False,type=bool)
+    
+    # Adicione estes novos parâmetros para a loss regularizada
+    parser.add_argument('--conflictSparsity', help='Sparsity weight for conflict matrix regularization', 
+                       required=False, default=0.01, type=float)
+    parser.add_argument('--conflictInitPairs', help='Initial conflict pairs as string: "0,6:0,3:2,4"', 
+                       required=False, default="0,6:0,3:0,4:0,5:2,4:2,5")
+    parser.add_argument('--visualizeConflict', help='Visualize conflict matrix during training', 
+                       required=False, default=False, type=bool)
+    parser.add_argument('--conflictThreshold', help='Threshold for significant conflict pairs', 
+                       required=False, default=0.1, type=float)
+    
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -99,6 +111,16 @@ def train():
     outVA = 2
     if args.useDominance:
         outVA = 3
+    
+    # Parse initial conflict pairs
+    init_conflict_pairs = []
+    if args.conflictInitPairs:
+        pairs_str = args.conflictInitPairs.split(':')
+        for pair_str in pairs_str:
+            if pair_str:
+                i, j = map(int, pair_str.split(','))
+                init_conflict_pairs.append((i, j))
+    
     if args.model == "gmm":
         model = ResnetWithBayesianGMMHead(classes=args.numberOfClasses,resnetModel=args.resnetSize,pretrained=args.pretrainedResnet)
     elif args.model == "attgmm":
@@ -135,6 +157,7 @@ def train():
     optimizer = optim.AdamW(model.parameters(), lr=args.learningRate, weight_decay=1e-2)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, args.epochs // 5, gamma=0.1)        
+    
     criterion = None
     if args.mainLossFunc == "BCE":
         print("Using BCE loss")
@@ -151,13 +174,27 @@ def train():
     elif args.mainLossFunc == "CE":
         print("Using Cross Entropy loss")        
         criterion = nn.CrossEntropyLoss().to(device)
+    elif args.mainLossFunc == "REGLEARNFOCALCONSISTENCY":
+        print("Using Regularized Learned Focal Consistency loss")
+        print(f"Initial conflict pairs: {init_conflict_pairs}")
+        print(f"Sparsity weight: {args.conflictSparsity}")
+        criterion = RegularizedLearnedConsistencyLoss(
+            num_classes=args.numberOfClasses,
+            gamma=2.0,
+            alpha=0.25,
+            sparsity_weight=args.conflictSparsity,
+            reduction='mean'
+        ).to(device)
+    
     secLoss = None
     lossFuncName = re.sub(r'[^a-zA-Z0-9\s]', '', str(criterion))
+    
     if args.secondaryLossFunction != "ELBO":
         print("Using secondary loss function: " + args.secondaryLossFunction)
         secLoss= nn.L1Loss().to(device)
     else:
         print("Using ELBO loss")
+    
     start_epoch = 0
     if args.resumeWeights is not None:
         print("Loading weights")
@@ -171,8 +208,7 @@ def train():
     print("Started traning")
     print('Training Phase =================================================================== BTL  BVL BAC')
     bestForFold = bestForFoldTLoss = 500000
-    bestRankForFold = -1
-    alpha = 0.1
+    
     for ep in range(start_epoch,args.epochs):
         ibl = ibr = ibtl = ' '
         model.train()
@@ -181,10 +217,12 @@ def train():
         ceLoss = []
         totalImages = 0
         iteration = 0
+        
         for currBatch, currTargetBatch, _ in train_loader:
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
+            
             if isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
                 classification = model(currBatch)
                 loss = criterion(classification, currTargetBatch)
@@ -219,6 +257,7 @@ def train():
             ceLoss = sum(ceLoss) / len(ceLoss)
             writer.add_scalar(f'RESNETAtt/{lossFuncName}/train',ceLoss, ep)
             writer.add_scalar('RESNETAtt/ELBOLoss/train',elboLoss,ep)
+        
         scheduler.step()
         model.eval()
         elboLoss = []
@@ -226,6 +265,7 @@ def train():
         loss_val = []
         iteration = 0
         imageAttention = None
+        
         with torch.no_grad():
             for currBatch, currTargetBatch, _ in val_loader:
                 printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),length=50,prefix='Procesing face - testing')
@@ -262,11 +302,36 @@ def train():
             ceLoss = sum(ceLoss) / len(ceLoss)
             writer.add_scalar(f'RESNETAtt/{lossFuncName}/val',ceLoss, ep)
             writer.add_scalar('RESNETAtt/ELBOLoss/val',elboLoss,ep)
+        
         if imageAttention is not None:
             attentionMaps = model.attention_maps
             _, attMapsOv = overlay_attention_maps(imageAttention, attentionMaps)
             for idx, at in enumerate(attMapsOv):
                 writer.add_image(f'RESNETAtt/AttentionMaps_{idx}', at, ep, dataformats='HWC')
+        
+        # Visualizar matriz de conflito se habilitado e usando a loss regularizada
+        if args.visualizeConflict and hasattr(criterion, 'visualize_conflict_matrix'):
+            try:
+                fig = criterion.visualize_conflict_matrix()
+                writer.add_figure('RESNETAtt/ConflictMatrix', fig, ep)
+                plt.close(fig)
+            except Exception as e:
+                print(f"Warning: Could not visualize conflict matrix: {e}")
+        
+        # Registrar pares de conflito significativos
+        if hasattr(criterion, 'get_conflict_pairs'):
+            conflict_pairs = criterion.get_conflict_pairs(threshold=args.conflictThreshold)
+            if conflict_pairs:
+                # Registrar como texto no TensorBoard
+                pairs_text = "Significant conflict pairs:\n"
+                for i, j, weight in conflict_pairs[:10]:  # Limitar a 10 pares
+                    pairs_text += f"({i},{j}): {weight:.3f}\n"
+                writer.add_text('RESNETAtt/ConflictPairs', pairs_text, ep)
+                
+                # Registrar histograma dos pesos
+                weights = [w for _, _, w in conflict_pairs]
+                writer.add_histogram('RESNETAtt/ConflictWeights', torch.tensor(weights), ep)
+        
         state_dict = model.state_dict()
         opt_dict = optimizer.state_dict()
 

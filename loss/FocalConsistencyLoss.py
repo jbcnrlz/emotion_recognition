@@ -72,3 +72,91 @@ class FocalConsistencyLoss(nn.Module):
         total_loss = focal_loss + (self.conflict_weight * consistency_loss)
         
         return total_loss
+    
+class RegularizedLearnedConsistencyLoss(nn.Module):
+    def __init__(self, num_classes=8, gamma=2.0, alpha=0.25, 
+                 sparsity_weight=0.01, reduction='mean'):
+        super(RegularizedLearnedConsistencyLoss, self).__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.num_classes = num_classes
+        self.sparsity_weight = sparsity_weight
+        self.reduction = reduction
+        
+        # Matriz de conflito simétrica
+        self.conflict_logits = nn.Parameter(torch.zeros(num_classes, num_classes))
+        
+        # Inicializar com alguns conflitos conhecidos
+        self._initialize_with_prior_knowledge()
+    
+    def _initialize_with_prior_knowledge(self):
+        """Inicializa com conhecimento prévio sobre conflitos emocionais"""
+        conflict_pairs = [(0,6), (0,3), (0,4), (0,5), (2,4), (2,5)]
+        with torch.no_grad():
+            for i, j in conflict_pairs:
+                self.conflict_logits[i, j] = 1.0
+                self.conflict_logits[j, i] = 1.0
+
+    def forward(self, logits, targets):
+        # Focal Loss
+        bce_loss = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+        p_t = torch.exp(-bce_loss)
+        focal_term = (1 - p_t) ** self.gamma
+        alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+        focal_loss = alpha_t * focal_term * bce_loss
+        
+        if self.reduction == 'mean':
+            focal_loss = focal_loss.mean()
+        elif self.reduction == 'sum':
+            focal_loss = focal_loss.sum()
+        
+        # Consistency Loss com pesos aprendidos
+        probs = torch.sigmoid(logits)
+        
+        # Obter pesos usando sigmoid (0 a 1)
+        conflict_weights = torch.sigmoid(self.conflict_logits)
+        
+        # Calcular loss de consistência
+        probs_i = probs.unsqueeze(2)  # [batch, classes, 1]
+        probs_j = probs.unsqueeze(1)  # [batch, 1, classes]
+        joint_probs = probs_i * probs_j
+        
+        # Usar apenas metade para evitar dupla contagem
+        mask = torch.triu(torch.ones_like(conflict_weights), diagonal=1)
+        consistency_terms = (joint_probs * conflict_weights.unsqueeze(0) * mask.unsqueeze(0)).sum(dim=(1,2))
+        
+        if self.reduction == 'mean':
+            consistency_loss = consistency_terms.mean()
+        elif self.reduction == 'sum':
+            consistency_loss = consistency_terms.sum()
+        
+        # Regularização para esparsidade
+        sparsity_loss = torch.mean(torch.abs(self.conflict_logits))
+        
+        # Loss total
+        total_loss = focal_loss + consistency_loss + self.sparsity_weight * sparsity_loss
+        
+        return total_loss
+    
+    def visualize_conflict_matrix(self):
+        """Visualiza a matriz de conflito aprendida"""
+        import matplotlib.pyplot as plt
+        
+        with torch.no_grad():
+            weights = torch.sigmoid(self.conflict_logits).cpu().numpy()
+            
+        fig, ax = plt.subplots(figsize=(8, 6))
+        im = ax.imshow(weights, cmap='Reds')
+        
+        # Configurações do gráfico
+        emotion_names = ['happy', 'contempt', 'surprised', 'angry', 
+                        'disgusted', 'fearful', 'sad', 'neutral']
+        ax.set_xticks(range(len(emotion_names)))
+        ax.set_yticks(range(len(emotion_names)))
+        ax.set_xticklabels(emotion_names, rotation=45)
+        ax.set_yticklabels(emotion_names)
+        ax.set_title("Matriz de Conflito Aprendida")
+        
+        plt.colorbar(im)
+        plt.tight_layout()
+        return fig
