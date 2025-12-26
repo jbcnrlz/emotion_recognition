@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
 import os
-from PIL import Image  # Adicione esta importação
+from PIL import Image
 
 # Configuração da página
 st.set_page_config(
@@ -20,6 +20,35 @@ st.set_page_config(
 # Título da aplicação
 st.title("😊 Dashboard de Análise Emocional e VAD")
 st.markdown("---")
+
+# Mapeamento dos valores numéricos para nomes de emoções
+EMOTION_MAPPING = {
+    '0': 'neutral',
+    '1': 'happy',
+    '2': 'sad',
+    '3': 'surprise',
+    '4': 'fear',
+    '5': 'disgust',
+    '6': 'angry',
+    '7': 'contempt',
+    'neutral': 'neutral',
+    'happy': 'happy',
+    'sad': 'sad',
+    'surprise': 'surprise',
+    'fear': 'fear',
+    'disgust': 'disgust',
+    'angry': 'angry',
+    'contempt': 'contempt'
+}
+
+# Função para mapear valores de emoção
+def map_emotion_value(value):
+    """Mapeia valores de emoção (numéricos ou textuais) para nomes padronizados"""
+    if pd.isna(value):
+        return 'unknown'
+    
+    str_value = str(value).strip().lower()
+    return EMOTION_MAPPING.get(str_value, str_value)
 
 # Função para carregar e processar dados
 @st.cache_data
@@ -67,9 +96,12 @@ def validate_and_process_dataframe(df):
     # Preencher NaN com 0 para colunas de emoção
     df[emotion_cols_present] = df[emotion_cols_present].fillna(0)
     
-    # Processar a coluna emotion (rótulo anotado)
+    # Processar a coluna emotion (rótulo anotado) - aplicar mapeamento
     if 'emotion' in df.columns:
-        df['emotion'] = df['emotion'].astype(str)
+        # Criar uma nova coluna com o rótulo mapeado
+        df['emotion_label'] = df['emotion'].apply(map_emotion_value)
+        # Manter a coluna original também
+        df['emotion_original'] = df['emotion'].astype(str)
     
     return True, emotion_cols_present
 
@@ -150,7 +182,7 @@ if df is None:
     **Estrutura esperada do CSV:**
     - Colunas de emoções: `happy`, `contempt`, `elated`, `hopeful`, `surprised`, `proud`, `loved`, `angry`, `astonished`, `disgusted`, `fearful`, `sad`, `fatigued`, `neutral`
     - Colunas VAD: `valence`, `arousal`, `dominance`
-    - Coluna de rótulo: `emotion`
+    - Coluna de rótulo: `emotion` (valores: 0=Neutral, 1=Happy, 2=Sad, 3=Surprise, 4=Fear, 5=Disgust, 6=Angry, 7=Contempt)
     - Coluna de caminho: `path`
     """)
     
@@ -162,7 +194,7 @@ if df is None:
             'valence': [-0.17, 0.25],
             'arousal': [0.05, -0.10],
             'dominance': [-0.14, 0.08],
-            'emotion': ['happy', 'neutral'],  # Nova coluna
+            'emotion': [1, 0],  # Valores numéricos mapeados
             'path': ['/path/to/image1.jpg', '/path/to/image2.jpg']
         }
         st.dataframe(pd.DataFrame(example_data))
@@ -206,9 +238,9 @@ selected_emotion = st.sidebar.selectbox(
     ["Todas"] + unique_emotions
 )
 
-# Filtro por rótulo anotado (coluna emotion)
-if 'emotion' in df.columns:
-    unique_annotated_emotions = sorted(df['emotion'].unique())
+# Filtro por rótulo anotado (coluna emotion_label)
+if 'emotion_label' in df.columns:
+    unique_annotated_emotions = sorted(df['emotion_label'].unique())
     selected_annotated_emotion = st.sidebar.selectbox(
         "Filtrar por rótulo anotado:",
         ["Todos"] + list(unique_annotated_emotions)
@@ -223,7 +255,7 @@ if selected_emotion != "Todas":
     df_filtered = df_filtered[df_filtered['dominant_emotion'] == selected_emotion]
 
 if selected_annotated_emotion != "Todos":
-    df_filtered = df_filtered[df_filtered['emotion'] == selected_annotated_emotion]
+    df_filtered = df_filtered[df_filtered['emotion_label'] == selected_annotated_emotion]
 
 # Filtro por range de valence
 if 'valence' in df.columns:
@@ -245,8 +277,8 @@ st.sidebar.header("📊 Informações do Dataset")
 st.sidebar.write(f"**Total de registros:** {len(df)}")
 st.sidebar.write(f"**Registros filtrados:** {len(df_filtered)}")
 st.sidebar.write(f"**Colunas de emoção:** {len(emotion_columns)}")
-if 'emotion' in df.columns:
-    st.sidebar.write(f"**Rótulos anotados únicos:** {len(df['emotion'].unique())}")
+if 'emotion_label' in df.columns:
+    st.sidebar.write(f"**Rótulos anotados únicos:** {len(df['emotion_label'].unique())}")
 
 # Layout principal baseado no modo selecionado
 if view_mode == "Visão Geral":
@@ -275,8 +307,8 @@ if view_mode == "Visão Geral":
             st.metric("Dominance Médio", f"{avg_dominance:.3f}")
     
     with col5:
-        if 'emotion' in df_filtered.columns:
-            unique_emotions_count = len(df_filtered['emotion'].unique())
+        if 'emotion_label' in df_filtered.columns:
+            unique_emotions_count = len(df_filtered['emotion_label'].unique())
             st.metric("Rótulos Únicos", unique_emotions_count)
     
     # Gráficos de visão geral
@@ -300,9 +332,9 @@ if view_mode == "Visão Geral":
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        if 'emotion' in df_filtered.columns:
+        if 'emotion_label' in df_filtered.columns:
             st.subheader("Distribuição de Rótulos Anotados")
-            emotion_counts = df_filtered['emotion'].value_counts()
+            emotion_counts = df_filtered['emotion_label'].value_counts()
             
             fig = px.pie(
                 values=emotion_counts.values,
@@ -324,7 +356,7 @@ if view_mode == "Visão Geral":
             st.plotly_chart(fig, use_container_width=True)
     
     # Comparação entre emoção dominante e rótulo anotado
-    if 'emotion' in df_filtered.columns:
+    if 'emotion_label' in df_filtered.columns:
         st.subheader("📊 Comparação: Emoção Dominante vs Rótulo Anotado")
         
         comparison_data = []
@@ -332,8 +364,8 @@ if view_mode == "Visão Geral":
             comparison_data.append({
                 'Imagem': f"Img {idx}",
                 'Emoção Dominante': row['dominant_emotion'],
-                'Rótulo Anotado': row['emotion'],
-                'Concordância': row['dominant_emotion'] == row['emotion']
+                'Rótulo Anotado': row['emotion_label'],
+                'Concordância': row['dominant_emotion'] == row['emotion_label']
             })
         
         comparison_df = pd.DataFrame(comparison_data)
@@ -359,7 +391,9 @@ if view_mode == "Visão Geral":
             discordances = comparison_df[~comparison_df['Concordância']]
             if not discordances.empty:
                 st.write(f"**Discordâncias:** {len(discordances)}")
-                st.dataframe(discordances[['Emoção Dominante', 'Rótulo Anotado']].value_counts().head(10))
+                discordance_counts = discordances.groupby(['Emoção Dominante', 'Rótulo Anotado']).size().reset_index(name='Contagem')
+                discordance_counts = discordance_counts.sort_values('Contagem', ascending=False).head(10)
+                st.dataframe(discordance_counts, use_container_width=True)
     
     # Gráficos VAD
     if all(col in df_filtered.columns for col in ['valence', 'arousal', 'dominance']):
@@ -367,14 +401,14 @@ if view_mode == "Visão Geral":
         
         with col1:
             st.subheader("Espaço VAD - Valence vs Arousal")
-            color_by = 'emotion' if 'emotion' in df_filtered.columns else 'dominant_emotion'
+            color_by = 'emotion_label' if 'emotion_label' in df_filtered.columns else 'dominant_emotion'
             fig = px.scatter(
                 df_filtered,
                 x='valence',
                 y='arousal',
                 color=color_by,
                 size_max=10,
-                hover_data=['dominant_emotion', 'emotion'] if 'emotion' in df_filtered.columns else ['dominant_emotion'],
+                hover_data=['dominant_emotion', 'emotion_label'] if 'emotion_label' in df_filtered.columns else ['dominant_emotion'],
                 title=f"Valence vs Arousal (colorido por {color_by})"
             )
             fig.update_layout(height=400)
@@ -382,7 +416,7 @@ if view_mode == "Visão Geral":
         
         with col2:
             st.subheader("Coordenadas Paralelas - Dimensões VAD")
-            color_column = 'emotion' if 'emotion' in df_filtered.columns else 'valence'
+            color_column = 'emotion_label' if 'emotion_label' in df_filtered.columns else 'valence'
             fig = go.Figure(data=
                 go.Parcoords(
                     line=dict(
@@ -422,7 +456,7 @@ elif view_mode == "Análise Individual":
     for i, row in df_filtered.iterrows():
         path_str = str(row['path']) if 'path' in row else f"Imagem {i}"
         filename = Path(path_str).name
-        emotion_info = f"Anotado: {row['emotion']}" if 'emotion' in row else ""
+        emotion_info = f"Anotado: {row['emotion_label']}" if 'emotion_label' in row else ""
         image_options.append(f"{i} - {filename} (Prob: {row['dominant_emotion']}, {emotion_info})")
     
     if df_filtered.empty:
@@ -456,10 +490,12 @@ elif view_mode == "Análise Individual":
                 
                 st.write(f"**Emoção Dominante (Probabilidades):** {selected_row['dominant_emotion'].capitalize()}")
                 
-                if 'emotion' in selected_row:
-                    st.write(f"**Rótulo Anotado:** {selected_row['emotion']}")
+                if 'emotion_label' in selected_row:
+                    st.write(f"**Rótulo Anotado:** {selected_row['emotion_label'].capitalize()}")
+                    if 'emotion_original' in selected_row:
+                        st.write(f"**Valor Original:** {selected_row['emotion_original']}")
                     # Verificar concordância
-                    concordance = selected_row['dominant_emotion'] == selected_row['emotion']
+                    concordance = selected_row['dominant_emotion'] == selected_row['emotion_label']
                     st.write(f"**Concordância:** {'✅ Sim' if concordance else '❌ Não'}")
                 
                 # Valores VAD
@@ -534,7 +570,7 @@ elif view_mode == "Comparação entre Imagens":
             for i, row in df_filtered.iterrows():
                 path_str = str(row['path']) if 'path' in row else f"Imagem {i}"
                 filename = Path(path_str).name
-                emotion_info = f"Anotado: {row['emotion']}" if 'emotion' in row else ""
+                emotion_info = f"Anotado: {row['emotion_label']}" if 'emotion_label' in row else ""
                 image_options.append(f"{i} - {filename} (Prob: {row['dominant_emotion']}, {emotion_info})")
             
             selected_images = st.multiselect(
@@ -574,7 +610,7 @@ elif view_mode == "Comparação entre Imagens":
             st.plotly_chart(fig, use_container_width=True)
             
             # Tabela de comparação com rótulos anotados
-            if 'emotion' in df_filtered.columns:
+            if 'emotion_label' in df_filtered.columns:
                 st.subheader("Comparação de Rótulos Anotados")
                 comparison_summary = []
                 for img_idx in selected_images:
@@ -583,8 +619,8 @@ elif view_mode == "Comparação entre Imagens":
                         'Imagem': f"Img {img_idx}",
                         'Arquivo': Path(row['path']).name if 'path' in row else 'N/A',
                         'Emoção Dominante': row['dominant_emotion'],
-                        'Rótulo Anotado': row['emotion'],
-                        'Concordância': '✅' if row['dominant_emotion'] == row['emotion'] else '❌'
+                        'Rótulo Anotado': row['emotion_label'],
+                        'Concordância': '✅' if row['dominant_emotion'] == row['emotion_label'] else '❌'
                     })
                 
                 st.dataframe(pd.DataFrame(comparison_summary), use_container_width=True)
@@ -617,7 +653,17 @@ st.sidebar.info("""
 
 **Rótulos:**
 - **Probabilidades**: Distribuição de emoções calculada
-- **Anotado**: Rótulo manual atribuído
+- **Anotado**: Rótulo manual atribuído (0-7 mapeado para nomes)
+
+**Mapeamento:**
+- 0: Neutral
+- 1: Happy
+- 2: Sad
+- 3: Surprise
+- 4: Fear
+- 5: Disgust
+- 6: Angry
+- 7: Contempt
 """)
 
 # Mostrar dados brutos
@@ -629,8 +675,8 @@ if st.sidebar.checkbox("Mostrar dados brutos"):
 with st.expander("📁 Informações da Estrutura do Arquivo"):
     st.write(f"**Colunas detectadas:** {list(df.columns)}")
     st.write(f"**Colunas de emoção (probabilidades):** {emotion_columns}")
-    if 'emotion' in df.columns:
-        st.write(f"**Rótulos anotados únicos:** {list(df['emotion'].unique())}")
+    if 'emotion_label' in df.columns:
+        st.write(f"**Rótulos anotados únicos:** {list(df['emotion_label'].unique())}")
     st.write(f"**Total de registros:** {len(df)}")
 
 st.markdown("---")

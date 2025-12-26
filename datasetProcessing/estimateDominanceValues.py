@@ -174,8 +174,8 @@ def main():
         
         for filename in batch_files:
             base_name = os.path.splitext(filename)[0]
-            val_path = os.path.join(annotations_dir, f'{base_name}_val.npy')
-            aro_path = os.path.join(annotations_dir, f'{base_name}_aro.npy')
+            val_path = os.path.join(annotations_dir, f'{base_name}_adjusted_val.npy')
+            aro_path = os.path.join(annotations_dir, f'{base_name}_adjusted_aro.npy')
             
             if os.path.exists(val_path) and os.path.exists(aro_path):
                 try:

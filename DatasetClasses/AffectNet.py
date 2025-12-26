@@ -22,7 +22,7 @@ class AffectNet(data.Dataset):
         print(f"Loading {len(faces)} face images")
         for idx, f in enumerate(faces):
             printProgressBar(idx,len(faces),length=50,prefix='Loading Faces...')
-            imageNumber = f.split(os.path.sep)[-1][:-4]
+            imageNumber = f.split(os.path.sep)[-1][:-4]            
             if "VA" in typeExperiment and 'VAD' not in typeExperiment and 'PROBS_' not in typeExperiment and 'UNIVERSAL_' not in typeExperiment:
                 try:
                     valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber))))
@@ -31,6 +31,25 @@ class AffectNet(data.Dataset):
                     valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy'))
                     aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy'))
                 self.label.append([valValue,aroValue])
+                if '_EXP' in typeExperiment:
+                    try:
+                        lbl = np.load(os.path.join(afectdata,'annotations' ,f'{imageNumber}_exp.npy'))
+                        self.label[-1].append(int(lbl))
+                    except:
+                        self.label[-1].append(255)
+            elif "VAD_ADJUSTED" in typeExperiment and 'PROBS_' not in typeExperiment and 'UNIVERSAL_' not in typeExperiment:
+                try:
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_adjusted_val.npy' % (int(imageNumber))))
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_adjusted_aro.npy' % (int(imageNumber))))
+                    domValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber))))
+                except:
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_adjusted_val.npy'))
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_adjusted_aro.npy'))
+                    try:
+                        domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy'))
+                    except:
+                        continue
+                self.label.append([valValue,aroValue,domValue])
                 if '_EXP' in typeExperiment:
                     try:
                         lbl = np.load(os.path.join(afectdata,'annotations' ,f'{imageNumber}_exp.npy'))
@@ -122,15 +141,16 @@ class AffectNet(data.Dataset):
                 currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank_universal.txt' % (int(imageNumber)))
                 self.label.append(currLabel)
             elif 'UNIVERSAL_VAD' in typeExperiment:
+                prefix = '' if typeExperiment not in '_ADJUSTED' else '_adjusted'
                 try:
                     currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank_universal.txt' % (int(imageNumber)))
-                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber)))).astype(np.float64)
-                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber)))).astype(np.float64)
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{int(imageNumber)}{prefix}_val.npy')).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{int(imageNumber)}{prefix}_aro.npy')).astype(np.float64)
                     domValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber)))).astype(np.float64)
                 except:
                     currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank_universal.txt')
-                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
-                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}{prefix}_val.npy' )).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}{prefix}_aro.npy')).astype(np.float64)
                     domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
                     try:
                         domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
