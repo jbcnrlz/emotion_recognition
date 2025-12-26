@@ -121,17 +121,16 @@ class AffectNet(data.Dataset):
             elif typeExperiment == 'UNIVERSAL':
                 currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank_universal.txt' % (int(imageNumber)))
                 self.label.append(currLabel)
-            elif 'UNIVERSAL_VAD' in typeExperiment:
+            elif 'UNIVERSAL_VAD_ADJUSTED' in typeExperiment:
                 try:
                     currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank_universal.txt' % (int(imageNumber)))
-                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber)))).astype(np.float64)
-                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber)))).astype(np.float64)
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_adjusted_val.npy' % (int(imageNumber)))).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_adjusted_aro.npy' % (int(imageNumber)))).astype(np.float64)
                     domValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber)))).astype(np.float64)
                 except:
                     currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank_universal.txt')
-                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
-                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
-                    domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_adjusted_val.npy' )).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_adjusted_aro.npy')).astype(np.float64)
                     try:
                         domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
                     except:
@@ -143,7 +142,28 @@ class AffectNet(data.Dataset):
                         self.label[-1].append(int(lbl))
                     except:
                         self.label[-1].append(255)
-                    
+                                        
+            elif 'UNIVERSAL_VAD' in typeExperiment:
+                try:
+                    currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank_universal.txt' % (int(imageNumber)))
+                    valValue = np.load(os.path.join(afectdata,'annotations','%d_val.npy' % (int(imageNumber)))).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations','%d_aro.npy' % (int(imageNumber)))).astype(np.float64)
+                    domValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber)))).astype(np.float64)
+                except:
+                    currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank_universal.txt')
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_val.npy' )).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_aro.npy')).astype(np.float64)
+                    try:
+                        domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
+                    except:
+                        continue
+                self.label.append([currLabel,valValue,aroValue,domValue])
+                if '_EXP' in typeExperiment:
+                    try:
+                        lbl = np.load(os.path.join(afectdata,'annotations' ,f'{imageNumber}_exp.npy'))
+                        self.label[-1].append(int(lbl))
+                    except:
+                        self.label[-1].append(255)
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
                 self.label.append(np.where(self.terms == currLabel)[0][0])
