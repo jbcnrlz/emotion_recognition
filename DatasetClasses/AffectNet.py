@@ -163,6 +163,29 @@ class AffectNet(data.Dataset):
                         self.label[-1].append(int(lbl))
                     except:
                         self.label[-1].append(255)
+            elif 'ORIGINAL_VAD' in typeExperiment:
+                prefix = '' if typeExperiment not in '_ADJUSTED' else '_adjusted'
+                try:
+                    currLabel = os.path.join(afectdata,'annotations' ,'%d_prob_rank_original.txt' % (int(imageNumber)))
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{int(imageNumber)}{prefix}_val.npy')).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{int(imageNumber)}{prefix}_aro.npy')).astype(np.float64)
+                    domValue = np.load(os.path.join(afectdata,'annotations','%d_dom.npy' % (int(imageNumber)))).astype(np.float64)
+                except:
+                    currLabel = os.path.join(afectdata,'annotations' ,f'{imageNumber}_prob_rank_original.txt')
+                    valValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}{prefix}_val.npy' )).astype(np.float64)
+                    aroValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}{prefix}_aro.npy')).astype(np.float64)
+                    domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
+                    try:
+                        domValue = np.load(os.path.join(afectdata,'annotations',f'{imageNumber}_dom.npy')).astype(np.float64)
+                    except:
+                        continue
+                self.label.append([currLabel,valValue,aroValue,domValue])
+                if '_EXP' in typeExperiment:
+                    try:
+                        lbl = np.load(os.path.join(afectdata,'annotations' ,f'{imageNumber}_exp.npy'))
+                        self.label[-1].append(int(lbl))
+                    except:
+                        self.label[-1].append(255)
                     
             else:
                 currLabel = self.loadTermData(os.path.join(afectdata,'annotations_%d' % (termsQuantity),'%d_terms.txt' % (int(imageNumber))))
@@ -255,6 +278,13 @@ class AffectNet(data.Dataset):
             if '_EXP' in self.typeExperiment:
                 label_part2 = torch.from_numpy(np.array(self.label[idx][-1]).astype(np.uint8)).to(torch.long)
                 label = torch.cat([label, label_part2.unsqueeze(0)])
+        elif 'UNIVERSAL_VAD' in self.typeExperiment:
+            label = [
+                torch.from_numpy(np.array(self.loadProbFile(self.label[idx][0])).astype(np.float32)).to(torch.float32),
+                torch.from_numpy(np.array([self.label[idx][1],self.label[idx][2],self.label[idx][3]]))
+            ]
+            if '_EXP' in self.typeExperiment:
+                label.append(torch.from_numpy(np.array(self.label[idx][4]).astype(np.uint8)).to(torch.long))
         else:
             label = torch.from_numpy(np.array( [self.label[idx][0].astype(np.float32),self.label[idx][1].astype(np.float32)] )).to(torch.float32)
         if self.transform is not None:

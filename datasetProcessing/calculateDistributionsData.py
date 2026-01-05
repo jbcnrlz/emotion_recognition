@@ -24,7 +24,7 @@ def main():
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])}
     print("Loading trainig set")
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='UNIVERSAL_VAD_EXP')
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['train'],typeExperiment='UNIVERSAL_VAD_EXP')
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=20, shuffle=True)
 
     print("Started Calculating distributions data")
