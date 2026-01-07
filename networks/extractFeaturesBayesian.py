@@ -546,7 +546,7 @@ def train():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     
-    dataset = AffectNet(afectdata=args.pathBase, transform=data_transforms, typeExperiment='UNIVERSAL_VAD_EXP')
+    dataset = AffectNet(afectdata=args.pathBase, transform=data_transforms, typeExperiment='ORIGINAL_VAD_EXP')
     val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)
     model.eval()
     

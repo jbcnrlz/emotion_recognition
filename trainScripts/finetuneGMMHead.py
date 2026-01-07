@@ -12,6 +12,7 @@ import torch.distributions as dist, random
 from torch.nn import functional as F
 from loss.FocalLoss import FocalLoss
 from loss.FocalConsistencyLoss import FocalConsistencyLoss, RegularizedLearnedConsistencyLoss
+from loss.KnowledgeGuidedConsistencyLoss import KnowledgeGuidedConsistencyLoss
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
     """
@@ -153,10 +154,6 @@ def train():
     #datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='UNIVERSAL_VAD')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
-
-    optimizer = optim.AdamW(model.parameters(), lr=args.learningRate, weight_decay=1e-2)
-
-    scheduler = optim.lr_scheduler.StepLR(optimizer, args.epochs // 5, gamma=0.1)        
     
     criterion = None
     if args.mainLossFunc == "BCE":
@@ -185,10 +182,31 @@ def train():
             sparsity_weight=args.conflictSparsity,
             reduction='mean'
         ).to(device)
+    elif args.mainLossFunc == "KNOWLEDGEGUIDEDCONSISTENCY":
+        print("Using Knowledge Guided Consistency Loss")
+        criterion = KnowledgeGuidedConsistencyLoss(
+            num_classes=args.numberOfClasses,
+            gamma=2.0,
+            alpha=0.25,
+            prior_strength=0.5,
+        ).to(device)
     
     secLoss = None
     lossFuncName = re.sub(r'[^a-zA-Z0-9\s]', '', str(criterion))
-    
+
+    optimizer = None
+
+    if args.mainLossFunc == "KNOWLEDGEGUIDEDCONSISTENCY":
+        optimizer = optim.AdamW([
+            {'params': model.parameters(), 'lr': args.learningRate},
+            {'params': criterion.parameters(), 'lr': args.learningRate * 10},  # LR maior
+        ], weight_decay=1e-2)
+    else:
+
+        optimizer = optim.AdamW(model.parameters(), lr=args.learningRate, weight_decay=1e-2)
+
+    scheduler = optim.lr_scheduler.StepLR(optimizer, args.epochs // 5, gamma=0.1)        
+
     if args.secondaryLossFunction != "ELBO":
         print("Using secondary loss function: " + args.secondaryLossFunction)
         secLoss= nn.L1Loss().to(device)

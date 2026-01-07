@@ -1,4 +1,5 @@
-import torch.utils.data as data, os, torch, numpy as np, sys, pandas as pd, random
+import torch.utils.data as data, os, torch, numpy as np, sys, pandas as pd, random, glob
+from tqdm import tqdm
 from PIL import Image as im
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -9,6 +10,612 @@ import threading
 #from generateDenseOpticalFlow import runDenseOpFlow
 
 class AffectNet(data.Dataset):    
+    """Versão otimizada mantendo compatibilidade total com a original."""
+    
+    def __init__(self, afectdata, typeExperiment="VA", transform=None, 
+                 termsQuantity=151, exchangeLabel=None, loadLastLabel=True,
+                 use_cache=True):
+        """
+        Args compatíveis com a versão original.
+        use_cache: Novo parâmetro opcional para habilitar cache
+        """
+        self.exchangeLabel = exchangeLabel
+        self.terms = None if typeExperiment != 'TERMS' else self._load_terms_file(termsQuantity)
+        self.transform = transform
+        self.label = []
+        self.filesPath = []
+        self.seconLabel = [] if typeExperiment == 'BOTH' else None
+        self.typeExperiment = typeExperiment
+        self.loadLastLabel = loadLastLabel
+        self.use_cache = use_cache
+        
+        # Cache para labels
+        self._label_cache = {}
+        
+        # Carregar imagens
+        images_dir = os.path.join(afectdata, 'images')
+        annotations_dir = os.path.join(afectdata, 'annotations')
+        
+        # Listar imagens de forma mais eficiente
+        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
+        faces = []
+        for ext in image_extensions:
+            faces.extend(glob.glob(os.path.join(images_dir, f'*{ext}')))
+            faces.extend(glob.glob(os.path.join(images_dir, f'*{ext.upper()}')))
+        
+        print(f"Loading {len(faces)} face images")
+        
+        # Carregar labels com barra de progresso
+        for f in tqdm(faces, desc='Loading dataset'):
+            image_number = os.path.basename(f).rsplit('.', 1)[0]
+            
+            # Determinar tipo de carregamento baseado no experimento
+            label_data = self._load_label_data(annotations_dir, image_number, f)
+            
+            if label_data is None:
+                continue
+                
+            self.label.append(label_data)
+            self.filesPath.append(f)
+        
+        print(f"Loaded {len(self.filesPath)} samples")
+    
+    def _load_label_data(self, annotations_dir, image_number, image_path):
+        """Carrega dados do label de forma otimizada."""
+        type_exp = self.typeExperiment
+        
+        # VA
+        if "VA" in type_exp and 'VAD' not in type_exp and 'PROBS_' not in type_exp and 'UNIVERSAL_' not in type_exp:
+            val, aro = self._load_va(annotations_dir, image_number)
+            if val is None or aro is None:
+                return None
+                
+            label = [val, aro]
+            if '_EXP' in type_exp:
+                exp = self._load_exp(annotations_dir, image_number)
+                label.append(exp)
+            return label
+        
+        # VAD_ADJUSTED
+        elif "VAD_ADJUSTED" in type_exp and 'PROBS_' not in type_exp and 'UNIVERSAL_' not in type_exp:
+            val, aro, dom = self._load_vad_adjusted(annotations_dir, image_number)
+            if val is None or aro is None or dom is None:
+                return None
+                
+            label = [val, aro, dom]
+            if '_EXP' in type_exp:
+                exp = self._load_exp(annotations_dir, image_number)
+                label.append(exp)
+            return label
+        
+        # VAD padrão
+        elif "VAD" in type_exp and 'PROBS_' not in type_exp and 'UNIVERSAL_' not in type_exp and 'ORIGINAL_' not in type_exp:
+            val, aro, dom = self._load_vad(annotations_dir, image_number)
+            if val is None or aro is None or dom is None:
+                return None
+                
+            label = [val, aro, dom]
+            if '_EXP' in type_exp:
+                exp = self._load_exp(annotations_dir, image_number)
+                label.append(exp)
+            return label
+        
+        # EXP
+        elif type_exp == "EXP":
+            exp_label = self._load_exp(annotations_dir, image_number)
+            if exp_label == 7 and not self.loadLastLabel:
+                return None
+            return int(exp_label)
+        
+        # BOTH
+        elif type_exp == "BOTH":
+            exp_label = self._load_exp(annotations_dir, image_number)
+            if exp_label == 7 and not self.loadLastLabel:
+                return None
+                
+            val, aro = self._load_va(annotations_dir, image_number)
+            if val is None or aro is None:
+                return None
+            
+            # Armazenar secundário separadamente
+            if self.seconLabel is not None:
+                self.seconLabel.append([val, aro])
+            
+            return int(exp_label)
+        
+        # RANK
+        elif type_exp == 'RANK':
+            rank_path = os.path.join(annotations_dir, f'{image_number}_rank.txt')
+            return rank_path if os.path.exists(rank_path) else None
+        
+        # RANDOM
+        elif type_exp == 'RANDOM':
+            return np.random.randint(0, 8)
+        
+        # PROBS
+        elif type_exp == 'PROBS':
+            prob_path = os.path.join(annotations_dir, f'{image_number}_prob_rank.txt')
+            return prob_path if os.path.exists(prob_path) else None
+        
+        # PROBS_VAD
+        elif 'PROBS_VAD' in type_exp:
+            return self._load_probs_vad(annotations_dir, image_number)
+        
+        # PROBS_VA
+        elif 'PROBS_VA' in type_exp:
+            return self._load_probs_va(annotations_dir, image_number)
+        
+        # UNIVERSAL
+        elif type_exp == 'UNIVERSAL':
+            uni_path = os.path.join(annotations_dir, f'{image_number}_prob_rank_universal.txt')
+            return uni_path if os.path.exists(uni_path) else None
+        
+        # UNIVERSAL_VAD_ADJUSTED
+        elif 'UNIVERSAL_VAD_ADJUSTED' in type_exp:
+            return self._load_universal_vad_adjusted(annotations_dir, image_number)
+        
+        # UNIVERSAL_VAD
+        elif 'UNIVERSAL_VAD' in type_exp:
+            return self._load_universal_vad(annotations_dir, image_number)
+        
+        # ORIGINAL_VAD - CORRIGIDO para incluir _EXP
+        elif 'ORIGINAL_VAD' in type_exp:
+            return self._load_original_vad(annotations_dir, image_number)
+        
+        # TERMS (default)
+        else:
+            term_path = os.path.join(annotations_dir, f'{image_number}_terms.txt')
+            term = self._load_term_data(term_path)
+            if term and self.terms is not None:
+                indices = np.where(self.terms == term)[0]
+                return indices[0] if len(indices) > 0 else None
+            return None
+    
+    def _load_npy_cached(self, filepath):
+        """Carrega arquivo .npy com cache."""
+        if not os.path.exists(filepath):
+            return None
+        
+        if self.use_cache and filepath in self._label_cache:
+            return self._label_cache[filepath]
+        
+        try:
+            data = np.load(filepath)
+            if self.use_cache:
+                self._label_cache[filepath] = data
+            return data
+        except:
+            return None
+    
+    def _load_va(self, annotations_dir, image_number):
+        """Carrega valores VA."""
+        # Tentar diferentes padrões de nome de arquivo
+        val_paths = [
+            os.path.join(annotations_dir, f'{image_number}_val.npy'),
+            os.path.join(annotations_dir, f'{int(image_number)}_val.npy') if image_number.isdigit() else None
+        ]
+        
+        aro_paths = [
+            os.path.join(annotations_dir, f'{image_number}_aro.npy'),
+            os.path.join(annotations_dir, f'{int(image_number)}_aro.npy') if image_number.isdigit() else None
+        ]
+        
+        val = None
+        for path in val_paths:
+            if path and os.path.exists(path):
+                val = self._load_npy_cached(path)
+                if val is not None:
+                    break
+        
+        aro = None
+        for path in aro_paths:
+            if path and os.path.exists(path):
+                aro = self._load_npy_cached(path)
+                if aro is not None:
+                    break
+        
+        return val, aro
+    
+    def _load_vad(self, annotations_dir, image_number):
+        """Carrega valores VAD."""
+        val, aro = self._load_va(annotations_dir, image_number)
+        
+        dom_paths = [
+            os.path.join(annotations_dir, f'{image_number}_dom.npy'),
+            os.path.join(annotations_dir, f'{int(image_number)}_dom.npy') if image_number.isdigit() else None
+        ]
+        
+        dom = None
+        for path in dom_paths:
+            if path and os.path.exists(path):
+                dom = self._load_npy_cached(path)
+                if dom is not None:
+                    break
+        
+        return val, aro, dom
+    
+    def _load_vad_adjusted(self, annotations_dir, image_number):
+        """Carrega valores VAD ajustados."""
+        val_paths = [
+            os.path.join(annotations_dir, f'{image_number}_adjusted_val.npy'),
+            os.path.join(annotations_dir, f'{int(image_number)}_adjusted_val.npy') if image_number.isdigit() else None
+        ]
+        
+        aro_paths = [
+            os.path.join(annotations_dir, f'{image_number}_adjusted_aro.npy'),
+            os.path.join(annotations_dir, f'{int(image_number)}_adjusted_aro.npy') if image_number.isdigit() else None
+        ]
+        
+        val = None
+        for path in val_paths:
+            if path and os.path.exists(path):
+                val = self._load_npy_cached(path)
+                if val is not None:
+                    break
+        
+        aro = None
+        for path in aro_paths:
+            if path and os.path.exists(path):
+                aro = self._load_npy_cached(path)
+                if aro is not None:
+                    break
+        
+        dom_paths = [
+            os.path.join(annotations_dir, f'{image_number}_dom.npy'),
+            os.path.join(annotations_dir, f'{int(image_number)}_dom.npy') if image_number.isdigit() else None
+        ]
+        
+        dom = None
+        for path in dom_paths:
+            if path and os.path.exists(path):
+                dom = self._load_npy_cached(path)
+                if dom is not None:
+                    break
+        
+        return val, aro, dom
+    
+    def _load_exp(self, annotations_dir, image_number):
+        """Carrega expressão."""
+        exp_paths = [
+            os.path.join(annotations_dir, f'{image_number}_exp.npy'),
+            os.path.join(annotations_dir, f'{int(image_number)}_exp.npy') if image_number.isdigit() else None
+        ]
+        
+        for path in exp_paths:
+            if path and os.path.exists(path):
+                exp = self._load_npy_cached(path)
+                if exp is not None:
+                    return int(exp)
+        
+        return 255
+    
+    def _load_probs_vad(self, annotations_dir, image_number):
+        """Carrega PROBS_VAD."""
+        prob_paths = [
+            os.path.join(annotations_dir, f'{image_number}_prob_rank.txt'),
+            os.path.join(annotations_dir, f'{int(image_number)}_prob_rank.txt') if image_number.isdigit() else None
+        ]
+        
+        prob_path = None
+        for path in prob_paths:
+            if path and os.path.exists(path):
+                prob_path = path
+                break
+        
+        if not prob_path:
+            return None
+        
+        val, aro, dom = self._load_vad(annotations_dir, image_number)
+        if val is None or aro is None or dom is None:
+            return None
+        
+        label = [prob_path, float(val), float(aro), float(dom)]
+        
+        if '_EXP' in self.typeExperiment:
+            exp = self._load_exp(annotations_dir, image_number)
+            label.append(exp)
+        
+        return label
+    
+    def _load_probs_va(self, annotations_dir, image_number):
+        """Carrega PROBS_VA."""
+        prob_paths = [
+            os.path.join(annotations_dir, f'{image_number}_prob_rank.txt'),
+            os.path.join(annotations_dir, f'{int(image_number)}_prob_rank.txt') if image_number.isdigit() else None
+        ]
+        
+        prob_path = None
+        for path in prob_paths:
+            if path and os.path.exists(path):
+                prob_path = path
+                break
+        
+        if not prob_path:
+            return None
+        
+        val, aro = self._load_va(annotations_dir, image_number)
+        if val is None or aro is None:
+            return None
+        
+        label = [prob_path, float(val), float(aro)]
+        
+        if '_EXP' in self.typeExperiment:
+            exp = self._load_exp(annotations_dir, image_number)
+            label.append(exp)
+        
+        return label
+    
+    def _load_universal_vad_adjusted(self, annotations_dir, image_number):
+        """Carrega UNIVERSAL_VAD_ADJUSTED."""
+        uni_paths = [
+            os.path.join(annotations_dir, f'{image_number}_prob_rank_universal.txt'),
+            os.path.join(annotations_dir, f'{int(image_number)}_prob_rank_universal.txt') if image_number.isdigit() else None
+        ]
+        
+        uni_path = None
+        for path in uni_paths:
+            if path and os.path.exists(path):
+                uni_path = path
+                break
+        
+        if not uni_path:
+            return None
+        
+        val, aro, dom = self._load_vad_adjusted(annotations_dir, image_number)
+        if val is None or aro is None or dom is None:
+            return None
+        
+        label = [uni_path, float(val), float(aro), float(dom)]
+        
+        if '_EXP' in self.typeExperiment:
+            exp = self._load_exp(annotations_dir, image_number)
+            label.append(exp)
+        
+        return label
+    
+    def _load_universal_vad(self, annotations_dir, image_number):
+        """Carrega UNIVERSAL_VAD."""
+        uni_paths = [
+            os.path.join(annotations_dir, f'{image_number}_prob_rank_universal.txt'),
+            os.path.join(annotations_dir, f'{int(image_number)}_prob_rank_universal.txt') if image_number.isdigit() else None
+        ]
+        
+        uni_path = None
+        for path in uni_paths:
+            if path and os.path.exists(path):
+                uni_path = path
+                break
+        
+        if not uni_path:
+            return None
+        
+        # Determinar prefixo baseado no tipo de experimento
+        prefix = '_adjusted' if '_ADJUSTED' in self.typeExperiment else ''
+        
+        # Carregar valores
+        val_path = os.path.join(annotations_dir, f'{image_number}{prefix}_val.npy')
+        aro_path = os.path.join(annotations_dir, f'{image_number}{prefix}_aro.npy')
+        dom_path = os.path.join(annotations_dir, f'{image_number}_dom.npy')
+        
+        val = self._load_npy_cached(val_path)
+        aro = self._load_npy_cached(aro_path)
+        dom = self._load_npy_cached(dom_path)
+        
+        if val is None or aro is None or dom is None:
+            return None
+        
+        label = [uni_path, float(val), float(aro), float(dom)]
+        
+        if '_EXP' in self.typeExperiment:
+            exp = self._load_exp(annotations_dir, image_number)
+            label.append(exp)
+        
+        return label
+    
+    def _load_original_vad(self, annotations_dir, image_number):
+        """Carrega ORIGINAL_VAD - CORRIGIDO para funcionar como a versão original."""
+        orig_paths = [
+            os.path.join(annotations_dir, f'{image_number}_prob_rank_original.txt'),
+            os.path.join(annotations_dir, f'{int(image_number)}_prob_rank_original.txt') if image_number.isdigit() else None
+        ]
+        
+        orig_path = None
+        for path in orig_paths:
+            if path and os.path.exists(path):
+                orig_path = path
+                break
+        
+        if not orig_path:
+            return None
+        
+        # Determinar prefixo como na versão original
+        # Na versão original: prefix = '' if typeExperiment not in '_ADJUSTED' else '_adjusted'
+        # Isso está errado, deveria ser: '' if '_ADJUSTED' not in typeExperiment else '_adjusted'
+        prefix = '_adjusted' if '_ADJUSTED' in self.typeExperiment else ''
+        
+        # Tentar carregar valores - seguir o mesmo padrão da versão original
+        try:
+            # Primeiro tentar com int(image_number)
+            if image_number.isdigit():
+                val_path = os.path.join(annotations_dir, f'{int(image_number)}{prefix}_val.npy')
+                aro_path = os.path.join(annotations_dir, f'{int(image_number)}{prefix}_aro.npy')
+                dom_path = os.path.join(annotations_dir, f'{int(image_number)}_dom.npy')
+            else:
+                val_path = os.path.join(annotations_dir, f'{image_number}{prefix}_val.npy')
+                aro_path = os.path.join(annotations_dir, f'{image_number}{prefix}_aro.npy')
+                dom_path = os.path.join(annotations_dir, f'{image_number}_dom.npy')
+            
+            val = self._load_npy_cached(val_path)
+            aro = self._load_npy_cached(aro_path)
+            dom = self._load_npy_cached(dom_path)
+            
+            # Se algum for None, tentar sem o prefixo
+            if val is None or aro is None or dom is None:
+                val_path = os.path.join(annotations_dir, f'{image_number}_val.npy')
+                aro_path = os.path.join(annotations_dir, f'{image_number}_aro.npy')
+                
+                val = self._load_npy_cached(val_path)
+                aro = self._load_npy_cached(aro_path)
+                
+                if val is None or aro is None or dom is None:
+                    return None
+            
+            label = [orig_path, float(val), float(aro), float(dom)]
+            
+            # Adicionar expressão se _EXP estiver no typeExperiment
+            if '_EXP' in self.typeExperiment:
+                exp = self._load_exp(annotations_dir, image_number)
+                label.append(exp)
+            
+            return label
+        except:
+            return None
+    
+    def _load_terms_file(self, termsQuantity):
+        """Carrega arquivo de termos."""
+        try:
+            # Verificar se o arquivo existe
+            filename = f'joinedWithDistance_{termsQuantity}.csv'
+            if not os.path.exists(filename):
+                # Tentar carregar de forma diferente
+                return np.array([])
+            
+            df = pd.read_csv(filename)
+            return np.array(df)[:, 0]
+        except Exception as e:
+            print(f"Error loading terms file: {e}")
+            return np.array([])
+    
+    def _load_term_data(self, pathData):
+        """Carrega dados de termo."""
+        if not os.path.exists(pathData):
+            return ""
+        try:
+            with open(pathData, 'r') as f:
+                return f.readline().strip()
+        except:
+            return ""
+    
+    def _load_rank_file(self, rankPath):
+        """Carrega arquivo de ranking."""
+        try:
+            with open(rankPath, 'r') as f:
+                return list(map(int, f.readline().strip().split(',')))
+        except:
+            return []
+    
+    def _load_prob_file(self, probPath):
+        """Carrega arquivo de probabilidades."""
+        try:
+            with open(probPath, 'r') as f:
+                return list(map(float, f.readline().strip().split(',')))
+        except:
+            return []
+    
+    def __len__(self):
+        return len(self.filesPath)
+    
+    def __getitem__(self, idx):
+        """Mantém exatamente a mesma interface da versão original."""
+        path = self.filesPath[idx]
+        image = im.open(path)
+        
+        valenceLabel = None
+        label_data = self.label[idx]
+        
+        # Processamento idêntico ao original
+        if self.typeExperiment == 'TERMS':
+            label = torch.from_numpy(np.array(label_data)).to(torch.float32)
+        elif self.typeExperiment == 'EXP' or self.typeExperiment == 'BOTH':
+            if self.exchangeLabel is not None:
+                valenceLabel = torch.from_numpy(np.array(self.exchangeLabel[label_data])).to(torch.long)
+            if self.typeExperiment == 'BOTH':
+                valenceLabel = torch.from_numpy(
+                    np.array([self.seconLabel[idx][0].astype(np.float32), 
+                             self.seconLabel[idx][1].astype(np.float32)])).to(torch.float32)
+            label = torch.from_numpy(np.array(label_data).astype(np.uint8)).to(torch.long)
+        elif self.typeExperiment == "RANK":
+            label = torch.from_numpy(np.array(self._load_rank_file(label_data)).astype(np.uint8)).to(torch.long)
+        elif self.typeExperiment == "RANDOM":
+            label = torch.from_numpy(np.array(np.random.randint(0, 8))).to(torch.long)
+        elif self.typeExperiment == "PROBS":
+            label = torch.from_numpy(np.array(self._load_prob_file(label_data)).astype(np.float32)).to(torch.float32)
+        elif self.typeExperiment == "UNIVERSAL":
+            label = torch.from_numpy(np.array(self._load_prob_file(label_data)).astype(np.float32)).to(torch.float32)
+        elif 'PROBS_VAD' in self.typeExperiment:
+            label = [
+                torch.from_numpy(np.array(self._load_prob_file(label_data[0])).astype(np.float32)).to(torch.float32),
+                torch.from_numpy(np.array([label_data[1], label_data[2], label_data[3]]))
+            ]
+            if '_EXP' in self.typeExperiment and len(label_data) > 4:
+                label.append(torch.from_numpy(np.array(label_data[4]).astype(np.uint8)).to(torch.long))
+        elif 'PROBS_VA' in self.typeExperiment:
+            label = [
+                torch.from_numpy(np.array(self._load_prob_file(label_data[0])).astype(np.float32)).to(torch.float32),
+                torch.from_numpy(np.array([label_data[1], label_data[2]]))
+            ]
+            if '_EXP' in self.typeExperiment and len(label_data) > 3:
+                label.append(torch.from_numpy(np.array(label_data[3]).astype(np.uint8)).to(torch.long))
+        elif 'UNIVERSAL_VAD' in self.typeExperiment:
+            label = [
+                torch.from_numpy(np.array(self._load_prob_file(label_data[0])).astype(np.float32)).to(torch.float32),
+                torch.from_numpy(np.array([label_data[1], label_data[2], label_data[3]]))
+            ]
+            if '_EXP' in self.typeExperiment and len(label_data) > 4:
+                label.append(torch.from_numpy(np.array(label_data[4]).astype(np.uint8)).to(torch.long))
+        # ADICIONADO: Caso para ORIGINAL_VAD - funciona igual ao UNIVERSAL_VAD
+        elif 'ORIGINAL_VAD' in self.typeExperiment:
+            label = [
+                torch.from_numpy(np.array(self._load_prob_file(label_data[0])).astype(np.float32)).to(torch.float32),
+                torch.from_numpy(np.array([label_data[1], label_data[2], label_data[3]]))
+            ]
+            if '_EXP' in self.typeExperiment and len(label_data) > 4:
+                label.append(torch.from_numpy(np.array(label_data[4]).astype(np.uint8)).to(torch.long))
+        elif "VAD" in self.typeExperiment:
+            label = torch.from_numpy(
+                np.array([label_data[0].astype(np.float32), 
+                         label_data[1].astype(np.float32), 
+                         label_data[2].astype(np.float32)])).to(torch.float32)
+            if '_EXP' in self.typeExperiment:
+                label_part2 = torch.from_numpy(np.array(label_data[-1]).astype(np.uint8)).to(torch.long)
+                label = torch.cat([label, label_part2.unsqueeze(0)])
+        elif "VA" in self.typeExperiment:
+            label = torch.from_numpy(
+                np.array([label_data[0].astype(np.float32), 
+                         label_data[1].astype(np.float32)])).to(torch.float32)
+            if '_EXP' in self.typeExperiment:
+                label_part2 = torch.from_numpy(np.array(label_data[-1]).astype(np.uint8)).to(torch.long)
+                label = torch.cat([label, label_part2.unsqueeze(0)])
+        else:
+            label = torch.from_numpy(
+                np.array([label_data[0].astype(np.float32), 
+                         label_data[1].astype(np.float32)])).to(torch.float32)
+        
+        if self.transform is not None:
+            image = self.transform(image)
+
+        if valenceLabel is not None:
+            return image, label, self.filesPath[idx], valenceLabel
+        else:
+            return image, label, self.filesPath[idx]
+    
+    def sample(self, classes, exclude):
+        """Método sample idêntico ao original."""
+        returnValue = [0] * (max(classes) + 1)
+        for c in classes:
+            available = [idx for idx, cl in enumerate(self.label) if cl == c]
+            if not available:
+                continue
+                
+            sortedIdx = random.randint(0, len(available) - 1)
+            while self.filesPath[available[sortedIdx]] in exclude:
+                sortedIdx = random.randint(0, len(available) - 1)
+
+            i, _, _ = self.__getitem__(available[sortedIdx])
+            returnValue[c] = i
+
+        return torch.stack(returnValue)
+    '''
     def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151,exchangeLabel=None,loadLastLabel=True):
         self.exchangeLabel = exchangeLabel
         self.terms = None if typeExperiment != 'TERMS' else self.loadTermsFile(termsQuantity)
@@ -328,7 +935,7 @@ class AffectNet(data.Dataset):
             returnValue[c] = i
 
         return torch.stack(returnValue)
-    
+    '''
 class OPTAffectNet(data.Dataset):    
     def __init__(self, afectdata, typeExperiment="VA", transform=None, termsQuantity=151, 
                  exchangeLabel=None, loadLastLabel=True, preload_images=False, num_workers=4,
