@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class KnowledgeGuidedConsistencyLoss(nn.Module):
     def __init__(self, num_classes=8, gamma=2.0, alpha=0.25, 
-                 prior_strength=0.5, learnable_scale=True):
+                 prior_strength=0.5, learnable_scale=True, reduction='mean'):
         """
         prior_strength: Quanto o conhecimento prévio influencia (0-1)
         learnable_scale: Se a escala dos conflitos é aprendível
@@ -14,6 +14,7 @@ class KnowledgeGuidedConsistencyLoss(nn.Module):
         self.alpha = alpha
         self.num_classes = num_classes
         self.prior_strength = prior_strength
+        self.reduction = reduction
         
         # Matriz de conhecimento prévio (não aprendível)
         self.prior_matrix = self._create_prior_matrix()
