@@ -148,10 +148,10 @@ def train():
     ])}
     print("Loading trainig set")
     #dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='UNIVERSAL_VAD')
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='ORIGINAL_VAD')
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
     #datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='UNIVERSAL_VAD')
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='ORIGINAL_VAD')
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
     optimizer = optim.AdamW(model.parameters(), lr=args.learningRate, weight_decay=1e-2)
