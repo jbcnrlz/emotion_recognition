@@ -584,13 +584,14 @@ if predictions_file is not None and groundtruth_file is not None:
             filtered_df = merged_df.copy()
         
         # Layout principal - Adding new tab for Annotation-Distribution Discrepancy
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
             "📈 Overview", 
             "🔍 Detailed Analysis", 
             "📊 Distributions", 
             "🎭 Affective Dimensions",
             "🔎 Label-VAD Consistency",
-            "⚠️ Annotation-Distribution Discrepancy",
+            "⚠️ Annotation-Distribution Discrepancy",            
+            "📊 Distribution Metrics",  # Nova aba
             "📋 Complete Data"
         ])
         
@@ -745,22 +746,45 @@ if predictions_file is not None and groundtruth_file is not None:
                     pred_probs_sample = []
                     gt_probs_sample = []
                     
-                    for col in emotion_columns:
+                    # CORREÇÃO: Obter as probabilidades na ordem correta das emoções
+                    # A ordem deve ser: neutral, happy, sad, surprised, fearful, disgusted, angry, contempt
+                    # Mas as colunas estão em: happy, contempt, surprised, angry, disgusted, fearful, sad, neutral
+                    
+                    # Precisamos reordenar para a ordem dos rótulos (0-7)
+                    # Mapeamento inverso: do índice da coluna para o label
+                    column_to_label = {
+                        0: 1,  # happy -> label 1
+                        1: 7,  # contempt -> label 7
+                        2: 3,  # surprised -> label 3
+                        3: 6,  # angry -> label 6
+                        4: 5,  # disgusted -> label 5
+                        5: 4,  # fearful -> label 4
+                        6: 2,  # sad -> label 2
+                        7: 0   # neutral -> label 0
+                    }
+                    
+                    # Para reordenar, vamos criar listas na ordem dos rótulos (0-7)
+                    pred_probs_ordered = [0] * 8  # Inicializar com 8 zeros
+                    gt_probs_ordered = [0] * 8     # Inicializar com 8 zeros
+                    
+                    for i, col in enumerate(emotion_columns):
+                        label = column_to_label[i]  # Obter o label correspondente
+                        
                         pred_val = sample_data[col]
                         gt_val = sample_data[f"{col}_gt"]
                         
                         if isinstance(pred_val, (int, float, np.number)):
-                            pred_probs_sample.append(float(pred_val))
+                            pred_probs_ordered[label] = float(pred_val)
                         else:
-                            pred_probs_sample.append(0.0)
+                            pred_probs_ordered[label] = 0.0
                             
                         if isinstance(gt_val, (int, float, np.number)):
-                            gt_probs_sample.append(float(gt_val))
+                            gt_probs_ordered[label] = float(gt_val)
                         else:
-                            gt_probs_sample.append(0.0)
+                            gt_probs_ordered[label] = 0.0
                     
-                    pred_probs_sample = np.array(pred_probs_sample, dtype=np.float64)
-                    gt_probs_sample = np.array(gt_probs_sample, dtype=np.float64)
+                    pred_probs_sample = np.array(pred_probs_ordered, dtype=np.float64)
+                    gt_probs_sample = np.array(gt_probs_ordered, dtype=np.float64)
                     
                     # Ensure no NaN
                     pred_probs_sample = np.nan_to_num(pred_probs_sample, nan=0.0)
@@ -780,9 +804,21 @@ if predictions_file is not None and groundtruth_file is not None:
                     else:
                         gt_probs_sample = np.ones_like(gt_probs_sample) / len(gt_probs_sample)
                     
+                    # CORREÇÃO: Usar a ordem correta das emoções (0-7)
+                    emotion_names_ordered = [
+                        emotion_mapping[0],  # neutral
+                        emotion_mapping[1],  # happy
+                        emotion_mapping[2],  # sad
+                        emotion_mapping[3],  # surprised
+                        emotion_mapping[4],  # fearful
+                        emotion_mapping[5],  # disgusted
+                        emotion_mapping[6],  # angry
+                        emotion_mapping[7]   # contempt
+                    ]
+                    
                     # Create dataframe for plotting
                     plot_data = pd.DataFrame({
-                        'Emotion': list(emotion_mapping.values()),
+                        'Emotion': emotion_names_ordered,  # Agora na ordem correta
                         'Predicted': pred_probs_sample,
                         'Ground Truth': gt_probs_sample
                     })
@@ -806,6 +842,34 @@ if predictions_file is not None and groundtruth_file is not None:
                         opacity=0.7
                     ))
                     
+                    # Adicionar linhas para as emoções mais prováveis
+                    # Encontrar a emoção com maior probabilidade em cada distribuição
+                    pred_max_idx = np.argmax(pred_probs_sample)
+                    gt_max_idx = np.argmax(gt_probs_sample)
+                    
+                    # Adicionar anotações no gráfico
+                    fig_comparison.add_annotation(
+                        x=emotion_names_ordered[pred_max_idx],
+                        y=pred_probs_sample[pred_max_idx],
+                        text="▲ Pred",
+                        showarrow=True,
+                        arrowhead=1,
+                        ax=0,
+                        ay=-40,
+                        font=dict(color="blue", size=12)
+                    )
+                    
+                    fig_comparison.add_annotation(
+                        x=emotion_names_ordered[gt_max_idx],
+                        y=gt_probs_sample[gt_max_idx],
+                        text="▲ GT",
+                        showarrow=True,
+                        arrowhead=1,
+                        ax=0,
+                        ay=-60,
+                        font=dict(color="red", size=12)
+                    )
+                    
                     fig_comparison.update_layout(
                         title=f"Distribution Comparison - {selected_sample.split('/')[-1]}",
                         xaxis_title="Emotion",
@@ -816,18 +880,110 @@ if predictions_file is not None and groundtruth_file is not None:
                     
                     st.plotly_chart(fig_comparison, use_container_width=True)
                     
-                    # Metrics for this specific sample
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    # Nova seção: Comparação das três fontes de informação
+                    st.subheader("Emotion Source Comparison")
+                    
+                    # Criar uma tabela comparativa
+                    comparison_data = {
+                        'Source': [
+                            'Annotation Label',
+                            'Ground Truth Distribution', 
+                            'Predicted Distribution'
+                        ],
+                        'Emotion': [
+                            sample_data['groundtruth_emotion'],
+                            sample_data['gt_distribution_emotion'],
+                            sample_data['predicted_emotion']
+                        ],
+                        'Confidence/Probability': [
+                            'N/A',  # A anotação é categórica
+                            f"{sample_data['gt_max_probability']:.3f}",
+                            f"{np.max(pred_probs_sample):.3f}"
+                        ],
+                        'Details': [
+                            f"Label: {sample_data['groundtruth_label']}",
+                            f"Entropy: {sample_data['gt_distribution_entropy']:.3f}",
+                            f"JS Div: {sample_data['js_divergence']:.3f}"
+                        ]
+                    }
+                    
+                    comparison_df = pd.DataFrame(comparison_data)
+                    
+                    # Adicionar coluna de consistência
+                    consistency_notes = []
+                    for i, row in comparison_df.iterrows():
+                        if i == 0:  # Annotation
+                            # Verificar se annotation matches distribution
+                            matches_dist = (sample_data['groundtruth_emotion'] == 
+                                        sample_data['gt_distribution_emotion'])
+                            matches_pred = (sample_data['groundtruth_emotion'] == 
+                                        sample_data['predicted_emotion'])
+                            
+                            if matches_dist and matches_pred:
+                                consistency_notes.append("✅ Consistent with both")
+                            elif matches_dist:
+                                consistency_notes.append("✅ Matches GT distribution")
+                            elif matches_pred:
+                                consistency_notes.append("✅ Matches prediction")
+                            else:
+                                consistency_notes.append("⚠️ Differs from both")
+                        elif i == 1:  # GT Distribution
+                            # Verificar se distribution matches prediction
+                            matches_pred = (sample_data['gt_distribution_emotion'] == 
+                                        sample_data['predicted_emotion'])
+                            if matches_pred:
+                                consistency_notes.append("✅ Matches prediction")
+                            else:
+                                consistency_notes.append("⚠️ Differs from prediction")
+                        else:  # Prediction
+                            # Já verificamos acima
+                            consistency_notes.append("")
+                    
+                    comparison_df['Consistency'] = consistency_notes
+                    
+                    # Exibir tabela
+                    st.dataframe(
+                        comparison_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # Métricas para esta amostra específica - agora em 3 linhas
+                    st.subheader("Detailed Metrics")
+                    
+                    # Linha 1: Informações de emoção
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        st.metric("True Emotion", sample_data['groundtruth_emotion'])
+                        st.metric(
+                            "Annotation Label", 
+                            sample_data['groundtruth_emotion'],
+                            delta=f"Label: {sample_data['groundtruth_label']}"
+                        )
                     
                     with col2:
-                        st.metric("Predicted Emotion", sample_data['predicted_emotion'])
+                        # Verificar discrepância entre anotação e distribuição GT
+                        has_discrepancy = sample_data['annotation_distribution_discrepancy']
+                        discrepancy_icon = "⚠️" if has_discrepancy else "✅"
+                        
+                        st.metric(
+                            f"{discrepancy_icon} GT Distribution", 
+                            sample_data['gt_distribution_emotion'],
+                            delta=f"Confidence: {sample_data['gt_max_probability']:.3f}"
+                        )
                     
                     with col3:
                         correct = sample_data['groundtruth_label'] == sample_data['predicted_label']
-                        st.metric("Correct?", "✅ Yes" if correct else "❌ No")
+                        correct_icon = "✅" if correct else "❌"
+                        
+                        st.metric(
+                            f"{correct_icon} Predicted", 
+                            sample_data['predicted_emotion'],
+                            delta="Correct" if correct else "Incorrect"
+                        )
+                    
+                    # Linha 2: Métricas de similaridade
+                    col4, col5, col6 = st.columns(3)
                     
                     with col4:
                         js_val = sample_data['js_divergence']
@@ -836,6 +992,64 @@ if predictions_file is not None and groundtruth_file is not None:
                     with col5:
                         cosine_val = sample_data['cosine_similarity']
                         st.metric("Cosine Similarity", f"{cosine_val:.4f}")
+                    
+                    with col6:
+                        kl_val = sample_data['kl_divergence']
+                        st.metric("KL Divergence", f"{kl_val:.4f}")
+                    
+                    # Linha 3: Informações adicionais
+                    col7, col8, col9 = st.columns(3)
+                    
+                    with col7:
+                        entropy_val = sample_data['gt_distribution_entropy']
+                        st.metric("GT Entropy", f"{entropy_val:.3f}")
+                    
+                    with col8:
+                        euclidean_val = sample_data['euclidean_distance']
+                        st.metric("Euclidean Dist", f"{euclidean_val:.3f}")
+                    
+                    with col9:
+                        correlation_val = sample_data['pearson_correlation']
+                        st.metric("Correlation", f"{correlation_val:.3f}")
+                    
+                    # Seção de análise de consistência
+                    st.subheader("Consistency Analysis")
+                    
+                    # Criar um resumo das consistências
+                    consistency_summary = {
+                        "Annotation vs GT Distribution": 
+                            "✅ Match" if not sample_data['annotation_distribution_discrepancy'] else "❌ Mismatch",
+                        "Annotation vs Prediction": 
+                            "✅ Match" if sample_data['groundtruth_label'] == sample_data['predicted_label'] else "❌ Mismatch",
+                        "GT Distribution vs Prediction": 
+                            "✅ Match" if sample_data['gt_distribution_emotion'] == sample_data['predicted_emotion'] else "❌ Mismatch"
+                    }
+                    
+                    for check, result in consistency_summary.items():
+                        st.write(f"{check}: {result}")
+                    
+                    # Análise de confiança
+                    if has_discrepancy:
+                        st.warning(f"""
+                        **⚠️ Discrepancy Detected!**
+                        
+                        The annotated emotion ({sample_data['groundtruth_emotion']}) differs from the 
+                        most probable emotion in the ground truth distribution ({sample_data['gt_distribution_emotion']}).
+                        
+                        This could indicate:
+                        - An ambiguous sample
+                        - Potential annotation error
+                        - High uncertainty in the ground truth distribution (entropy: {entropy_val:.3f})
+                        """)
+                    else:
+                        st.success(f"""
+                        **✅ Annotation Consistent**
+                        
+                        The annotated emotion ({sample_data['groundtruth_emotion']}) matches the most probable 
+                        emotion in the ground truth distribution.
+                        
+                        Ground truth distribution confidence: {sample_data['gt_max_probability']:.3f}
+                        """)
                 
                 # Scatter plot of selected metric vs accuracy
                 st.subheader(f"{metric_options[selected_metric]} vs Accuracy per Sample")
@@ -861,8 +1075,7 @@ if predictions_file is not None and groundtruth_file is not None:
                 else:
                     st.warning("Insufficient data for scatter plot after removing NaN values.")
             else:
-                st.warning("No samples available after applying filters.")
-        
+                st.warning("No samples available after applying filters.")   
         with tab4:
             st.header("Affective Dimensions Analysis (VAD)")
             
@@ -1522,8 +1735,539 @@ if predictions_file is not None and groundtruth_file is not None:
                 )
             else:
                 st.success("🎉 No discrepancies found! All annotations match the most probable emotion from the distribution.")
-        
         with tab7:
+            st.header("📊 Distribution Metrics Analysis")
+            st.markdown("""
+            Esta seção foca especificamente nas métricas de distribuição que comparam as probabilidades previstas 
+            pelo modelo com as distribuições do ground truth.
+            
+            **Métricas disponíveis:**
+            - **Jensen-Shannon Divergence**: Mede a similaridade entre duas distribuições (0 = idênticas, 1 = máximamente diferentes)
+            - **KL Divergence (Simétrica)**: Versão simétrica da divergência Kullback-Leibler
+            - **Euclidean Distance**: Distância euclidiana entre os vetores de probabilidade
+            - **Cosine Similarity**: Similaridade de cosseno entre os vetores (1 = mesma direção, 0 = ortogonais)
+            - **Pearson Correlation**: Correlação linear entre as distribuições
+            """)
+            
+            # Garantir que não há colunas duplicadas no merged_df
+            if merged_df.columns.duplicated().any():
+                st.warning("⚠️ Found duplicate columns in data. Removing duplicates...")
+                merged_df = merged_df.loc[:, ~merged_df.columns.duplicated()]
+            
+            # 1. Estatísticas descritivas de todas as métricas
+            st.subheader("1. Descriptive Statistics of Distribution Metrics")
+            
+            # Selecionar apenas as métricas de distribuição
+            distribution_metrics_cols = ['js_divergence', 'kl_divergence', 'euclidean_distance', 
+                                        'cosine_similarity', 'pearson_correlation']
+            
+            # Verificar se as colunas existem no DataFrame e não são duplicadas
+            available_metrics = []
+            for col in distribution_metrics_cols:
+                if col in merged_df.columns:
+                    # Verificar se a coluna não está duplicada
+                    col_count = list(merged_df.columns).count(col)
+                    if col_count == 1:
+                        available_metrics.append(col)
+                    else:
+                        st.warning(f"Column '{col}' appears {col_count} times. Using first occurrence.")
+            
+            if not available_metrics:
+                st.warning("No distribution metrics found in the data.")
+                # Verificar quais colunas realmente temos
+                st.write("Available columns:", list(merged_df.columns))
+                st.stop()
+            
+            stats_df = merged_df[available_metrics].describe().T
+            stats_df = stats_df[['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max']]
+            
+            # Renomear as métricas para nomes mais amigáveis
+            metric_names = {
+                'js_divergence': 'JS Divergence',
+                'kl_divergence': 'KL Divergence',
+                'euclidean_distance': 'Euclidean Distance',
+                'cosine_similarity': 'Cosine Similarity',
+                'pearson_correlation': 'Pearson Correlation'
+            }
+            
+            stats_df.index = [metric_names.get(col, col) for col in stats_df.index]
+            
+            st.dataframe(
+                stats_df.style.format({
+                    'mean': '{:.4f}',
+                    'std': '{:.4f}',
+                    'min': '{:.4f}',
+                    '25%': '{:.4f}',
+                    '50%': '{:.4f}',
+                    '75%': '{:.4f}',
+                    'max': '{:.4f}'
+                }),
+                use_container_width=True
+            )
+            
+            # 2. Distribuição das métricas
+            st.subheader("2. Distribution of Metrics")
+            
+            # Seleção de métrica para visualização detalhada
+            metric_to_analyze = st.selectbox(
+                "Select metric for detailed analysis:",
+                available_metrics,
+                format_func=lambda x: metric_names.get(x, x)
+            )
+            
+            # Criar subplots para a métrica selecionada
+            fig_dist = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=[
+                    'Histogram', 
+                    'Cumulative Distribution',
+                    'Box Plot by Emotion',
+                    'Violin Plot by Emotion'
+                ],
+                vertical_spacing=0.12,
+                horizontal_spacing=0.1
+            )
+            
+            # 2.1 Histograma
+            metric_data = merged_df[metric_to_analyze].dropna()
+            
+            if len(metric_data) > 0:
+                fig_dist.add_trace(
+                    go.Histogram(
+                        x=metric_data,
+                        nbinsx=50,
+                        name='Histogram',
+                        marker_color='lightblue',
+                        opacity=0.7
+                    ),
+                    row=1, col=1
+                )
+                
+                # Adicionar linha da média
+                mean_val = metric_data.mean()
+                fig_dist.add_vline(
+                    x=mean_val,
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text=f"Mean: {mean_val:.3f}",
+                    annotation_position="top right",
+                    row=1, col=1
+                )
+                
+                # 2.2 Distribuição cumulativa
+                sorted_vals = np.sort(metric_data)
+                cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+                
+                fig_dist.add_trace(
+                    go.Scatter(
+                        x=sorted_vals,
+                        y=cdf,
+                        mode='lines',
+                        name='CDF',
+                        line=dict(color='darkblue', width=2)
+                    ),
+                    row=1, col=2
+                )
+                
+                # Adicionar percentis
+                for percentile in [25, 50, 75, 90, 95]:
+                    pctl_val = np.percentile(sorted_vals, percentile)
+                    fig_dist.add_vline(
+                        x=pctl_val,
+                        line_dash="dot",
+                        line_color="gray",
+                        annotation_text=f"{percentile}%: {pctl_val:.3f}",
+                        annotation_position="bottom right",
+                        row=1, col=2
+                    )
+                
+                # 2.3 Box plot por emoção
+                for emotion in emotion_mapping.values():
+                    emotion_data = merged_df[merged_df['groundtruth_emotion'] == emotion][metric_to_analyze].dropna()
+                    if len(emotion_data) > 0:
+                        fig_dist.add_trace(
+                            go.Box(
+                                y=emotion_data,
+                                name=emotion,
+                                boxpoints='outliers',
+                                marker_color='lightcoral'
+                            ),
+                            row=2, col=1
+                        )
+                
+                # 2.4 Violin plot por emoção
+                for emotion in emotion_mapping.values():
+                    emotion_data = merged_df[merged_df['groundtruth_emotion'] == emotion][metric_to_analyze].dropna()
+                    if len(emotion_data) > 0:
+                        fig_dist.add_trace(
+                            go.Violin(
+                                y=emotion_data,
+                                name=emotion,
+                                box_visible=True,
+                                meanline_visible=True,
+                                fillcolor='lightseagreen',
+                                opacity=0.6,
+                                line_color='black'
+                            ),
+                            row=2, col=2
+                        )
+                
+                fig_dist.update_layout(
+                    height=800,
+                    showlegend=False,
+                    title_text=f"Detailed Analysis: {metric_names.get(metric_to_analyze, metric_to_analyze)}"
+                )
+                
+                st.plotly_chart(fig_dist, use_container_width=True)
+            else:
+                st.warning(f"No data available for {metric_names.get(metric_to_analyze, metric_to_analyze)}")
+            
+            # 3. Matriz de correlação entre métricas
+            st.subheader("3. Correlation Between Distribution Metrics")
+            
+            # Calcular matriz de correlação apenas com as métricas disponíveis
+            corr_matrix = merged_df[available_metrics].corr()
+            
+            # Plotar heatmap de correlação
+            fig_corr = go.Figure(data=go.Heatmap(
+                z=corr_matrix.values,
+                x=[metric_names.get(col, col) for col in corr_matrix.columns],
+                y=[metric_names.get(col, col) for col in corr_matrix.index],
+                colorscale='RdBu',
+                zmid=0,
+                text=np.round(corr_matrix.values, 3),
+                texttemplate='%{text}',
+                textfont={"size": 12},
+                hoverongaps=False,
+                colorbar_title="Correlation"
+            ))
+            
+            fig_corr.update_layout(
+                title="Correlation Matrix of Distribution Metrics",
+                height=500
+            )
+            
+            st.plotly_chart(fig_corr, use_container_width=True)
+            
+            # Análise das correlações
+            st.info("""
+            **Interpretação das correlações:**
+            - **Cosine Similarity e Pearson Correlation**: Normalmente altamente correlacionados (ambos medem similaridade)
+            - **JS/KL Divergence e Euclidean Distance**: Normalmente correlacionados (todos medem distância/divergência)
+            - **Similarity vs Divergence metrics**: Normalmente negativamente correlacionados
+            """)
+            
+            # 4. Relação entre métricas e acurácia
+            st.subheader("4. Metrics Relationship with Classification Accuracy")
+            
+            # Criar dataframe com métricas e acurácia
+            merged_df['correct'] = merged_df['groundtruth_label'] == merged_df['predicted_label']
+            accuracy_by_metric = []
+            
+            # Analisar cada métrica disponível
+            for metric in available_metrics:
+                # Separar corretos vs incorretos
+                correct_vals = merged_df[merged_df['correct']][metric].dropna()
+                incorrect_vals = merged_df[~merged_df['correct']][metric].dropna()
+                
+                if len(correct_vals) > 0 and len(incorrect_vals) > 0:
+                    # Teste t para diferença de médias
+                    try:
+                        from scipy import stats
+                        t_stat, p_value = stats.ttest_ind(correct_vals, incorrect_vals, equal_var=False)
+                        
+                        effect_size = 0
+                        if (correct_vals.std()**2 + incorrect_vals.std()**2) > 0:
+                            effect_size = (correct_vals.mean() - incorrect_vals.mean()) / np.sqrt(
+                                (correct_vals.std()**2 + incorrect_vals.std()**2) / 2
+                            )
+                        
+                        accuracy_by_metric.append({
+                            'Metric': metric_names.get(metric, metric),
+                            'Correct Mean': correct_vals.mean(),
+                            'Incorrect Mean': incorrect_vals.mean(),
+                            'Difference': correct_vals.mean() - incorrect_vals.mean(),
+                            'Effect Size': effect_size,
+                            'p-value': p_value,
+                            'Significant': p_value < 0.05
+                        })
+                    except Exception as e:
+                        # Se houver erro no teste t, pular esta métrica
+                        continue
+            
+            if accuracy_by_metric:
+                accuracy_df = pd.DataFrame(accuracy_by_metric)
+                
+                # Função para colorir linhas significativas
+                def highlight_significant(row):
+                    if row['Significant']:
+                        return ['background-color: lightgreen'] * len(row)
+                    return [''] * len(row)
+                
+                st.dataframe(
+                    accuracy_df.style.format({
+                        'Correct Mean': '{:.4f}',
+                        'Incorrect Mean': '{:.4f}',
+                        'Difference': '{:.4f}',
+                        'Effect Size': '{:.3f}',
+                        'p-value': '{:.6f}'
+                    }).apply(highlight_significant, axis=1),
+                    use_container_width=True
+                )
+                
+                # Gráfico de barras comparando médias
+                fig_accuracy = go.Figure()
+                
+                fig_accuracy.add_trace(go.Bar(
+                    x=accuracy_df['Metric'],
+                    y=accuracy_df['Correct Mean'],
+                    name='Correct Predictions',
+                    marker_color='green',
+                    opacity=0.7
+                ))
+                
+                fig_accuracy.add_trace(go.Bar(
+                    x=accuracy_df['Metric'],
+                    y=accuracy_df['Incorrect Mean'],
+                    name='Incorrect Predictions',
+                    marker_color='red',
+                    opacity=0.7
+                ))
+                
+                fig_accuracy.update_layout(
+                    title='Average Metric Values by Prediction Accuracy',
+                    xaxis_title='Metric',
+                    yaxis_title='Average Value',
+                    barmode='group',
+                    height=500
+                )
+                
+                st.plotly_chart(fig_accuracy, use_container_width=True)
+            else:
+                st.warning("Could not calculate accuracy relationships for any metrics.")
+            
+            # 5. Threshold analysis para cada métrica
+            st.subheader("5. Threshold Analysis for Anomaly Detection")
+            
+            # Selecionar métrica para análise de threshold
+            threshold_metric = st.selectbox(
+                "Select metric for threshold analysis:",
+                available_metrics,
+                key='threshold_metric',
+                format_func=lambda x: metric_names.get(x, x)
+            )
+            
+            if threshold_metric in merged_df.columns:
+                # Slider para definir threshold
+                metric_min = merged_df[threshold_metric].min()
+                metric_max = merged_df[threshold_metric].max()
+                metric_mean = merged_df[threshold_metric].mean()
+                metric_std = merged_df[threshold_metric].std()
+                
+                # Determinar threshold padrão baseado na métrica
+                if threshold_metric in ['js_divergence', 'kl_divergence', 'euclidean_distance']:
+                    default_threshold = metric_mean + metric_std  # Para métricas de divergência
+                else:
+                    default_threshold = metric_mean - metric_std  # Para métricas de similaridade
+                
+                threshold = st.slider(
+                    f"Threshold for {metric_names.get(threshold_metric, threshold_metric)}:",
+                    min_value=float(metric_min),
+                    max_value=float(metric_max),
+                    value=float(default_threshold),
+                    step=0.01
+                )
+                
+                # Analisar amostras acima/abaixo do threshold
+                if threshold_metric in ['js_divergence', 'kl_divergence', 'euclidean_distance']:
+                    # Valores altos são ruins
+                    problematic = merged_df[merged_df[threshold_metric] > threshold].copy()
+                    comparison_text = "above"
+                else:
+                    # Valores baixos são ruins (para similaridade/correlação)
+                    problematic = merged_df[merged_df[threshold_metric] < threshold].copy()
+                    comparison_text = "below"
+                
+                # Estatísticas do threshold
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(f"Samples {comparison_text} threshold", len(problematic))
+                
+                with col2:
+                    percentage = len(problematic) / len(merged_df) * 100 if len(merged_df) > 0 else 0
+                    st.metric("Percentage", f"{percentage:.1f}%")
+                
+                with col3:
+                    accuracy_problematic = accuracy_score(
+                        problematic['groundtruth_label'], 
+                        problematic['predicted_label']
+                    ) if len(problematic) > 0 else 0
+                    st.metric("Accuracy in subset", f"{accuracy_problematic:.2%}")
+                
+                with col4:
+                    overall_accuracy = accuracy_score(
+                        merged_df['groundtruth_label'], 
+                        merged_df['predicted_label']
+                    )
+                    st.metric("Overall accuracy", f"{overall_accuracy:.2%}")
+                
+                # Distribuição de emoções nas amostras problemáticas
+                if len(problematic) > 0:
+                    st.subheader(f"6. Emotion Distribution in {comparison_text.capitalize()} Threshold Samples")
+                    
+                    emotion_dist = problematic['groundtruth_emotion'].value_counts().reset_index()
+                    emotion_dist.columns = ['Emotion', 'Count']
+                    emotion_dist['Percentage'] = emotion_dist['Count'] / len(problematic) * 100
+                    
+                    # Comparar com distribuição geral
+                    overall_dist = merged_df['groundtruth_emotion'].value_counts().reset_index()
+                    overall_dist.columns = ['Emotion', 'Count']
+                    overall_dist['Percentage'] = overall_dist['Count'] / len(merged_df) * 100
+                    
+                    # Juntar as distribuições
+                    comparison_dist = pd.merge(
+                        emotion_dist, 
+                        overall_dist, 
+                        on='Emotion', 
+                        suffixes=('_problematic', '_overall')
+                    )
+                    
+                    # Calcular over/under representation
+                    comparison_dist['Over_Representation'] = (
+                        comparison_dist['Percentage_problematic'] - 
+                        comparison_dist['Percentage_overall']
+                    )
+                    
+                    st.dataframe(
+                        comparison_dist.style.format({
+                            'Percentage_problematic': '{:.1f}%',
+                            'Percentage_overall': '{:.1f}%',
+                            'Over_Representation': '{:.1f}%'
+                        }).apply(
+                            lambda x: ['background-color: lightcoral' if x['Over_Representation'] > 5 else 
+                                    'background-color: lightgreen' if x['Over_Representation'] < -5 else '' 
+                                    for _ in x], axis=1
+                        ),
+                        use_container_width=True
+                    )
+                    
+                    # Mostrar top amostras problemáticas
+                    st.subheader(f"7. Top Problematic Samples ({comparison_text} threshold)")
+                    
+                    if threshold_metric in ['js_divergence', 'kl_divergence', 'euclidean_distance']:
+                        # Ordenar por valores mais altos
+                        top_problematic = problematic.nlargest(10, threshold_metric)
+                    else:
+                        # Ordenar por valores mais baixos
+                        top_problematic = problematic.nsmallest(10, threshold_metric)
+                    
+                    display_cols = [
+                        'file', 'groundtruth_emotion', 'predicted_emotion', 
+                        threshold_metric, 'js_divergence', 'cosine_similarity',
+                        'gt_max_probability', 'gt_distribution_entropy'
+                    ]
+                    
+                    # Filtrar colunas que existem e remover duplicatas
+                    existing_cols = []
+                    seen = set()
+                    for col in display_cols:
+                        if col in problematic.columns and col not in seen:
+                            existing_cols.append(col)
+                            seen.add(col)
+                    
+                    display_df = top_problematic[existing_cols].copy()
+                    display_df['file'] = display_df['file'].apply(lambda x: x.split('/')[-1] if isinstance(x, str) else str(x))
+                    
+                    st.dataframe(
+                        display_df.style.format({
+                            threshold_metric: '{:.4f}',
+                            'js_divergence': '{:.4f}',
+                            'cosine_similarity': '{:.4f}',
+                            'gt_max_probability': '{:.3f}',
+                            'gt_distribution_entropy': '{:.3f}'
+                        }),
+                        use_container_width=True
+                    )
+                    
+                    # Botão para download
+                    csv_problematic = problematic.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Problematic Samples",
+                        data=csv_problematic,
+                        file_name=f"problematic_samples_{threshold_metric}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info(f"No samples found {comparison_text} the threshold of {threshold:.3f}")
+            else:
+                st.warning(f"Selected metric '{threshold_metric}' not found in data.")
+            
+            # 8. Análise de métricas por nível de confiança do ground truth
+            st.subheader("8. Metrics Analysis by Ground Truth Confidence")
+            
+            # Verificar se gt_max_probability existe
+            if 'gt_max_probability' in merged_df.columns:
+                # Criar bins de confiança
+                merged_df['confidence_bin'] = pd.cut(
+                    merged_df['gt_max_probability'],
+                    bins=[0, 0.3, 0.5, 0.7, 0.9, 1.0],
+                    labels=['Very Low (0-0.3)', 'Low (0.3-0.5)', 'Medium (0.5-0.7)', 
+                            'High (0.7-0.9)', 'Very High (0.9-1.0)']
+                )
+                
+                # Calcular métricas médias por bin de confiança
+                confidence_analysis = []
+                for metric in available_metrics:
+                    for bin_name in merged_df['confidence_bin'].cat.categories:
+                        bin_data = merged_df[merged_df['confidence_bin'] == bin_name][metric].dropna()
+                        if len(bin_data) > 0:
+                            confidence_analysis.append({
+                                'Confidence Bin': bin_name,
+                                'Metric': metric_names.get(metric, metric),
+                                'Mean': bin_data.mean(),
+                                'Std': bin_data.std(),
+                                'Samples': len(bin_data)
+                            })
+                
+                if confidence_analysis:
+                    conf_df = pd.DataFrame(confidence_analysis)
+                    
+                    # Pivot para heatmap
+                    pivot_df = conf_df.pivot(index='Metric', columns='Confidence Bin', values='Mean')
+                    
+                    fig_heatmap = go.Figure(data=go.Heatmap(
+                        z=pivot_df.values,
+                        x=pivot_df.columns,
+                        y=pivot_df.index,
+                        colorscale='Viridis',
+                        text=np.round(pivot_df.values, 3),
+                        texttemplate='%{text}',
+                        textfont={"size": 11},
+                        hoverongaps=False,
+                        colorbar_title="Metric Value"
+                    ))
+                    
+                    fig_heatmap.update_layout(
+                        title="Distribution Metrics by Ground Truth Confidence Level",
+                        height=500
+                    )
+                    
+                    st.plotly_chart(fig_heatmap, use_container_width=True)
+                    
+                    # Análise de tendências
+                    st.info("""
+                    **Tendências esperadas:**
+                    - **Divergência/Similaridade**: Amostras com alta confiança no ground truth devem ter:
+                    - Menor JS/KL Divergence
+                    - Maior Cosine Similarity e Pearson Correlation
+                    - Se este padrão não for observado, pode indicar problemas no modelo ou nos dados
+                    """)
+                else:
+                    st.warning("Could not calculate metrics by confidence bins.")
+            else:
+                st.info("Ground truth confidence (gt_max_probability) not available for analysis.")
+        with tab8:
             st.header("Complete Data")
             
             # View options
