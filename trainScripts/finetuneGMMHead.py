@@ -13,6 +13,7 @@ from torch.nn import functional as F
 from loss.FocalLoss import FocalLoss
 from loss.FocalConsistencyLoss import FocalConsistencyLoss, RegularizedLearnedConsistencyLoss
 from loss.KnowledgeGuidedConsistencyLoss import KnowledgeGuidedConsistencyLoss
+from helper.function import visualize_conflict_matrix
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
     """
@@ -184,11 +185,15 @@ def train():
         ).to(device)
     elif args.mainLossFunc == "KNOWLEDGEGUIDEDCONSISTENCY":
         print("Using Knowledge Guided Consistency Loss")
+        print(f"Number of classes: {args.numberOfClasses}")
+
         criterion = KnowledgeGuidedConsistencyLoss(
             num_classes=args.numberOfClasses,
             gamma=2.0,
             alpha=0.25,
-            prior_strength=0.5,
+            prior_strength=0.5,  # Forte influência do conhecimento prévio
+            learnable_scale=True,
+            reduction='mean'  # Adicione esta linha
         ).to(device)
     
     secLoss = None
@@ -334,8 +339,18 @@ def train():
                 writer.add_figure('RESNETAtt/ConflictMatrix', fig, ep)
                 plt.close(fig)
             except Exception as e:
-                print(f"Warning: Could not visualize conflict matrix: {e}")
+                pass
+                #print(f"Warning: Could not visualize conflict matrix: {e}")
         
+        if args.visualizeConflict and hasattr(criterion, 'analyze_conflicts'):
+            conflict_matrix = criterion.analyze_conflicts(threshold=0.2)
+    
+            # Salvar visualização se possível
+            if args.visualizeConflict:
+                fig, _ = visualize_conflict_matrix(conflict_matrix, criterion.loss_module.class_names)
+                writer.add_figure('ConflictMatrix/Heatmap', fig, ep)
+                plt.close(fig)
+
         # Registrar pares de conflito significativos
         if hasattr(criterion, 'get_conflict_pairs'):
             conflict_pairs = criterion.get_conflict_pairs(threshold=args.conflictThreshold)

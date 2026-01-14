@@ -340,3 +340,215 @@ def overlay_attention_maps(image_tensor, attention_maps):
         overlays.append(overlay_np)
     
     return image_np, overlays
+
+def visualize_conflict_matrix(matrix, class_names=None, title=None, 
+                             save_path=None, figsize=(12, 10), dpi=100):
+    """
+    Visualiza uma matriz de conflito
+    
+    Args:
+        matrix: Matriz numpy ou tensor
+        class_names: Lista com nomes das classes
+        title: Título do gráfico
+        save_path: Caminho para salvar a figura
+        figsize: Tamanho da figura
+        dpi: Resolução da figura
+    """
+    # Converter tensor para numpy se necessário
+    if torch.is_tensor(matrix):
+        matrix_np = matrix.cpu().detach().numpy()
+    else:
+        matrix_np = np.array(matrix)
+    
+    # Se class_names não for fornecido, criar nomes padrão
+    if class_names is None:
+        n_classes = matrix_np.shape[0]
+        class_names = [f'Class {i}' for i in range(n_classes)]
+    
+    # Criar figura
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    
+    # Criar heatmap
+    im = ax.imshow(matrix_np, cmap='RdYlBu_r', vmin=0, vmax=1)
+    
+    # Configurar ticks
+    n_classes = len(class_names)
+    ax.set_xticks(range(n_classes))
+    ax.set_yticks(range(n_classes))
+    ax.set_xticklabels(class_names, rotation=45, ha='right', fontsize=10)
+    ax.set_yticklabels(class_names, fontsize=10)
+    
+    # Adicionar grade
+    ax.set_xticks(np.arange(n_classes + 1) - 0.5, minor=True)
+    ax.set_yticks(np.arange(n_classes + 1) - 0.5, minor=True)
+    ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5)
+    ax.tick_params(which='minor', size=0)
+    
+    # Adicionar valores nas células
+    for i in range(n_classes):
+        for j in range(n_classes):
+            value = matrix_np[i, j]
+            # Escolher cor do texto baseado no fundo
+            text_color = 'white' if value > 0.5 else 'black'
+            text = ax.text(j, i, f'{value:.2f}', 
+                          ha='center', va='center', 
+                          color=text_color, fontsize=8)
+    
+    # Adicionar barra de cores
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Conflict Weight', fontsize=12)
+    
+    # Título
+    if title is None:
+        title = f'Conflict Matrix ({n_classes} Classes)'
+    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+    
+    # Ajustar layout
+    plt.tight_layout()
+    
+    # Salvar figura se path for fornecido
+    if save_path:
+        plt.savefig(save_path, dpi=dpi, bbox_inches='tight')
+    
+    return fig, ax
+
+def plot_top_conflicts(matrix, class_names=None, top_k=10, 
+                       figsize=(10, 6), save_path=None):
+    """
+    Plota os maiores conflitos de forma de barras
+    
+    Args:
+        matrix: Matriz de conflito
+        class_names: Nomes das classes
+        top_k: Número de maiores conflitos para mostrar
+        figsize: Tamanho da figura
+        save_path: Caminho para salvar
+    """
+    # Converter tensor para numpy se necessário
+    if torch.is_tensor(matrix):
+        matrix_np = matrix.cpu().detach().numpy()
+    else:
+        matrix_np = np.array(matrix)
+    
+    # Se class_names não for fornecido
+    if class_names is None:
+        n_classes = matrix_np.shape[0]
+        class_names = [f'Class {i}' for i in range(n_classes)]
+    
+    # Extrair pares de conflito
+    conflicts = []
+    n = len(class_names)
+    
+    for i in range(n):
+        for j in range(i + 1, n):  # Apenas triângulo superior
+            conflicts.append((i, j, matrix_np[i, j]))
+    
+    # Ordenar por peso
+    conflicts.sort(key=lambda x: x[2], reverse=True)
+    
+    # Pegar top_k
+    top_conflicts = conflicts[:top_k]
+    
+    # Criar figura
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Preparar dados para o gráfico de barras
+    bars = []
+    values = []
+    
+    for i, j, weight in top_conflicts:
+        bar_label = f'{class_names[i]} - {class_names[j]}'
+        bars.append(bar_label)
+        values.append(weight)
+    
+    # Criar gráfico de barras
+    y_pos = np.arange(len(bars))
+    bars_plot = ax.barh(y_pos, values, color='steelblue', alpha=0.8)
+    
+    # Adicionar valores nas barras
+    for bar, value in zip(bars_plot, values):
+        width = bar.get_width()
+        ax.text(width + 0.01, bar.get_y() + bar.get_height()/2,
+                f'{value:.3f}', ha='left', va='center', fontsize=9)
+    
+    # Configurar eixo Y
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(bars, fontsize=10)
+    ax.invert_yaxis()  # Maior valor no topo
+    
+    # Configurar eixo X
+    ax.set_xlabel('Conflict Weight', fontsize=12)
+    ax.set_xlim(0, min(1.0, max(values) * 1.2))
+    
+    # Título
+    ax.set_title(f'Top {top_k} Conflict Pairs', fontsize=14, fontweight='bold')
+    
+    # Adicionar grade
+    ax.grid(axis='x', alpha=0.3, linestyle='--')
+    
+    plt.tight_layout()
+    
+    # Salvar se necessário
+    if save_path:
+        plt.savefig(save_path, dpi=100, bbox_inches='tight')
+    
+    return fig, ax
+
+def plot_conflict_evolution(conflict_history, class_names=None, 
+                           figsize=(14, 10), save_path=None):
+    """
+    Plota a evolução dos conflitos ao longo do treinamento
+    
+    Args:
+        conflict_history: Lista de matrizes de conflito por época
+        class_names: Nomes das classes
+        figsize: Tamanho da figura
+        save_path: Caminho para salvar
+    """
+    n_epochs = len(conflict_history)
+    n_classes = conflict_history[0].shape[0]
+    
+    if class_names is None:
+        class_names = [f'Class {i}' for i in range(n_classes)]
+    
+    # Criar figura com subplots
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    axes = axes.flatten()
+    
+    # 1. Evolução da média dos pesos de conflito
+    mean_weights = [matrix.mean() for matrix in conflict_history]
+    axes[0].plot(range(n_epochs), mean_weights, 'b-o', linewidth=2, markersize=4)
+    axes[0].set_xlabel('Epoch', fontsize=11)
+    axes[0].set_ylabel('Mean Conflict Weight', fontsize=11)
+    axes[0].set_title('Evolução da Média dos Conflitos', fontsize=12, fontweight='bold')
+    axes[0].grid(True, alpha=0.3)
+    
+    # 2. Evolução do número de conflitos fortes (> 0.5)
+    strong_counts = [(matrix > 0.5).sum() for matrix in conflict_history]
+    axes[1].plot(range(n_epochs), strong_counts, 'r-o', linewidth=2, markersize=4)
+    axes[1].set_xlabel('Epoch', fontsize=11)
+    axes[1].set_ylabel('Número de Conflitos Fortes', fontsize=11)
+    axes[1].set_title('Evolução dos Conflitos Fortes', fontsize=12, fontweight='bold')
+    axes[1].grid(True, alpha=0.3)
+    
+    # 3. Matriz inicial vs final
+    cmap = plt.cm.RdYlBu_r
+    im1 = axes[2].imshow(conflict_history[0], cmap=cmap, vmin=0, vmax=1)
+    axes[2].set_title('Matriz Inicial (Época 0)', fontsize=12, fontweight='bold')
+    axes[2].axis('off')
+    plt.colorbar(im1, ax=axes[2], fraction=0.046, pad=0.04)
+    
+    im2 = axes[3].imshow(conflict_history[-1], cmap=cmap, vmin=0, vmax=1)
+    axes[3].set_title(f'Matriz Final (Época {n_epochs-1})', fontsize=12, fontweight='bold')
+    axes[3].axis('off')
+    plt.colorbar(im2, ax=axes[3], fraction=0.046, pad=0.04)
+    
+    plt.suptitle('Evolução da Matriz de Conflito durante o Treinamento', 
+                 fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    
+    # Salvar se necessário
+    if save_path:
+        plt.savefig(save_path, dpi=120, bbox_inches='tight')
+    
+    return fig, axes
