@@ -99,6 +99,7 @@ def train():
                        required=False, default=False, type=bool)
     parser.add_argument('--conflictThreshold', help='Threshold for significant conflict pairs', 
                        required=False, default=0.1, type=float)
+    parser.add_argument('--typeExperiment', help='Which type of experiment to conduct', required=False, default="PROBS_VAD")
     
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -150,10 +151,10 @@ def train():
     ])}
     print("Loading trainig set")
     #dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VAD')
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment=args.typeExperiment)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
     #datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VAD')
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment=args.typeExperiment)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
     
     criterion = None
@@ -228,7 +229,7 @@ def train():
         print("Weights loaded")
 
     os.system('cls' if os.name == 'nt' else 'clear')
-    print("Started traning")
+    print(f"Started traning with the protocol {args.typeExperiment}")
     print('Training Phase =================================================================== BTL  BVL BAC')
     bestForFold = bestForFoldTLoss = 500000
     
