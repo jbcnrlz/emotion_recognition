@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 class FocalConsistencyLoss(nn.Module):
     def __init__(self, gamma=2.0, alpha=0.25, conflict_weight=1.0, reduction='mean'):
@@ -140,7 +141,6 @@ class RegularizedLearnedConsistencyLoss(nn.Module):
     
     def visualize_conflict_matrix(self):
         """Visualiza a matriz de conflito aprendida"""
-        import matplotlib.pyplot as plt
         
         with torch.no_grad():
             weights = torch.sigmoid(self.conflict_logits).cpu().numpy()

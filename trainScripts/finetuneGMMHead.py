@@ -12,7 +12,7 @@ import torch.distributions as dist, random
 from torch.nn import functional as F
 from loss.FocalLoss import FocalLoss
 from loss.FocalConsistencyLoss import FocalConsistencyLoss, RegularizedLearnedConsistencyLoss
-from loss.KnowledgeGuidedConsistencyLoss import KnowledgeGuidedConsistencyLoss
+from loss.KnowledgeGuidedConsistencyLoss import KnowledgeGuidedConsistencyLoss, create_enhanced_consistency_loss
 from helper.function import visualize_conflict_matrix
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
@@ -100,6 +100,18 @@ def train():
     parser.add_argument('--conflictThreshold', help='Threshold for significant conflict pairs', 
                        required=False, default=0.1, type=float)
     parser.add_argument('--typeExperiment', help='Which type of experiment to conduct', required=False, default="PROBS_VAD")
+    parser.add_argument('--prior_strength', help='Strength of prior knowledge', 
+                    required=False, default=0.7, type=float)
+    parser.add_argument('--conflict_weight', help='Weight for consistency loss', 
+                    required=False, default=1.0, type=float)
+    parser.add_argument('--sparsity_weight', help='Weight for sparsity regularization', 
+                    required=False, default=0.01, type=float)
+    parser.add_argument('--symmetry_weight', help='Weight for symmetry regularization', 
+                    required=False, default=0.001, type=float)
+    parser.add_argument('--gradient_boost', help='Gradient boost factor for conflict matrix', 
+                    required=False, default=5.0, type=float)
+    parser.add_argument('--residual_lr_multiplier', help='LR multiplier for residual matrix', 
+                    required=False, default=5.0, type=float)
     
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -197,6 +209,11 @@ def train():
             reduction='mean'  # Adicione esta linha
         ).to(device)
     
+
+    elif args.mainLossFunc == "ENHANCEDKNOWLEDGE":
+        print("Using Enhanced Knowledge Consistency Loss")
+        criterion, loss_optimizer_params = create_enhanced_consistency_loss(args, device)
+
     secLoss = None
     lossFuncName = re.sub(r'[^a-zA-Z0-9\s]', '', str(criterion))
 
@@ -207,6 +224,11 @@ def train():
             {'params': model.parameters(), 'lr': args.learningRate},
             {'params': criterion.parameters(), 'lr': args.learningRate * 10},  # LR maior
         ], weight_decay=1e-2)
+    elif args.mainLossFunc == "ENHANCEDKNOWLEDGE":
+        model_params = [{'params': model.parameters(), 'lr': args.learningRate}]
+        all_params = model_params + loss_optimizer_params        
+        optimizer = optim.AdamW(all_params, weight_decay=1e-4)
+
     else:
 
         optimizer = optim.AdamW(model.parameters(), lr=args.learningRate, weight_decay=1e-2)
@@ -232,8 +254,10 @@ def train():
     print(f"Started traning with the protocol {args.typeExperiment}")
     print('Training Phase =================================================================== BTL  BVL BAC')
     bestForFold = bestForFoldTLoss = 500000
+    bestRank = -np.inf
     
     for ep in range(start_epoch,args.epochs):
+        rankT = rankA = None
         ibl = ibr = ibtl = ' '
         model.train()
         lossAcc = []
@@ -241,12 +265,14 @@ def train():
         ceLoss = []
         totalImages = 0
         iteration = 0
-        
+        accPercentage = None
         for currBatch, currTargetBatch, _ in train_loader:
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
+            labels = None if len(currTargetBatch) < 3 else currTargetBatch[2].to(device)
             currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
-            
+                        
+
             if isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
                 classification = model(currBatch)
                 loss = criterion(classification, currTargetBatch)
@@ -272,16 +298,50 @@ def train():
             if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
                 elboLoss.append(elboVal.item())            
                 ceLoss.append(ceVal.item())
+
+            if labels is not None:
+                _, preds = torch.max(classification, 1)
+                corrects = torch.sum(preds == labels).item()
+                accPercentage = corrects if accPercentage is None else accPercentage + corrects
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
         writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
+
+        if labels is not None:
+            accPercentage = accPercentage / totalImages
+            writer.add_scalar('RESNETAtt/Accuracy/train', accPercentage, ep)
+            rankT = accPercentage
+
         if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
             elboLoss = sum(elboLoss) / len(elboLoss)
             ceLoss = sum(ceLoss) / len(ceLoss)
             writer.add_scalar(f'RESNETAtt/{lossFuncName}/train',ceLoss, ep)
             writer.add_scalar('RESNETAtt/ELBOLoss/train',elboLoss,ep)
         
+        if args.mainLossFunc == "ENHANCEDKNOWLEDGE":            
+            conflict_matrix = criterion.analyze_conflict_learning(threshold=0.3)
+            
+            # Visualizar no TensorBoard
+            if args.visualizeConflict:
+                try:
+                    fig = criterion.visualize_conflict_matrix(
+                        title=f'Conflict Matrix - Epoch {ep}'
+                    )
+                    writer.add_figure('EnhancedLoss/ConflictMatrix', fig, ep)
+                    plt.close(fig)
+                except Exception as e:
+                    print(f"Erro ao visualizar matriz: {e}")
+            
+            # Registrar métricas
+            if conflict_matrix is not None:
+                writer.add_scalar('EnhancedLoss/MeanConflict', conflict_matrix.mean(), ep)
+                writer.add_scalar('EnhancedLoss/StdConflict', conflict_matrix.std(), ep)
+                
+                # Contar conflitos fortes
+                strong_conflicts = (conflict_matrix > 0.5).sum()
+                writer.add_scalar('EnhancedLoss/StrongConflicts', strong_conflicts, ep)
+
         scheduler.step()
         model.eval()
         elboLoss = []
@@ -289,13 +349,15 @@ def train():
         loss_val = []
         iteration = 0
         imageAttention = None
-        
+        accPercentage = None
+        totalImages = 0
         with torch.no_grad():
             for currBatch, currTargetBatch, _ in val_loader:
                 printProgressBar(iteration,math.ceil(len(datasetVal.filesPath)/args.batchSize),length=50,prefix='Procesing face - testing')
 
                 totalImages += currBatch.shape[0]
-                currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
+                labels = None if len(currTargetBatch) < 3 else currTargetBatch[2].to(device)
+                currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)                
 
                 if (random.randint(0, 100) < 5) or (imageAttention is None):
                     imageAttention = currBatch[random.randint(0,currBatch.shape[0]-1)].cpu().detach().numpy()
@@ -317,10 +379,22 @@ def train():
                     ceLoss.append(ceVal.item())
 
                 loss_val.append(loss.item())
+
+                if labels is not None:
+                    _, preds = torch.max(classification, 1)
+                    corrects = torch.sum(preds == labels).item()
+                    accPercentage = corrects if accPercentage is None else accPercentage + corrects
+
                 iteration += 1
 
         tLoss = sum(loss_val) / len(loss_val)
         writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
+
+        if labels is not None:
+            accPercentage = accPercentage / totalImages
+            writer.add_scalar('RESNETAtt/Accuracy/val', accPercentage, ep)
+            rankA = accPercentage
+
         if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
             elboLoss = sum(elboLoss) / len(elboLoss)
             ceLoss = sum(ceLoss) / len(ceLoss)
@@ -381,9 +455,19 @@ def train():
             fName = '%s_best_loss.pth.tar' % ('RESNETATT')
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
-            bestForFold = lossAvg        
+            bestForFold = lossAvg
 
-        print('[EPOCH %03d] T. Loss %.5f V. Loss %.5f [%c] [%c]' % (ep, lossAvg, tLoss, ibl,ibtl))
+        if (rankT is not None) and (bestRank < rankT):
+            bestRank = rankT
+            ibr = 'X'
+            fName = '%s_best_accuracy.pth.tar' % ('RESNETATT')
+            fName = os.path.join(args.output, fName)
+            saveStatePytorch(fName, state_dict, opt_dict, ep + 1)        
+
+        if rankT is not None:
+            print(f"[EPOCH {ep:03d}] T. Loss {lossAvg:.5f} T. Rank {rankT:.4f} V. Loss {tLoss:.5f} V. Rank: {rankA:.5f} [{ibl}] [{ibtl}] [{ibr}]")
+        else:
+            print('[EPOCH %03d] T. Loss %.5f V. Loss %.5f [%c] [%c]' % (ep, lossAvg, tLoss, ibl,ibtl))
 
 if __name__ == '__main__':
     train()

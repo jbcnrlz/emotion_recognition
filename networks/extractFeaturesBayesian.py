@@ -27,7 +27,7 @@ def saveToCSV(preds, files, pathCSV, vad=None, emoLabels=None, mapping=None, num
         for i in range(num_classes):
             emotion_headers.append(f'class_{i:03d}')
     else:
-        emotion_headers = emoHeaders
+        emotion_headers = list(emoHeaders)
     
     # Adiciona cabeçalhos para VAD (se existir)
     if vad is not None and len(vad) > 0:
@@ -43,7 +43,7 @@ def saveToCSV(preds, files, pathCSV, vad=None, emoLabels=None, mapping=None, num
                 emotion_headers.append(f'vad_{i:03d}')
     
     # Adiciona cabeçalho para rótulo emocional (se existir)
-    if emoLabels is not None:
+    if emoLabels is not None and 'emotion_label' not in emotion_headers:
         emotion_headers.append('emotion_label')
     
     # Escreve o cabeçalho no arquivo CSV
@@ -508,6 +508,8 @@ def train():
                        help='Layer to use for Grad-CAM (layer1, layer2, layer3, layer4, conv1)')
     parser.add_argument('--emotion_labels', type=str, default=None,
                        help='Custom emotion labels (comma-separated)')
+    parser.add_argument('--typeExperiment', type=str, default='ORIGINAL_VAD_EXP',
+                       help='Type of experiment')
     args = parser.parse_args()
 
     checkpoint = torch.load(args.weights)
@@ -532,6 +534,7 @@ def train():
     print("Model loaded")
     print(f"Model type: {type(model)}")
     print(f"Number of classes: {args.classQuantity}")
+    print(f"Type of experiment: {args.typeExperiment}")
     
     # Processar labels de emoções personalizadas se fornecidas
     emotion_labels = None
@@ -546,7 +549,7 @@ def train():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     
-    dataset = AffectNet(afectdata=args.pathBase, transform=data_transforms, typeExperiment='ORIGINAL_VAD_EXP')
+    dataset = AffectNet(afectdata=args.pathBase, transform=data_transforms, typeExperiment=args.typeExperiment)
     val_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=False)
     model.eval()
     
@@ -601,6 +604,7 @@ def train():
     saveToCSV(predictions, pathFile, args.output, vad=vadPreds, emoLabels=labelPreds, 
               mapping=[1, 7, 3, 6, 5, 4, 2, 0], num_classes=args.classQuantity,emoHeaders=emotion_labels)
     
+
     saveToCSV(labelsGrouped, pathFile, args.output[:-4] + "_labels.csv", 
               vad=vadTrue, emoLabels=labelTrue, num_classes=args.classQuantity,emoHeaders=emotion_labels)
     

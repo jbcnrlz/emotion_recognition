@@ -3,9 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import os, sys
+import matplotlib.pyplot as plt
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from helper.function import visualize_conflict_matrix, plot_top_conflicts
+
 
 class KnowledgeGuidedConsistencyLoss(nn.Module):
     def __init__(self, num_classes=8, gamma=2.0, alpha=0.25, 
@@ -696,3 +698,595 @@ class GenericConsistencyLoss(nn.Module):
         total_loss = focal_loss + consistency_loss + 0.001 * smoothness_loss
         
         return total_loss
+class EnhancedKnowledgeConsistencyLoss(nn.Module):
+    """
+    Combina a Abordagem Revisada com Gradientes Melhores e 
+    a Abordagem com Conhecimento Prévio Incorporado.
+    
+    Funciona para 8 e 14 classes com a ordem correta de emoções.
+    """
+    def __init__(self, num_classes=8, gamma=2.0, alpha=0.25, 
+                 prior_strength=0.7, conflict_weight=1.0,
+                 sparsity_weight=0.01, symmetry_weight=0.001,
+                 learnable_scale=True, reduction='mean',
+                 gradient_boost_factor=5.0):
+        """
+        Args:
+            num_classes: 8 ou 14 classes
+            gamma: Fator de foco para Focal Loss
+            alpha: Fator de balanceamento para Focal Loss
+            prior_strength: Quanto o conhecimento prévio influencia (0-1)
+            conflict_weight: Peso da penalidade por contradição
+            sparsity_weight: Peso da regularização de esparsidade
+            symmetry_weight: Peso da regularização de simetria
+            learnable_scale: Se a escala global é aprendível
+            reduction: 'mean' ou 'sum'
+            gradient_boost_factor: Fator para reforçar gradientes da matriz
+        """
+        super(EnhancedKnowledgeConsistencyLoss, self).__init__()
+        
+        self.gamma = gamma
+        self.alpha = alpha
+        self.num_classes = num_classes
+        self.prior_strength = prior_strength
+        self.conflict_weight = conflict_weight
+        self.sparsity_weight = sparsity_weight
+        self.symmetry_weight = symmetry_weight
+        self.reduction = reduction
+        self.gradient_boost_factor = gradient_boost_factor
+        
+        # Definir ordem das emoções baseada no número de classes
+        if num_classes == 8:
+            self.class_names = [
+                'happy', 'contempt', 'surprised', 'angry',
+                'disgusted', 'fearful', 'sad', 'neutral'
+            ]
+        elif num_classes == 14:
+            self.class_names = [
+                'happy', 'contempt', 'elated', 'hopeful', 'surprised',
+                'proud', 'loved', 'angry', 'astonished', 'disgusted',
+                'fearful', 'sad', 'fatigued', 'neutral'
+            ]
+        else:
+            raise ValueError(f"Número de classes não suportado: {num_classes}. Use 8 ou 14.")
+        
+        # Índices das emoções
+        self._setup_indices()
+        
+        # 1. MATRIZ DE CONHECIMENTO PRÉVIO (não aprendível)
+        self.prior_matrix = self._create_prior_matrix()
+        
+        # 2. MATRIZ RESIDUAL APRENDÍVEL (com gradientes reforçados)
+        # Inicializar com valores pequenos para facilitar aprendizado
+        self.residual_matrix = nn.Parameter(torch.zeros(num_classes, num_classes))
+        self._initialize_residual_matrix()
+        
+        # 3. ESCALA GLOBAL APRENDÍVEL
+        if learnable_scale:
+            self.scale = nn.Parameter(torch.tensor(1.0))
+        else:
+            self.scale = 1.0
+        
+        # 4. BIAS POR CLASSE APRENDÍVEL
+        self.class_bias = nn.Parameter(torch.zeros(num_classes))
+        
+        # 5. CONTADOR PARA MONITORAMENTO
+        self.update_counter = 0
+        self.conflict_history = []
+        
+        print(f"EnhancedKnowledgeConsistencyLoss inicializada para {num_classes} classes")
+        print(f"Classes: {self.class_names}")
+    
+    def _setup_indices(self):
+        """Configura índices das emoções baseado no número de classes"""
+        if self.num_classes == 8:
+            self.idx = {
+                'happy': 0, 'contempt': 1, 'surprised': 2, 'angry': 3,
+                'disgusted': 4, 'fearful': 5, 'sad': 6, 'neutral': 7
+            }
+        else:  # 14 classes
+            self.idx = {
+                'happy': 0, 'contempt': 1, 'elated': 2, 'hopeful': 3,
+                'surprised': 4, 'proud': 5, 'loved': 6, 'angry': 7,
+                'astonished': 8, 'disgusted': 9, 'fearful': 10,
+                'sad': 11, 'fatigued': 12, 'neutral': 13
+            }
+    
+    def _create_prior_matrix(self):
+        """
+        Cria matriz de conhecimento prévio baseada em psicologia emocional
+        com conflitos fortes, moderados e fracos.
+        """
+        prior = torch.zeros(self.num_classes, self.num_classes)
+        
+        if self.num_classes == 8:
+            # CONFLITOS FORTES (peso 0.9) - Muito improváveis de co-ocorrer
+            strong_conflicts = [
+                # Happy vs emoções negativas fortes
+                (self.idx['happy'], self.idx['angry']),
+                (self.idx['happy'], self.idx['disgusted']),
+                (self.idx['happy'], self.idx['fearful']),
+                (self.idx['happy'], self.idx['sad']),
+                
+                # Surprised vs emoções negativas
+                (self.idx['surprised'], self.idx['disgusted']),
+                (self.idx['surprised'], self.idx['fearful']),
+                
+                # Angry vs happy/surprised/neutral
+                (self.idx['angry'], self.idx['happy']),
+                (self.idx['angry'], self.idx['surprised']),
+                (self.idx['angry'], self.idx['neutral']),
+                
+                # Disgusted vs happy/surprised/neutral
+                (self.idx['disgusted'], self.idx['happy']),
+                (self.idx['disgusted'], self.idx['surprised']),
+                (self.idx['disgusted'], self.idx['neutral']),
+                
+                # Fearful vs happy/surprised/neutral
+                (self.idx['fearful'], self.idx['happy']),
+                (self.idx['fearful'], self.idx['surprised']),
+                (self.idx['fearful'], self.idx['neutral']),
+                
+                # Sad vs happy/neutral
+                (self.idx['sad'], self.idx['happy']),
+                (self.idx['sad'], self.idx['neutral']),
+            ]
+            
+            # CONFLITOS MODERADOS (peso 0.6) - Improváveis de co-ocorrer
+            moderate_conflicts = [
+                # Contempt vs outras emoções
+                (self.idx['contempt'], self.idx['happy']),
+                (self.idx['contempt'], self.idx['angry']),
+                (self.idx['contempt'], self.idx['disgusted']),
+                (self.idx['contempt'], self.idx['sad']),
+                (self.idx['contempt'], self.idx['neutral']),
+                
+                # Neutral vs todas as outras (moderado)
+                (self.idx['neutral'], self.idx['happy']),
+                (self.idx['neutral'], self.idx['surprised']),
+                (self.idx['neutral'], self.idx['angry']),
+                (self.idx['neutral'], self.idx['disgusted']),
+                (self.idx['neutral'], self.idx['fearful']),
+                (self.idx['neutral'], self.idx['sad']),
+                
+                # Pares adicionais
+                (self.idx['angry'], self.idx['disgusted']),
+                (self.idx['disgusted'], self.idx['fearful']),
+                (self.idx['fearful'], self.idx['sad']),
+                (self.idx['sad'], self.idx['angry']),
+            ]
+            
+        else:  # 14 classes
+            # CONFLITOS FORTES (peso 0.9)
+            strong_conflicts = [
+                # Emoções positivas vs negativas fortes
+                (self.idx['happy'], self.idx['angry']),
+                (self.idx['happy'], self.idx['disgusted']),
+                (self.idx['happy'], self.idx['fearful']),
+                (self.idx['happy'], self.idx['sad']),
+                
+                (self.idx['elated'], self.idx['angry']),
+                (self.idx['elated'], self.idx['disgusted']),
+                (self.idx['elated'], self.idx['sad']),
+                
+                (self.idx['hopeful'], self.idx['angry']),
+                (self.idx['hopeful'], self.idx['disgusted']),
+                (self.idx['hopeful'], self.idx['fearful']),
+                
+                (self.idx['loved'], self.idx['angry']),
+                (self.idx['loved'], self.idx['disgusted']),
+                (self.idx['loved'], self.idx['fearful']),
+                
+                # Surprised vs disgusted/fearful
+                (self.idx['surprised'], self.idx['disgusted']),
+                (self.idx['surprised'], self.idx['fearful']),
+                
+                # Astonished vs emoções negativas
+                (self.idx['astonished'], self.idx['angry']),
+                (self.idx['astonished'], self.idx['disgusted']),
+                (self.idx['astonished'], self.idx['fearful']),
+                
+                # Emoções negativas vs positivas/neutras
+                (self.idx['angry'], self.idx['happy']),
+                (self.idx['angry'], self.idx['elated']),
+                (self.idx['angry'], self.idx['hopeful']),
+                (self.idx['angry'], self.idx['loved']),
+                (self.idx['angry'], self.idx['neutral']),
+                
+                (self.idx['disgusted'], self.idx['happy']),
+                (self.idx['disgusted'], self.idx['elated']),
+                (self.idx['disgusted'], self.idx['hopeful']),
+                (self.idx['disgusted'], self.idx['neutral']),
+                
+                (self.idx['fearful'], self.idx['happy']),
+                (self.idx['fearful'], self.idx['hopeful']),
+                (self.idx['fearful'], self.idx['loved']),
+                (self.idx['fearful'], self.idx['neutral']),
+                
+                (self.idx['sad'], self.idx['happy']),
+                (self.idx['sad'], self.idx['elated']),
+                (self.idx['sad'], self.idx['hopeful']),
+                (self.idx['sad'], self.idx['loved']),
+                (self.idx['sad'], self.idx['neutral']),
+                
+                (self.idx['fatigued'], self.idx['happy']),
+                (self.idx['fatigued'], self.idx['elated']),
+                (self.idx['fatigued'], self.idx['hopeful']),
+            ]
+            
+            # CONFLITOS MODERADOS (peso 0.6)
+            moderate_conflicts = [
+                # Contempt vs outras
+                (self.idx['contempt'], self.idx['happy']),
+                (self.idx['contempt'], self.idx['elated']),
+                (self.idx['contempt'], self.idx['hopeful']),
+                (self.idx['contempt'], self.idx['angry']),
+                (self.idx['contempt'], self.idx['disgusted']),
+                (self.idx['contempt'], self.idx['sad']),
+                (self.idx['contempt'], self.idx['neutral']),
+                
+                # Proud vs negativas
+                (self.idx['proud'], self.idx['angry']),
+                (self.idx['proud'], self.idx['disgusted']),
+                (self.idx['proud'], self.idx['fearful']),
+                (self.idx['proud'], self.idx['sad']),
+                
+                # Neutral vs todas (moderado)
+                (self.idx['neutral'], self.idx['happy']),
+                (self.idx['neutral'], self.idx['elated']),
+                (self.idx['neutral'], self.idx['hopeful']),
+                (self.idx['neutral'], self.idx['surprised']),
+                (self.idx['neutral'], self.idx['proud']),
+                (self.idx['neutral'], self.idx['loved']),
+                (self.idx['neutral'], self.idx['angry']),
+                (self.idx['neutral'], self.idx['astonished']),
+                (self.idx['neutral'], self.idx['disgusted']),
+                (self.idx['neutral'], self.idx['fearful']),
+                (self.idx['neutral'], self.idx['sad']),
+                (self.idx['neutral'], self.idx['fatigued']),
+                
+                # Pares similares
+                (self.idx['surprised'], self.idx['astonished']),
+                (self.idx['angry'], self.idx['disgusted']),
+                (self.idx['disgusted'], self.idx['fearful']),
+                (self.idx['fearful'], self.idx['sad']),
+                (self.idx['sad'], self.idx['fatigued']),
+                (self.idx['elated'], self.idx['hopeful']),
+            ]
+        
+        # Aplicar conflitos fortes
+        for i, j in strong_conflicts:
+            prior[i, j] = 0.9
+            prior[j, i] = 0.9
+        
+        # Aplicar conflitos moderados (não sobrescrever se já for forte)
+        for i, j in moderate_conflicts:
+            if prior[i, j] == 0:
+                prior[i, j] = 0.6
+                prior[j, i] = 0.6
+        
+        # Conflitos fracos (peso 0.3) para todas as outras combinações
+        for i in range(self.num_classes):
+            for j in range(i+1, self.num_classes):
+                if prior[i, j] == 0:
+                    prior[i, j] = 0.3
+                    prior[j, i] = 0.3
+        
+        # Auto-conflito zero
+        for i in range(self.num_classes):
+            prior[i, i] = 0.0
+        
+        return prior
+    
+    def _initialize_residual_matrix(self):
+        """Inicializa a matriz residual para facilitar aprendizado"""
+        with torch.no_grad():
+            # Inicializar com pequenos valores aleatórios
+            self.residual_matrix.normal_(0, 0.05)
+            
+            # Tornar simétrica
+            sym_matrix = (self.residual_matrix + self.residual_matrix.t()) / 2
+            self.residual_matrix.copy_(sym_matrix)
+    
+    def get_conflict_matrix(self, apply_gradient_boost=True):
+        """
+        Combina conhecimento prévio com aprendizado residual
+        com técnicas para melhorar gradientes.
+        """
+        # 1. Obter matriz residual e garantir simetria
+        residual = self.residual_matrix
+        residual_sym = (residual + residual.t()) / 2
+        
+        # 2. Aplicar ativação suave que preserva gradientes
+        # Usamos tanh escalado para manter gradientes em toda a faixa
+        residual_activated = torch.tanh(residual_sym * self.gradient_boost_factor) / 2
+        
+        # 3. Combinação com conhecimento prévio
+        combined = (self.prior_strength * self.prior_matrix.to(residual.device) +
+                   (1 - self.prior_strength) * (residual_activated + 0.5))
+        
+        # 4. Aplicar escala global
+        scaled = torch.sigmoid(self.scale) * combined
+        
+        # 5. Adicionar bias por classe (ajusta propensão ao conflito por emoção)
+        bias_matrix = self.class_bias.view(-1, 1) + self.class_bias.view(1, -1)
+        scaled = scaled + 0.1 * torch.tanh(bias_matrix)
+        
+        # 6. Garantir não-negatividade com softplus (melhor para gradientes que ReLU)
+        conflict_weights = F.softplus(scaled)
+        
+        # 7. Normalizar para evitar explosão
+        max_val = conflict_weights.max()
+        if max_val > 0:
+            conflict_weights = conflict_weights / max_val
+        
+        # 8. Zerar diagonal (não há conflito consigo mesmo)
+        mask_eye = 1 - torch.eye(self.num_classes, device=conflict_weights.device)
+        conflict_weights = conflict_weights * mask_eye
+        
+        return conflict_weights
+    
+    def forward(self, logits, targets):
+        """
+        Forward pass da loss combinada.
+        """
+        batch_size = logits.size(0)
+        
+        # --- PARTE 1: FOCAL LOSS ---
+        bce_loss = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+        p_t = torch.exp(-bce_loss)
+        focal_term = (1 - p_t) ** self.gamma
+        alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+        focal_loss = alpha_t * focal_term * bce_loss
+        
+        if self.reduction == 'mean':
+            focal_loss = focal_loss.mean()
+        elif self.reduction == 'sum':
+            focal_loss = focal_loss.sum()
+        
+        # --- PARTE 2: CONSISTENCY LOSS COM MATRIZ APRENDIDA ---
+        probs = torch.sigmoid(logits)
+        conflict_weights = self.get_conflict_matrix()
+        
+        # Calcular todos os produtos pareados de forma eficiente
+        probs_i = probs.unsqueeze(2)  # [batch, classes, 1]
+        probs_j = probs.unsqueeze(1)  # [batch, 1, classes]
+        joint_probs = probs_i * probs_j  # [batch, classes, classes]
+        
+        # Usar apenas triângulo superior para evitar dupla contagem
+        mask = torch.triu(torch.ones_like(conflict_weights), diagonal=1)
+        weighted_joint_probs = joint_probs * conflict_weights.unsqueeze(0) * mask.unsqueeze(0)
+        
+        consistency_loss = weighted_joint_probs.sum(dim=(1,2))
+        
+        if self.reduction == 'mean':
+            consistency_loss = consistency_loss.mean()
+        elif self.reduction == 'sum':
+            consistency_loss = consistency_loss.sum()
+        
+        # --- PARTE 3: REGULARIZAÇÕES PARA ESTABILIDADE ---
+        # Regularização de esparsidade (evitar que muitos pesos sejam altos)
+        avg_weight = conflict_weights.mean()
+        sparsity_loss = F.mse_loss(avg_weight, torch.tensor(0.4).to(avg_weight.device))
+        
+        # Regularização de simetria (garantir matriz simétrica)
+        symmetry_loss = F.mse_loss(self.residual_matrix, self.residual_matrix.t())
+        
+        # Regularização de suavidade (evitar mudanças bruscas)
+        smoothness_loss = torch.mean(torch.abs(self.residual_matrix - self.residual_matrix.mean()))
+        
+        # --- PARTE 4: LOSS TOTAL ---
+        total_loss = (focal_loss + 
+                     self.conflict_weight * consistency_loss +
+                     self.sparsity_weight * sparsity_loss +
+                     self.symmetry_weight * symmetry_loss +
+                     0.0005 * smoothness_loss)
+        
+        # --- MONITORAMENTO ---
+        self.update_counter += 1
+        if self.update_counter % 100 == 0:
+            with torch.no_grad():
+                conflict_matrix_np = conflict_weights.cpu().detach().numpy()
+                self.conflict_history.append(conflict_matrix_np.copy())
+        
+        return total_loss
+    
+    def analyze_conflict_learning(self, threshold=0.3):
+        """
+        Analisa o estado da aprendizagem da matriz de conflito.
+        """
+        with torch.no_grad():
+            conflict_weights = self.get_conflict_matrix()
+            matrix_np = conflict_weights.cpu().numpy()
+          
+            # Top conflitos
+            conflicts = []
+            for i in range(self.num_classes):
+                for j in range(i+1, self.num_classes):
+                    conflicts.append((i, j, matrix_np[i, j]))
+            
+            conflicts.sort(key=lambda x: x[2], reverse=True)
+            
+            return matrix_np
+    
+    def get_optimizer_params(self, base_lr, residual_lr_multiplier=5.0):
+        """
+        Retorna parâmetros para otimização com learning rates diferenciados.
+        
+        Args:
+            base_lr: Learning rate base
+            residual_lr_multiplier: Multiplicador para a matriz residual
+            
+        Returns:
+            Lista de dicionários com parâmetros e learning rates
+        """
+        params = [
+            # Parâmetros da matriz residual com LR maior
+            {'params': [self.residual_matrix], 'lr': base_lr * residual_lr_multiplier},
+            # Bias por classe com LR normal
+            {'params': [self.class_bias], 'lr': base_lr},
+        ]
+        
+        # Adicionar scale se for aprendível
+        if isinstance(self.scale, nn.Parameter):
+            params.append({'params': [self.scale], 'lr': base_lr})
+        
+        return params
+    
+    def visualize_conflict_matrix(self, title=None, save_path=None):
+        """
+        Visualiza a matriz de conflito atual.
+        
+        Returns:
+            matplotlib.figure.Figure
+        """
+        with torch.no_grad():
+            matrix = self.get_conflict_matrix()
+            matrix_np = matrix.cpu().numpy() if hasattr(matrix, 'cpu') else matrix
+            
+            fig, ax = plt.subplots(figsize=(12, 10))
+            
+            # Heatmap
+            im = ax.imshow(matrix_np, cmap='RdYlBu_r', vmin=0, vmax=1)
+            
+            # Configurar eixos
+            n_classes = len(self.class_names)
+            ax.set_xticks(range(n_classes))
+            ax.set_yticks(range(n_classes))
+            ax.set_xticklabels(self.class_names, rotation=45, ha='right', fontsize=10)
+            ax.set_yticklabels(self.class_names, fontsize=10)
+            
+            # Adicionar grade
+            ax.set_xticks(np.arange(n_classes + 1) - 0.5, minor=True)
+            ax.set_yticks(np.arange(n_classes + 1) - 0.5, minor=True)
+            ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5)
+            
+            # Adicionar valores
+            for i in range(n_classes):
+                for j in range(n_classes):
+                    if i != j:  # Não mostrar diagonal
+                        value = matrix_np[i, j]
+                        text_color = 'white' if value > 0.5 else 'black'
+                        ax.text(j, i, f'{value:.2f}',
+                               ha='center', va='center',
+                               color=text_color, fontsize=8)
+            
+            # Barra de cores
+            cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            cbar.set_label('Peso do Conflito', fontsize=12)
+            
+            # Título
+            if title is None:
+                title = f'Matriz de Conflito ({self.num_classes} classes)'
+            ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+            
+            plt.tight_layout()
+            
+            if save_path:
+                plt.savefig(save_path, dpi=100, bbox_inches='tight')
+            
+            return fig
+    
+    def plot_conflict_evolution(self, save_path=None):
+        """
+        Plota a evolução dos conflitos ao longo do treinamento.
+        
+        Returns:
+            matplotlib.figure.Figure
+        """
+        if not self.conflict_history:
+            return None
+        
+        n_epochs = len(self.conflict_history)
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        axes = axes.flatten()
+        
+        # 1. Evolução da média
+        mean_weights = [matrix.mean() for matrix in self.conflict_history]
+        axes[0].plot(range(n_epochs), mean_weights, 'b-o', linewidth=2, markersize=4)
+        axes[0].set_xlabel('Intervalo de Atualização (x100)', fontsize=11)
+        axes[0].set_ylabel('Média dos Pesos', fontsize=11)
+        axes[0].set_title('Evolução da Média dos Conflitos', fontsize=12, fontweight='bold')
+        axes[0].grid(True, alpha=0.3)
+        
+        # 2. Evolução do número de conflitos fortes (> 0.5)
+        strong_counts = [(matrix > 0.5).sum() for matrix in self.conflict_history]
+        axes[1].plot(range(n_epochs), strong_counts, 'r-o', linewidth=2, markersize=4)
+        axes[1].set_xlabel('Intervalo de Atualização (x100)', fontsize=11)
+        axes[1].set_ylabel('Número de Conflitos Fortes', fontsize=11)
+        axes[1].set_title('Evolução dos Conflitos Fortes', fontsize=12, fontweight='bold')
+        axes[1].grid(True, alpha=0.3)
+        
+        # 3. Matriz inicial vs final
+        cmap = plt.cm.RdYlBu_r
+        im1 = axes[2].imshow(self.conflict_history[0], cmap=cmap, vmin=0, vmax=1)
+        axes[2].set_title('Matriz Inicial', fontsize=12, fontweight='bold')
+        axes[2].set_xticks([])
+        axes[2].set_yticks([])
+        
+        im2 = axes[3].imshow(self.conflict_history[-1], cmap=cmap, vmin=0, vmax=1)
+        axes[3].set_title(f'Matriz Final ({n_epochs} atualizações)', fontsize=12, fontweight='bold')
+        axes[3].set_xticks([])
+        axes[3].set_yticks([])
+        
+        plt.suptitle('Evolução da Matriz de Conflito durante o Treinamento', 
+                    fontsize=14, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=120, bbox_inches='tight')
+        
+        return fig
+
+
+# Função auxiliar para criar a loss no script de treinamento
+def create_enhanced_consistency_loss(args, device):
+    """
+    Cria a EnhancedKnowledgeConsistencyLoss com base nos argumentos.
+    
+    Args:
+        args: Argumentos do parser
+        device: Dispositivo (cuda/cpu)
+    
+    Returns:
+        Tuple: (criterion, optimizer_params)
+    """
+    print(f"\n{'='*60}")
+    print("CONFIGURANDO ENHANCED KNOWLEDGE CONSISTENCY LOSS")
+    print(f"{'='*60}")
+    
+    # Verificar número de classes
+    if args.numberOfClasses not in [8, 14]:
+        print(f"⚠️  Aviso: Número de classes não otimizado: {args.numberOfClasses}")
+        print("A loss foi projetada para 8 ou 14 classes.")
+    
+    # Criar loss
+    criterion = EnhancedKnowledgeConsistencyLoss(
+        num_classes=args.numberOfClasses,
+        gamma=2.0,
+        alpha=0.25,
+        prior_strength=getattr(args, 'prior_strength', 0.7),
+        conflict_weight=getattr(args, 'conflict_weight', 1.0),
+        sparsity_weight=getattr(args, 'sparsity_weight', 0.01),
+        symmetry_weight=getattr(args, 'symmetry_weight', 0.001),
+        learnable_scale=True,
+        reduction='mean',
+        gradient_boost_factor=getattr(args, 'gradient_boost', 5.0)
+    ).to(device)
+    
+    # Obter parâmetros para otimização com LR diferenciada
+    base_lr = args.learningRate
+    optimizer_params = criterion.get_optimizer_params(
+        base_lr=base_lr,
+        residual_lr_multiplier=getattr(args, 'residual_lr_multiplier', 5.0)
+    )
+    
+    print(f"✓ Loss configurada para {args.numberOfClasses} classes")
+    print(f"✓ Prior strength: {criterion.prior_strength}")
+    print(f"✓ Gradient boost factor: {criterion.gradient_boost_factor}")
+    print(f"✓ Learning rate base: {base_lr}")
+    print(f"✓ Residual matrix LR: {base_lr * getattr(args, 'residual_lr_multiplier', 5.0)}")
+    print(f"{'='*60}\n")
+    
+    return criterion, optimizer_params
