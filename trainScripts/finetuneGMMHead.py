@@ -112,9 +112,13 @@ def train():
                     required=False, default=5.0, type=float)
     parser.add_argument('--residual_lr_multiplier', help='LR multiplier for residual matrix', 
                     required=False, default=5.0, type=float)
+    parser.add_argument('--emotionMapping', help='Order of the emotions in the dataset', 
+                    required=False, default="7,0,6,2,5,4,3,1")
     
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    emotionsOrder = np.array(list(map(int, args.emotionMapping.split(','))))
 
     if args.pretrainedResnet is not None:
         checkpoint = torch.load(args.pretrainedResnet,weights_only=False)
@@ -301,7 +305,7 @@ def train():
 
             if labels is not None:
                 _, preds = torch.max(classification, 1)
-                corrects = torch.sum(preds == labels).item()
+                corrects = torch.sum(preds.cpu() == emotionsOrder[labels.cpu()]).item()
                 accPercentage = corrects if accPercentage is None else accPercentage + corrects
             iteration += 1
 
@@ -382,7 +386,7 @@ def train():
 
                 if labels is not None:
                     _, preds = torch.max(classification, 1)
-                    corrects = torch.sum(preds == labels).item()
+                    corrects = torch.sum(preds.cpu() == emotionsOrder[labels.cpu()]).item()
                     accPercentage = corrects if accPercentage is None else accPercentage + corrects
 
                 iteration += 1
