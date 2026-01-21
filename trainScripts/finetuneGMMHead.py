@@ -11,7 +11,7 @@ from torch import nn, optim
 import torch.distributions as dist, random
 from torch.nn import functional as F
 from loss.FocalLoss import FocalLoss
-from loss.FocalConsistencyLoss import FocalConsistencyLoss, RegularizedLearnedConsistencyLoss
+from loss.FocalConsistencyLoss import FocalConsistencyLoss, RegularizedLearnedConsistencyLoss, FocalConsistencyLoss14Emotions, RegularizedLearnedConsistencyLoss14Emotions
 from loss.KnowledgeGuidedConsistencyLoss import KnowledgeGuidedConsistencyLoss, create_enhanced_consistency_loss
 from helper.function import visualize_conflict_matrix
 
@@ -185,7 +185,10 @@ def train():
         criterion = FocalLoss(alpha=0.25, gamma=2.0).to(device)
     elif args.mainLossFunc == "FOCALCONSISTENCY":
         print("Using Focal Consistency loss")        
-        criterion = FocalConsistencyLoss(alpha=0.25, gamma=2.0, conflict_weight=0.5).to(device)
+        if args.numberOfClasses == 14:
+            criterion = FocalConsistencyLoss14Emotions(alpha=0.25, gamma=2.0, conflict_weight=args.conflict_weight).to(device)
+        else:
+            criterion = FocalConsistencyLoss(alpha=0.25, gamma=2.0, conflict_weight=0.5).to(device)
     elif args.mainLossFunc == "CE":
         print("Using Cross Entropy loss")        
         criterion = nn.CrossEntropyLoss().to(device)
@@ -193,13 +196,22 @@ def train():
         print("Using Regularized Learned Focal Consistency loss")
         print(f"Initial conflict pairs: {init_conflict_pairs}")
         print(f"Sparsity weight: {args.conflictSparsity}")
-        criterion = RegularizedLearnedConsistencyLoss(
-            num_classes=args.numberOfClasses,
-            gamma=2.0,
-            alpha=0.25,
-            sparsity_weight=args.conflictSparsity,
-            reduction='mean'
-        ).to(device)
+        if args.numberOfClasses == 14:
+            criterion = RegularizedLearnedConsistencyLoss14Emotions(
+                num_classes=args.numberOfClasses,
+                gamma=2.0,
+                alpha=0.25,
+                sparsity_weight=args.conflictSparsity,
+                reduction='mean'
+            ).to(device)
+        else:
+            criterion = RegularizedLearnedConsistencyLoss(
+                num_classes=args.numberOfClasses,
+                gamma=2.0,
+                alpha=0.25,
+                sparsity_weight=args.conflictSparsity,
+                reduction='mean'
+            ).to(device)
     elif args.mainLossFunc == "KNOWLEDGEGUIDEDCONSISTENCY":
         print("Using Knowledge Guided Consistency Loss")
         print(f"Number of classes: {args.numberOfClasses}")
