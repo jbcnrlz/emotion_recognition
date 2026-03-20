@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 from scipy.spatial.distance import jensenshannon as scipy_jensenshannon
-from scipy.stats import entropy as scipy_entropy
+from scipy.stats import entropy as scipy_entropy, pearsonr
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -59,7 +59,7 @@ def hex_to_rgba(hex_color, alpha=0.3):
         return f'rgba(100, 149, 237, {alpha})'  # Cornflower blue
 
 # Function to safely calculate KL divergence
-def safe_kl_divergence(p, q):
+def safe_kl_divergence(p, q, symmetric=True):
     """Calculates KL divergence safely, handling zeros"""
     try:
         p_arr = np.asarray(p, dtype=np.float64).flatten()
@@ -68,10 +68,12 @@ def safe_kl_divergence(p, q):
         if len(p_arr) != len(q_arr):
             return np.nan
         
+        # Add small epsilon to avoid zeros
         epsilon = 1e-12
         p_safe = p_arr + epsilon
         q_safe = q_arr + epsilon
         
+        # Normalize to sum to 1
         p_sum = np.sum(p_safe)
         q_sum = np.sum(q_safe)
         
@@ -81,8 +83,23 @@ def safe_kl_divergence(p, q):
         p_safe = p_safe / p_sum
         q_safe = q_safe / q_sum
         
-        kl = scipy_entropy(p_safe, q_safe)
-        return kl if not np.isnan(kl) and not np.isinf(kl) else np.nan
+        # Calculate KL divergence in both directions
+        kl_forward = scipy_entropy(p_safe, q_safe)
+        kl_backward = scipy_entropy(q_safe, p_safe)
+        
+        # Handle NaN and Inf
+        if np.isnan(kl_forward) or np.isinf(kl_forward):
+            kl_forward = np.nan
+        if np.isnan(kl_backward) or np.isinf(kl_backward):
+            kl_backward = np.nan
+        
+        if symmetric:
+            # Symmetric KL (Jensen-Shannon symmetric KL)
+            if np.isnan(kl_forward) or np.isnan(kl_backward):
+                return np.nan
+            return 0.5 * (kl_forward + kl_backward)
+        else:
+            return kl_forward if not np.isnan(kl_forward) else np.nan
     except Exception as e:
         return np.nan
 
@@ -110,7 +127,29 @@ def safe_js_divergence(p, q):
         q_safe = q_safe / q_sum
         
         js = scipy_jensenshannon(p_safe, q_safe)
+        
         return js ** 2 if not np.isnan(js) and not np.isinf(js) else np.nan
+    except Exception as e:
+        return np.nan
+
+# Function to safely calculate Pearson correlation
+def safe_pearson_correlation(p, q):
+    """Calculates Pearson correlation safely"""
+    try:
+        p_arr = np.asarray(p, dtype=np.float64).flatten()
+        q_arr = np.asarray(q, dtype=np.float64).flatten()
+        
+        if len(p_arr) != len(q_arr):
+            return np.nan
+        
+        # Check for constant arrays
+        if np.std(p_arr) == 0 or np.std(q_arr) == 0:
+            return np.nan
+        
+        # Calculate Pearson correlation
+        correlation, p_value = pearsonr(p_arr, q_arr)
+        
+        return correlation if not np.isnan(correlation) else np.nan
     except Exception as e:
         return np.nan
 
@@ -199,11 +238,40 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
             7: 'contempt'
         }
         
-        # Calculate predicted label from probabilities
+        # Calculate predicted label from probabilities (most probable from predictions)
         pred_probs = merged_df[emotion_columns].values
         merged_df['predicted_label'] = np.argmax(pred_probs, axis=1)
         merged_df['predicted_label'] = merged_df['predicted_label'].map(column_to_label)
         merged_df['predicted_emotion'] = merged_df['predicted_label'].map(emotion_mapping)
+        
+        # Calculate ground truth most probable label from ground truth probabilities
+        # First, identify ground truth probability columns
+        gt_prob_columns = []
+        for col in emotion_columns:
+            # Check for different possible column names for ground truth probabilities
+            possible_cols = [f"{col}_gt", col]
+            for possible_col in possible_cols:
+                if possible_col in merged_df.columns:
+                    gt_prob_columns.append(possible_col)
+                    break
+        
+        if len(gt_prob_columns) == len(emotion_columns):
+            # Calculate most probable class from ground truth probabilities
+            gt_probs = merged_df[gt_prob_columns].values
+            merged_df['groundtruth_most_probable_label'] = np.argmax(gt_probs, axis=1)
+            merged_df['groundtruth_most_probable_label'] = merged_df['groundtruth_most_probable_label'].map(column_to_label)
+            merged_df['groundtruth_most_probable_emotion'] = merged_df['groundtruth_most_probable_label'].map(emotion_mapping)
+            
+            # Calculate accuracy using most probable class from ground truth
+            accuracy_most_probable = accuracy_score(
+                merged_df['groundtruth_most_probable_label'], 
+                merged_df['predicted_label']
+            )
+        else:
+            st.warning(f"Could not find all ground truth probability columns for {exp_name}")
+            merged_df['groundtruth_most_probable_label'] = merged_df['groundtruth_label']
+            merged_df['groundtruth_most_probable_emotion'] = merged_df['groundtruth_emotion']
+            accuracy_most_probable = None
         
         # Ensure ground truth label exists and filter valid labels
         if 'groundtruth_label' not in merged_df.columns:
@@ -216,6 +284,9 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
         if len(merged_df) == 0:
             st.error(f"Experiment {exp_name}: No valid samples after filtering")
             return None
+        
+        # Calculate accuracy using annotated label
+        accuracy_annotated = accuracy_score(merged_df['groundtruth_label'], merged_df['predicted_label'])
         
         # Calculate distribution similarity metrics
         def calculate_metrics(row):
@@ -244,9 +315,7 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
                 js_div = safe_js_divergence(pred_dist, gt_dist)
                 
                 # KL divergence (symmetric)
-                kl_div_1 = safe_kl_divergence(pred_dist, gt_dist)
-                kl_div_2 = safe_kl_divergence(gt_dist, pred_dist)
-                kl_div = 0.5 * (kl_div_1 + kl_div_2) if not np.isnan(kl_div_1) and not np.isnan(kl_div_2) else 0.0
+                kl_div = safe_kl_divergence(pred_dist, gt_dist, symmetric=True)
                 
                 # Euclidean distance
                 euclidean_dist = np.linalg.norm(pred_dist - gt_dist)
@@ -255,18 +324,16 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
                 cosine_sim = np.dot(pred_dist, gt_dist) / (np.linalg.norm(pred_dist) * np.linalg.norm(gt_dist))
                 
                 # Pearson correlation
-                if len(pred_dist) > 1:
-                    correlation = np.corrcoef(pred_dist, gt_dist)[0, 1]
-                    correlation = correlation if not np.isnan(correlation) else 0.0
-                else:
-                    correlation = 1.0 if pred_dist[0] == gt_dist[0] else 0.0
+                pearson_corr = safe_pearson_correlation(pred_dist, gt_dist)
+                if pearson_corr is None or np.isnan(pearson_corr):
+                    pearson_corr = 0.0
                 
                 return pd.Series({
                     'js_divergence': js_div if not np.isnan(js_div) else 0.0,
-                    'kl_divergence': kl_div,
+                    'kl_divergence': kl_div if not np.isnan(kl_div) else 0.0,
                     'euclidean_distance': euclidean_dist,
                     'cosine_similarity': cosine_sim,
-                    'pearson_correlation': correlation
+                    'pearson_correlation': pearson_corr
                 })
             except Exception as e:
                 return pd.Series({
@@ -281,17 +348,14 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
         metrics = merged_df.apply(calculate_metrics, axis=1)
         merged_df = pd.concat([merged_df, metrics], axis=1)
         
-        # Calculate accuracy
-        accuracy = accuracy_score(merged_df['groundtruth_label'], merged_df['predicted_label'])
-        
-        # Confusion matrix
+        # Confusion matrix (using annotated labels)
         cm = confusion_matrix(
             merged_df['groundtruth_label'], 
             merged_df['predicted_label'], 
             labels=list(emotion_mapping.keys())
         )
         
-        # Classification report
+        # Classification report (using annotated labels)
         class_report = classification_report(
             merged_df['groundtruth_label'], 
             merged_df['predicted_label'],
@@ -326,8 +390,9 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
                     'recall': recall,
                     'f1_score': f1_score_val,
                     'js_div_mean': subset['js_divergence'].mean(),
+                    'kl_div_mean': subset['kl_divergence'].mean(),
                     'cosine_mean': subset['cosine_similarity'].mean(),
-                    'correlation_mean': subset['pearson_correlation'].mean()
+                    'pearson_correlation_mean': subset['pearson_correlation'].mean()
                 })
         
         # Summary statistics
@@ -335,11 +400,12 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
         weighted_avg = class_report.get('weighted avg', {'precision': 0.0, 'recall': 0.0, 'f1-score': 0.0})
         
         summary_metrics = {
-            'accuracy': accuracy,
+            'accuracy_annotated': accuracy_annotated,
+            'accuracy_most_probable': accuracy_most_probable,
             'js_div_mean': merged_df['js_divergence'].mean(),
-            'cosine_mean': merged_df['cosine_similarity'].mean(),
-            'correlation_mean': merged_df['pearson_correlation'].mean(),
             'kl_div_mean': merged_df['kl_divergence'].mean(),
+            'cosine_mean': merged_df['cosine_similarity'].mean(),
+            'pearson_correlation_mean': merged_df['pearson_correlation'].mean(),
             'euclidean_mean': merged_df['euclidean_distance'].mean(),
             'samples': len(merged_df),
             'precision_macro': macro_avg.get('precision', 0.0),
@@ -353,7 +419,8 @@ def process_experiment_pair(predictions_content, groundtruth_content, exp_name):
         return {
             'name': exp_name,
             'data': merged_df,
-            'accuracy': accuracy,
+            'accuracy_annotated': accuracy_annotated,
+            'accuracy_most_probable': accuracy_most_probable,
             'confusion_matrix': cm,
             'classification_report': class_report,
             'emotion_metrics': pd.DataFrame(emotion_metrics),
@@ -493,7 +560,8 @@ st.sidebar.subheader("📈 Analysis Settings")
 
 # Metric selection
 metric_options = {
-    'accuracy': {'name': 'Accuracy', 'higher_better': True},
+    'accuracy_annotated': {'name': 'Accuracy (Annotated Label)', 'higher_better': True},
+    'accuracy_most_probable': {'name': 'Accuracy (Most Probable)', 'higher_better': True},
     'js_divergence': {'name': 'JS Divergence', 'higher_better': False},
     'cosine_similarity': {'name': 'Cosine Similarity', 'higher_better': True},
     'pearson_correlation': {'name': 'Pearson Correlation', 'higher_better': True},
@@ -507,7 +575,7 @@ metric_options = {
 selected_metrics = st.sidebar.multiselect(
     "Metrics to Compare:",
     list(metric_options.keys()),
-    default=['accuracy', 'js_divergence', 'cosine_similarity', 'f1_macro'],
+    default=['accuracy_annotated', 'accuracy_most_probable', 'js_divergence', 'cosine_similarity', 'pearson_correlation', 'kl_divergence', 'f1_macro'],
     format_func=lambda x: metric_options[x]['name']
 )
 
@@ -544,7 +612,7 @@ if st.sidebar.button("🚀 Process All Experiments", type="primary"):
             
             if result:
                 processed_experiments.append(result)
-                st.success(f"✓ {exp['name']}: {result['accuracy']:.2%} accuracy ({result['n_samples']} samples)")
+                st.success(f"✓ {exp['name']}: {result['accuracy_annotated']:.2%} accuracy annotated ({result['n_samples']} samples)")
             else:
                 st.error(f"✗ Failed to process {exp['name']}")
             
@@ -588,18 +656,21 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
         for exp in experiments:
             summary = {
                 'Experiment': exp['name'],
-                'Accuracy': exp['accuracy'],
+                'Accuracy (Annotated)': exp['accuracy_annotated'],
+                'Accuracy (Most Probable)': exp['accuracy_most_probable'],
                 'F1-Score (Macro)': exp['summary_metrics']['f1_macro'],
                 'Precision (Macro)': exp['summary_metrics']['precision_macro'],
                 'Recall (Macro)': exp['summary_metrics']['recall_macro'],
                 'JS Divergence (↓)': exp['summary_metrics']['js_div_mean'],
+                'KL Divergence (↓)': exp['summary_metrics']['kl_div_mean'],
                 'Cosine Similarity (↑)': exp['summary_metrics']['cosine_mean'],
+                'Pearson Correlation (↑)': exp['summary_metrics']['pearson_correlation_mean'],
                 'Samples': exp['summary_metrics']['samples']
             }
             summary_data.append(summary)
         
         summary_df = pd.DataFrame(summary_data)
-        summary_df = summary_df.sort_values('Accuracy', ascending=False)
+        summary_df = summary_df.sort_values('Accuracy (Annotated)', ascending=False)
         
         # Color formatting functions
         def color_accuracy(val):
@@ -626,17 +697,29 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
             else:
                 return 'background-color: #FFB6C1'
         
+        def color_correlation(val):
+            if val > 0.8:
+                return 'background-color: #90EE90'
+            elif val > 0.6:
+                return 'background-color: #FFD700'
+            else:
+                return 'background-color: #FFB6C1'
+        
         # Apply styling
         styled_df = summary_df.style.format({
-            'Accuracy': '{:.2%}',
+            'Accuracy (Annotated)': '{:.2%}',
+            'Accuracy (Most Probable)': '{:.2%}',
             'F1-Score (Macro)': '{:.3f}',
             'Precision (Macro)': '{:.3f}',
             'Recall (Macro)': '{:.3f}',
             'JS Divergence (↓)': '{:.4f}',
-            'Cosine Similarity (↑)': '{:.4f}'
-        }).applymap(color_accuracy, subset=['Accuracy'])\
+            'KL Divergence (↓)': '{:.4f}',
+            'Cosine Similarity (↑)': '{:.4f}',
+            'Pearson Correlation (↑)': '{:.4f}'
+        }).applymap(color_accuracy, subset=['Accuracy (Annotated)', 'Accuracy (Most Probable)'])\
           .applymap(color_f1, subset=['F1-Score (Macro)', 'Precision (Macro)', 'Recall (Macro)'])\
-          .applymap(color_divergence, subset=['JS Divergence (↓)'])
+          .applymap(color_divergence, subset=['JS Divergence (↓)', 'KL Divergence (↓)'])\
+          .applymap(color_correlation, subset=['Cosine Similarity (↑)', 'Pearson Correlation (↑)'])
         
         st.dataframe(styled_df, use_container_width=True)
         
@@ -655,7 +738,7 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
             st.subheader("2. Multi-Metric Radar Chart")
             
             # Normalize metrics for radar chart
-            radar_metrics = ['Accuracy', 'F1-Score', 'Cosine Similarity']
+            radar_metrics = ['Accuracy (Annotated)', 'Accuracy (Most Probable)', 'F1-Score', 'Cosine Similarity', 'Pearson Correlation']
             
             fig_radar = go.Figure()
             
@@ -664,9 +747,11 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
             for exp in experiments:
                 color = next(color_cycle)
                 values = [
-                    exp['accuracy'],  # Accuracy
+                    exp['accuracy_annotated'],  # Accuracy (Annotated)
+                    exp['accuracy_most_probable'] if exp['accuracy_most_probable'] is not None else 0,  # Accuracy (Most Probable)
                     exp['summary_metrics']['f1_macro'],  # F1-Score
-                    exp['summary_metrics']['cosine_mean']  # Cosine Similarity
+                    exp['summary_metrics']['cosine_mean'],  # Cosine Similarity
+                    exp['summary_metrics']['pearson_correlation_mean']  # Pearson Correlation
                 ]
                 
                 fig_radar.add_trace(go.Scatterpolar(
@@ -704,6 +789,101 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                 fig_radar = create_publication_plot(fig_radar, "Multi-Metric Radar Chart")
             
             st.plotly_chart(fig_radar, use_container_width=True)
+            
+            # Correlation between KL and JS divergences
+            st.subheader("3. KL vs JS Divergence Analysis")
+            
+            # Prepare data for scatter plot
+            kl_js_data = []
+            for exp in experiments:
+                kl_js_data.append({
+                    'Experiment': exp['name'],
+                    'KL Divergence': exp['summary_metrics']['kl_div_mean'],
+                    'JS Divergence': exp['summary_metrics']['js_div_mean'],
+                    'Accuracy (Annotated)': exp['accuracy_annotated'],
+                    'Accuracy (Most Probable)': exp['accuracy_most_probable'] if exp['accuracy_most_probable'] is not None else 0,
+                    'Samples': exp['n_samples']
+                })
+            
+            kl_js_df = pd.DataFrame(kl_js_data)
+            
+            fig_kl_js = px.scatter(
+                kl_js_df,
+                x='KL Divergence',
+                y='JS Divergence',
+                color='Experiment',
+                size='Accuracy (Annotated)',
+                title='KL Divergence vs JS Divergence by Experiment',
+                labels={
+                    'KL Divergence': 'KL Divergence (lower is better)',
+                    'JS Divergence': 'JS Divergence (lower is better)',
+                    'Accuracy (Annotated)': 'Accuracy (Annotated)'
+                },
+                hover_data=['Experiment', 'Accuracy (Annotated)', 'Accuracy (Most Probable)', 'Samples'],
+                color_discrete_sequence=COLOR_PALETTE[:len(experiments)]
+            )
+            
+            # Add diagonal line for reference (JS ≈ KL/2 for similar distributions)
+            max_val = max(kl_js_df['KL Divergence'].max(), kl_js_df['JS Divergence'].max())
+            fig_kl_js.add_trace(go.Scatter(
+                x=[0, max_val],
+                y=[0, max_val],
+                mode='lines',
+                line=dict(color='gray', dash='dash'),
+                name='y = x',
+                showlegend=True
+            ))
+            
+            fig_kl_js.update_layout(
+                height=500,
+                xaxis_title="KL Divergence",
+                yaxis_title="JS Divergence"
+            )
+            
+            if viz_style == 'Publication':
+                fig_kl_js = create_publication_plot(fig_kl_js, "KL vs JS Divergence Comparison")
+            
+            st.plotly_chart(fig_kl_js, use_container_width=True)
+            
+            # Explanation of metrics
+            with st.expander("📘 Understanding the Metrics"):
+                st.markdown("""
+                ### Accuracy Metrics
+                - **Accuracy (Annotated)**: Uses the manually annotated label from ground truth
+                - **Accuracy (Most Probable)**: Uses the most probable class calculated from ground truth probabilities
+                
+                ### KL Divergence (Kullback-Leibler Divergence)
+                - **What it measures**: How one probability distribution diverges from a second, expected probability distribution.
+                - **Interpretation**: 
+                  - **0**: Distributions are identical
+                  - **Higher values**: Greater divergence between distributions
+                  - **Asymmetric**: KL(P||Q) ≠ KL(Q||P) in general (we use symmetric KL)
+                - **Formula**: KL(P||Q) = Σ P(i) log(P(i)/Q(i))
+                
+                ### JS Divergence (Jensen-Shannon Divergence)
+                - **What it measures**: Symmetric and smoothed version of KL divergence
+                - **Interpretation**:
+                  - **0**: Distributions are identical
+                  - **1**: Distributions are maximally different
+                  - **Symmetric**: JS(P,Q) = JS(Q,P)
+                - **Formula**: JS(P,Q) = ½ KL(P||M) + ½ KL(Q||M), where M = ½(P+Q)
+                
+                ### Pearson Correlation
+                - **What it measures**: Linear correlation between two sets of values
+                - **Interpretation**:
+                  - **+1**: Perfect positive correlation
+                  - **0**: No correlation
+                  - **-1**: Perfect negative correlation
+                - **Range**: -1 to 1
+                
+                ### Cosine Similarity
+                - **What it measures**: Cosine of the angle between two vectors
+                - **Interpretation**:
+                  - **+1**: Vectors point in the same direction
+                  - **0**: Vectors are orthogonal
+                  - **-1**: Vectors point in opposite directions
+                - **Range**: -1 to 1
+                """)
     
     with tab2:
         st.header("Comparative Analysis")
@@ -724,8 +904,10 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                             # Prepare data
                             metric_data = []
                             for exp in experiments:
-                                if metric == 'accuracy':
-                                    value = exp['accuracy']
+                                if metric == 'accuracy_annotated':
+                                    value = exp['accuracy_annotated']
+                                elif metric == 'accuracy_most_probable':
+                                    value = exp['accuracy_most_probable']
                                 elif metric in exp['summary_metrics']:
                                     value = exp['summary_metrics'][metric]
                                 else:
@@ -733,7 +915,7 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                                 
                                 metric_data.append({
                                     'Experiment': exp['name'],
-                                    'Value': value,
+                                    'Value': value if value is not None else 0,
                                     'Metric': metric_options[metric]['name']
                                 })
                             
@@ -785,9 +967,23 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                         if i == j:
                             row.append(1.0)
                         else:
-                            # Compare using composite score
-                            score1 = exp1['accuracy'] * 0.4 + exp1['summary_metrics']['f1_macro'] * 0.3 + exp1['summary_metrics']['cosine_mean'] * 0.3
-                            score2 = exp2['accuracy'] * 0.4 + exp2['summary_metrics']['f1_macro'] * 0.3 + exp2['summary_metrics']['cosine_mean'] * 0.3
+                            # Compare using composite score including new metrics
+                            score1 = (
+                                exp1['accuracy_annotated'] * 0.25 + 
+                                (exp1['accuracy_most_probable'] if exp1['accuracy_most_probable'] is not None else exp1['accuracy_annotated']) * 0.20 +
+                                exp1['summary_metrics']['f1_macro'] * 0.20 + 
+                                exp1['summary_metrics']['cosine_mean'] * 0.15 +
+                                exp1['summary_metrics']['pearson_correlation_mean'] * 0.15 +
+                                (1 - min(exp1['summary_metrics']['kl_div_mean'], 1)) * 0.05
+                            )
+                            score2 = (
+                                exp2['accuracy_annotated'] * 0.25 + 
+                                (exp2['accuracy_most_probable'] if exp2['accuracy_most_probable'] is not None else exp2['accuracy_annotated']) * 0.20 +
+                                exp2['summary_metrics']['f1_macro'] * 0.20 + 
+                                exp2['summary_metrics']['cosine_mean'] * 0.15 +
+                                exp2['summary_metrics']['pearson_correlation_mean'] * 0.15 +
+                                (1 - min(exp2['summary_metrics']['kl_div_mean'], 1)) * 0.05
+                            )
                             row.append(score1 / score2 if score2 > 0 else 0)
                     comparison_matrix.append(row)
                 
@@ -815,6 +1011,52 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                     fig_heatmap = create_publication_plot(fig_heatmap, "Performance Comparison Matrix")
                 
                 st.plotly_chart(fig_heatmap, use_container_width=True)
+                
+                # Correlation matrix between metrics
+                st.subheader("Correlation Between Different Metrics")
+                
+                # Prepare data for correlation matrix
+                corr_data = []
+                for exp in experiments:
+                    corr_data.append({
+                        'Experiment': exp['name'],
+                        'Accuracy (Annotated)': exp['accuracy_annotated'],
+                        'Accuracy (Most Probable)': exp['accuracy_most_probable'] if exp['accuracy_most_probable'] is not None else 0,
+                        'F1-Score': exp['summary_metrics']['f1_macro'],
+                        'JS Divergence': exp['summary_metrics']['js_div_mean'],
+                        'KL Divergence': exp['summary_metrics']['kl_div_mean'],
+                        'Cosine Similarity': exp['summary_metrics']['cosine_mean'],
+                        'Pearson Correlation': exp['summary_metrics']['pearson_correlation_mean']
+                    })
+                
+                corr_df = pd.DataFrame(corr_data)
+                numeric_cols = ['Accuracy (Annotated)', 'Accuracy (Most Probable)', 'F1-Score', 'JS Divergence', 
+                              'KL Divergence', 'Cosine Similarity', 'Pearson Correlation']
+                correlation_matrix = corr_df[numeric_cols].corr()
+                
+                fig_corr_matrix = go.Figure(data=go.Heatmap(
+                    z=correlation_matrix.values,
+                    x=numeric_cols,
+                    y=numeric_cols,
+                    colorscale='RdBu',
+                    zmin=-1,
+                    zmax=1,
+                    text=np.round(correlation_matrix.values, 2),
+                    texttemplate='%{text:.2f}',
+                    textfont={"size": 10},
+                    hoverongaps=False,
+                    colorbar_title="Correlation"
+                ))
+                
+                fig_corr_matrix.update_layout(
+                    title="Correlation Between Metrics Across Experiments",
+                    height=500
+                )
+                
+                if viz_style == 'Publication':
+                    fig_corr_matrix = create_publication_plot(fig_corr_matrix, "Metric Correlations")
+                
+                st.plotly_chart(fig_corr_matrix, use_container_width=True)
     
     with tab3:
         st.header("Emotion-wise Performance Analysis")
@@ -833,7 +1075,9 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                     'Samples': row['samples'],
                     'F1-Score': row['f1_score'],
                     'Precision': row['precision'],
-                    'Recall': row['recall']
+                    'Recall': row['recall'],
+                    'KL Divergence': row['kl_div_mean'],
+                    'Pearson Correlation': row['pearson_correlation_mean']
                 })
         
         emotion_acc_df = pd.DataFrame(emotion_acc_data)
@@ -864,112 +1108,122 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
         # Heatmap of emotion performance
         st.subheader("2. Performance Heatmap Across Emotions")
         
+        # Select metric for heatmap
+        heatmap_metric = st.selectbox(
+            "Select metric for heatmap:",
+            ['Accuracy', 'F1-Score', 'KL Divergence', 'Pearson Correlation'],
+            key="heatmap_metric_select"
+        )
+        
         # Pivot for heatmap
+        if heatmap_metric == 'KL Divergence':
+            metric_col = 'KL Divergence'
+        elif heatmap_metric == 'Pearson Correlation':
+            metric_col = 'Pearson Correlation'
+        elif heatmap_metric == 'F1-Score':
+            metric_col = 'F1-Score'
+        else:
+            metric_col = 'Accuracy'
+        
         pivot_data = emotion_acc_df.pivot_table(
             index='Experiment', 
             columns='Emotion', 
-            values='Accuracy',
+            values=metric_col,
             aggfunc='mean'
         )
+        
+        # Determine color scale based on metric
+        if metric_col in ['KL Divergence']:
+            colorscale = 'Viridis_r'  # Reverse for divergence (lower is better)
+        else:
+            colorscale = 'Viridis'  # Normal for accuracy/correlation (higher is better)
         
         fig_heatmap_emotion = go.Figure(data=go.Heatmap(
             z=pivot_data.values,
             x=pivot_data.columns,
             y=pivot_data.index,
-            colorscale='Viridis',
+            colorscale=colorscale,
             text=np.round(pivot_data.values, 3),
             texttemplate='%{text:.3f}',
             textfont={"size": 10},
             hoverongaps=False,
-            colorbar_title="Accuracy"
+            colorbar_title=heatmap_metric
         ))
         
         fig_heatmap_emotion.update_layout(
-            title="Emotion Accuracy Heatmap",
+            title=f"{heatmap_metric} by Emotion and Experiment",
             xaxis_title="Emotion",
             yaxis_title="Experiment",
             height=400
         )
         
         if viz_style == 'Publication':
-            fig_heatmap_emotion = create_publication_plot(fig_heatmap_emotion, "Emotion Accuracy Heatmap")
+            fig_heatmap_emotion = create_publication_plot(fig_heatmap_emotion, f"{heatmap_metric} Heatmap")
         
         st.plotly_chart(fig_heatmap_emotion, use_container_width=True)
         
-        # Stacked bar chart for precision, recall, F1
-        if len(experiments) <= 4:  # Limit for readability
-            st.subheader("3. Detailed Metrics by Emotion")
-            
-            selected_emotion = st.selectbox(
-                "Select Emotion for Detailed View:",
-                emotion_acc_df['Emotion'].unique(),
-                key="emotion_detail_select"
-            )
-            
-            emotion_detail_df = emotion_acc_df[emotion_acc_df['Emotion'] == selected_emotion]
-            
-            fig_detail = go.Figure()
-            
-            for i, exp in enumerate(experiments):
-                exp_data = emotion_detail_df[emotion_detail_df['Experiment'] == exp['name']]
-                if not exp_data.empty:
-                    # CORREÇÃO AQUI: Usar .iloc[0] em vez de .values[0]
-                    # Verificar se as colunas existem
-                    row = exp_data.iloc[0] if len(exp_data) > 0 else None
-                    if row is not None:
-                        # Verificar se as colunas existem
-                        if 'precision' in row and 'recall' in row and 'f1_score' in row:
-                            fig_detail.add_trace(go.Bar(
-                                name=exp['name'],
-                                x=['Precision', 'Recall', 'F1-Score'],
-                                y=[
-                                    float(row['precision']),
-                                    float(row['recall']),
-                                    float(row['f1_score'])
-                                ],
-                                marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)],
-                                textposition='auto'
-                            ))
-            
-            fig_detail.update_layout(
-                barmode='group',
-                title=f"Detailed Metrics for {selected_emotion}",
-                yaxis_title="Score",
-                yaxis_range=[0, 1],
-                height=400
-            )
-            
-            st.plotly_chart(fig_detail, use_container_width=True)
+        # Scatter plot: KL Divergence vs Accuracy per emotion
+        st.subheader("3. KL Divergence vs Accuracy per Emotion")
+        
+        fig_scatter_kl_acc = px.scatter(
+            emotion_acc_df,
+            x='KL Divergence',
+            y='Accuracy',
+            color='Emotion',
+            facet_col='Experiment',
+            facet_col_wrap=min(3, len(experiments)),
+            title='KL Divergence vs Accuracy by Emotion and Experiment',
+            labels={
+                'KL Divergence': 'KL Divergence (lower is better)',
+                'Accuracy': 'Accuracy (higher is better)'
+            },
+            hover_data=['Emotion', 'Samples'],
+            height=400
+        )
+        
+        if viz_style == 'Publication':
+            fig_scatter_kl_acc = create_publication_plot(fig_scatter_kl_acc, "KL Divergence vs Accuracy")
+        
+        st.plotly_chart(fig_scatter_kl_acc, use_container_width=True)
     
     with tab4:
         st.header("Model Ranking and Evaluation")
         
-        # Calculate composite scores
+        # Calculate composite scores including new metrics
         st.subheader("1. Model Ranking by Composite Score")
         
         composite_scores = []
         for exp in experiments:
             # Normalize metrics to 0-1 scale
-            accuracy_norm = exp['accuracy']
+            accuracy_annotated_norm = exp['accuracy_annotated']
+            accuracy_most_probable_norm = exp['accuracy_most_probable'] if exp['accuracy_most_probable'] is not None else exp['accuracy_annotated']
             f1_norm = exp['summary_metrics']['f1_macro']
             cosine_norm = exp['summary_metrics']['cosine_mean']
+            pearson_norm = (exp['summary_metrics']['pearson_correlation_mean'] + 1) / 2  # Convert -1 to 1 → 0 to 1
             js_norm = 1 - min(exp['summary_metrics']['js_div_mean'], 1)
+            kl_norm = 1 - min(exp['summary_metrics']['kl_div_mean'], 1)
             
             # Weighted composite score (adjust weights as needed)
             composite = (
-                0.35 * accuracy_norm + 
-                0.30 * f1_norm + 
-                0.20 * cosine_norm + 
-                0.15 * js_norm
+                0.25 * accuracy_annotated_norm + 
+                0.20 * accuracy_most_probable_norm + 
+                0.15 * f1_norm + 
+                0.15 * cosine_norm + 
+                0.15 * pearson_norm + 
+                0.05 * js_norm + 
+                0.05 * kl_norm
             )
             
             composite_scores.append({
                 'Experiment': exp['name'],
                 'Composite Score': composite,
-                'Accuracy': accuracy_norm,
+                'Accuracy (Annotated)': accuracy_annotated_norm,
+                'Accuracy (Most Probable)': accuracy_most_probable_norm,
                 'F1-Score': f1_norm,
                 'Cosine Similarity': cosine_norm,
+                'Pearson Correlation': exp['summary_metrics']['pearson_correlation_mean'],
                 'JS Divergence': exp['summary_metrics']['js_div_mean'],
+                'KL Divergence': exp['summary_metrics']['kl_div_mean'],
                 'Rank': 0  # Will be filled after sorting
             })
         
@@ -1003,7 +1257,8 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
         # Display ranking table
         st.subheader("2. Ranking Details")
         
-        rank_columns = ['Rank', 'Experiment', 'Composite Score', 'Accuracy', 'F1-Score', 'Cosine Similarity', 'JS Divergence']
+        rank_columns = ['Rank', 'Experiment', 'Composite Score', 'Accuracy (Annotated)', 'Accuracy (Most Probable)', 
+                       'F1-Score', 'Cosine Similarity', 'Pearson Correlation', 'JS Divergence', 'KL Divergence']
         display_rank_df = composite_df[rank_columns].copy()
         
         def highlight_top3(row):
@@ -1017,85 +1272,66 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
         
         styled_rank_df = display_rank_df.style.format({
             'Composite Score': '{:.3f}',
-            'Accuracy': '{:.2%}',
+            'Accuracy (Annotated)': '{:.2%}',
+            'Accuracy (Most Probable)': '{:.2%}',
             'F1-Score': '{:.3f}',
             'Cosine Similarity': '{:.3f}',
-            'JS Divergence': '{:.4f}'
+            'Pearson Correlation': '{:.3f}',
+            'JS Divergence': '{:.4f}',
+            'KL Divergence': '{:.4f}'
         }).apply(highlight_top3, axis=1)
         
         st.dataframe(styled_rank_df, use_container_width=True)
         
-        # Statistical significance testing
-        if len(experiments) >= 2:
-            st.subheader("3. Statistical Significance Analysis")
+        # Parallel coordinates plot for multi-dimensional comparison
+        if len(experiments) > 1:
+            st.subheader("3. Multi-Dimensional Comparison")
             
-            from scipy import stats
+            # Prepare data for parallel coordinates
+            parallel_data = composite_df.copy()
             
-            comparisons = []
-            exp_names = [exp['name'] for exp in experiments]
+            # Normalize all metrics to 0-1 scale for parallel coordinates
+            for col in ['Accuracy (Annotated)', 'Accuracy (Most Probable)', 'F1-Score', 'Cosine Similarity', 'Pearson Correlation']:
+                if col in parallel_data.columns:
+                    parallel_data[col] = parallel_data[col].astype(float)
             
-            for i in range(len(exp_names)):
-                for j in range(i+1, len(exp_names)):
-                    exp1_name = exp_names[i]
-                    exp2_name = exp_names[j]
-                    
-                    # Get data for both experiments
-                    exp1_data = next(exp for exp in experiments if exp['name'] == exp1_name)
-                    exp2_data = next(exp for exp in experiments if exp['name'] == exp2_name)
-                    
-                    # Get per-sample correctness
-                    true_labels = exp1_data['data']['groundtruth_label']
-                    pred1 = exp1_data['data']['predicted_label']
-                    pred2 = exp2_data['data']['predicted_label']
-                    
-                    correct1 = (pred1 == true_labels).astype(int)
-                    correct2 = (pred2 == true_labels).astype(int)
-                    
-                    # Paired t-test
-                    t_stat, p_value = stats.ttest_rel(correct1, correct2)
-                    
-                    # Effect size (Cohen's d)
-                    mean_diff = np.mean(correct1) - np.mean(correct2)
-                    pooled_std = np.sqrt((np.var(correct1) + np.var(correct2)) / 2)
-                    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
-                    
-                    comparisons.append({
-                        'Comparison': f'{exp1_name} vs {exp2_name}',
-                        'Mean Difference': mean_diff,
-                        't-statistic': t_stat,
-                        'p-value': p_value,
-                        "Cohen's d": cohens_d,
-                        'Significant (p<0.05)': p_value < 0.05,
-                        'Interpretation': 'Significant' if p_value < 0.05 else 'Not Significant'
-                    })
+            # For divergence metrics, invert so higher is better
+            parallel_data['JS Divergence_inv'] = 1 - parallel_data['JS Divergence']
+            parallel_data['KL Divergence_inv'] = 1 - parallel_data['KL Divergence']
             
-            if comparisons:
-                comparison_df = pd.DataFrame(comparisons)
-                
-                # Format for display
-                def color_significant(row):
-                    if row['Significant (p<0.05)']:
-                        return ['background-color: #90EE90'] * len(row)
-                    return [''] * len(row)
-                
-                styled_comparison_df = comparison_df.style.format({
-                    'Mean Difference': '{:.4f}',
-                    't-statistic': '{:.4f}',
-                    'p-value': '{:.6f}',
-                    "Cohen's d": '{:.3f}'
-                }).apply(color_significant, axis=1)
-                
-                st.dataframe(styled_comparison_df, use_container_width=True, hide_index=True)
-                
-                # Download comparison data
-                csv_comparison = comparison_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Statistical Comparisons",
-                    data=csv_comparison,
-                    file_name="statistical_comparisons.csv",
-                    mime="text/csv",
-                    key="download_comparisons"
+            # Create parallel coordinates plot
+            dimensions = []
+            for col in ['Accuracy (Annotated)', 'Accuracy (Most Probable)', 'F1-Score', 'Cosine Similarity', 'Pearson Correlation', 
+                       'JS Divergence_inv', 'KL Divergence_inv']:
+                if col in parallel_data.columns:
+                    dim_label = col.replace('_inv', ' (Inv)')
+                    dimensions.append(
+                        dict(range=[parallel_data[col].min(), parallel_data[col].max()],
+                             label=dim_label,
+                             values=parallel_data[col])
+                    )
+            
+            fig_parallel = go.Figure(data=
+                go.Parcoords(
+                    line=dict(color=parallel_data['Composite Score'],
+                             colorscale='Viridis',
+                             showscale=True,
+                             colorbar=dict(title='Composite Score')),
+                    dimensions=dimensions,
+                    labelangle=30,
+                    labelside='bottom'
                 )
+            )
+            
+            fig_parallel.update_layout(
+                title="Parallel Coordinates Plot - Multi-Dimensional Comparison",
+                height=500
+            )
+            
+            if viz_style == 'Publication':
+                fig_parallel = create_publication_plot(fig_parallel, "Multi-Dimensional Comparison")
+            
+            st.plotly_chart(fig_parallel, use_container_width=True)
     
     with tab5:
         st.header("Distribution Analysis")
@@ -1106,7 +1342,7 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
         # Prepare data for violin/box plots
         dist_data = []
         for exp in experiments:
-            for metric in ['js_divergence', 'cosine_similarity', 'pearson_correlation']:
+            for metric in ['js_divergence', 'kl_divergence', 'cosine_similarity', 'pearson_correlation']:
                 values = exp['data'][metric].dropna()
                 for val in values:
                     dist_data.append({
@@ -1124,12 +1360,12 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
             y='Value',
             color='Experiment',
             facet_col='Metric',
-            facet_col_wrap=3,
+            facet_col_wrap=2,
             box=True,
             points=False,
             title="Distribution of Metrics Across Experiments",
             color_discrete_sequence=COLOR_PALETTE[:len(experiments)],
-            height=400
+            height=600
         )
         
         if viz_style == 'Publication':
@@ -1137,58 +1373,95 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
         
         st.plotly_chart(fig_violin, use_container_width=True)
         
-        # Correlation between accuracy and other metrics
-        st.subheader("2. Correlation Analysis")
+        # Correlation between accuracy and distribution metrics
+        st.subheader("2. Correlation Analysis: Accuracy vs Distribution Metrics")
         
-        # Calculate correlations for each experiment
-        corr_data = []
+        # Prepare data for scatter matrix
+        scatter_data = []
         for exp in experiments:
-            corr_matrix = exp['data'][['js_divergence', 'cosine_similarity', 
-                                       'pearson_correlation']].corr()
-            
-            # Flatten correlation matrix
-            metrics = ['JS Divergence', 'Cosine Similarity', 'Pearson Correlation']
-            for i in range(len(corr_matrix)):
-                for j in range(i+1, len(corr_matrix)):
-                    corr_data.append({
-                        'Experiment': exp['name'],
-                        'Metric 1': metrics[i],
-                        'Metric 2': metrics[j],
-                        'Correlation': corr_matrix.iloc[i, j]
-                    })
+            scatter_data.append({
+                'Experiment': exp['name'],
+                'Accuracy (Annotated)': exp['accuracy_annotated'],
+                'Accuracy (Most Probable)': exp['accuracy_most_probable'] if exp['accuracy_most_probable'] is not None else 0,
+                'F1-Score': exp['summary_metrics']['f1_macro'],
+                'JS Divergence': exp['summary_metrics']['js_div_mean'],
+                'KL Divergence': exp['summary_metrics']['kl_div_mean'],
+                'Cosine Similarity': exp['summary_metrics']['cosine_mean'],
+                'Pearson Correlation': exp['summary_metrics']['pearson_correlation_mean']
+            })
         
-        if corr_data:
-            corr_df = pd.DataFrame(corr_data)
-            
-            # Pivot for heatmap
-            pivot_corr = corr_df.pivot_table(
-                index='Experiment', 
-                columns=['Metric 1', 'Metric 2'], 
-                values='Correlation'
+        scatter_df = pd.DataFrame(scatter_data)
+        
+        # Create scatter matrix
+        fig_scatter_matrix = px.scatter_matrix(
+            scatter_df,
+            dimensions=['Accuracy (Annotated)', 'Accuracy (Most Probable)', 'F1-Score', 'JS Divergence', 
+                       'KL Divergence', 'Cosine Similarity', 'Pearson Correlation'],
+            color='Experiment',
+            title="Scatter Matrix: Accuracy vs Distribution Metrics",
+            height=700
+        )
+        
+        if viz_style == 'Publication':
+            fig_scatter_matrix.update_layout(
+                font=dict(size=10),
+                title_font=dict(size=16)
             )
-            
-            fig_corr_heatmap = go.Figure(data=go.Heatmap(
-                z=pivot_corr.values,
-                x=[f"{col[0]}-{col[1]}" for col in pivot_corr.columns],
-                y=pivot_corr.index,
-                colorscale='RdBu',
-                zmid=0,
-                text=np.round(pivot_corr.values, 2),
-                texttemplate='%{text:.2f}',
-                textfont={"size": 10},
-                hoverongaps=False,
-                colorbar_title="Correlation"
-            ))
-            
-            fig_corr_heatmap.update_layout(
-                title="Correlation Between Metrics by Experiment",
-                height=400
+        
+        st.plotly_chart(fig_scatter_matrix, use_container_width=True)
+        
+        # Time series or progression of metrics (if applicable)
+        st.subheader("3. Metric Relationships")
+        
+        # Select x and y axes for scatter plot
+        col1, col2 = st.columns(2)
+        with col1:
+            x_axis = st.selectbox(
+                "X-axis metric:",
+                ['Accuracy (Annotated)', 'Accuracy (Most Probable)', 'JS Divergence', 'KL Divergence', 
+                 'Cosine Similarity', 'Pearson Correlation', 'F1-Score'],
+                key="x_axis_select"
             )
-            
-            if viz_style == 'Publication':
-                fig_corr_heatmap = create_publication_plot(fig_corr_heatmap, "Metric Correlations")
-            
-            st.plotly_chart(fig_corr_heatmap, use_container_width=True)
+        
+        with col2:
+            y_axis = st.selectbox(
+                "Y-axis metric:",
+                ['Accuracy (Annotated)', 'Accuracy (Most Probable)', 'JS Divergence', 'KL Divergence', 
+                 'Cosine Similarity', 'Pearson Correlation', 'F1-Score'],
+                key="y_axis_select",
+                index=3  # Default to KL Divergence
+            )
+        
+        # Map selection to actual column names
+        col_map = {
+            'Accuracy (Annotated)': 'Accuracy (Annotated)',
+            'Accuracy (Most Probable)': 'Accuracy (Most Probable)',
+            'JS Divergence': 'JS Divergence',
+            'KL Divergence': 'KL Divergence',
+            'Cosine Similarity': 'Cosine Similarity',
+            'Pearson Correlation': 'Pearson Correlation',
+            'F1-Score': 'F1-Score'
+        }
+        
+        x_col = col_map[x_axis]
+        y_col = col_map[y_axis]
+        
+        fig_relationship = px.scatter(
+            scatter_df,
+            x=x_col,
+            y=y_col,
+            color='Experiment',
+            size='F1-Score',
+            title=f'{x_axis} vs {y_axis} by Experiment',
+            hover_data=['Experiment', 'Accuracy (Annotated)', 'F1-Score'],
+            trendline="ols",
+            height=500
+        )
+        
+        if viz_style == 'Publication':
+            fig_relationship = create_publication_plot(fig_relationship, f"{x_axis} vs {y_axis}")
+        
+        st.plotly_chart(fig_relationship, use_container_width=True)
     
     with tab6:
         st.header("Detailed Experiment Reports")
@@ -1206,16 +1479,33 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Accuracy", f"{selected_exp['accuracy']:.2%}")
+                st.metric("Accuracy (Annotated)", f"{selected_exp['accuracy_annotated']:.2%}")
             
             with col2:
-                st.metric("F1-Score (Macro)", f"{selected_exp['summary_metrics']['f1_macro']:.3f}")
+                if selected_exp['accuracy_most_probable'] is not None:
+                    st.metric("Accuracy (Most Probable)", f"{selected_exp['accuracy_most_probable']:.2%}")
+                else:
+                    st.metric("Accuracy (Most Probable)", "N/A")
             
             with col3:
-                st.metric("Cosine Similarity", f"{selected_exp['summary_metrics']['cosine_mean']:.3f}")
+                st.metric("F1-Score (Macro)", f"{selected_exp['summary_metrics']['f1_macro']:.3f}")
             
             with col4:
+                st.metric("Cosine Similarity", f"{selected_exp['summary_metrics']['cosine_mean']:.3f}")
+            
+            col5, col6, col7, col8 = st.columns(4)
+            
+            with col5:
                 st.metric("JS Divergence", f"{selected_exp['summary_metrics']['js_div_mean']:.4f}")
+            
+            with col6:
+                st.metric("KL Divergence", f"{selected_exp['summary_metrics']['kl_div_mean']:.4f}")
+            
+            with col7:
+                st.metric("Pearson Correlation", f"{selected_exp['summary_metrics']['pearson_correlation_mean']:.3f}")
+            
+            with col8:
+                st.metric("Samples", f"{selected_exp['n_samples']:,}")
             
             # Classification report
             st.subheader("Classification Report")
@@ -1286,11 +1576,51 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                 'recall': '{:.3f}',
                 'f1_score': '{:.3f}',
                 'js_div_mean': '{:.4f}',
+                'kl_div_mean': '{:.4f}',
                 'cosine_mean': '{:.3f}',
-                'correlation_mean': '{:.3f}'
+                'pearson_correlation_mean': '{:.3f}'
             }).applymap(color_classification, subset=['accuracy', 'precision', 'recall', 'f1_score'])
             
             st.dataframe(styled_emotion_df, use_container_width=True)
+            
+            # Sample-level distribution metrics
+            st.subheader("Sample-level Distribution Metrics")
+            
+            # Select a few random samples to show
+            sample_data = selected_exp['data'].sample(min(5, len(selected_exp['data'])))
+            
+            for idx, row in sample_data.iterrows():
+                with st.expander(f"Sample: {row['file'].split('/')[-1] if isinstance(row['file'], str) else 'Sample ' + str(idx)}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Distribution Metrics:**")
+                        metrics_table = pd.DataFrame({
+                            'Metric': ['KL Divergence', 'JS Divergence', 'Pearson Correlation', 
+                                      'Cosine Similarity', 'Euclidean Distance'],
+                            'Value': [
+                                f"{row['kl_divergence']:.4f}",
+                                f"{row['js_divergence']:.4f}",
+                                f"{row['pearson_correlation']:.4f}",
+                                f"{row['cosine_similarity']:.4f}",
+                                f"{row['euclidean_distance']:.4f}"
+                            ]
+                        })
+                        st.dataframe(metrics_table, use_container_width=True, hide_index=True)
+                    
+                    with col2:
+                        st.markdown("**Prediction vs Ground Truth:**")
+                        pred_emotion = row['predicted_emotion']
+                        true_emotion = row['groundtruth_emotion']
+                        true_most_probable_emotion = row.get('groundtruth_most_probable_emotion', true_emotion)
+                        correct_annotated = pred_emotion == true_emotion
+                        correct_most_probable = pred_emotion == true_most_probable_emotion
+                        
+                        st.metric("Predicted", pred_emotion)
+                        st.metric("Ground Truth (Annotated)", true_emotion)
+                        st.metric("Ground Truth (Most Probable)", true_most_probable_emotion)
+                        st.metric("Correct (Annotated)", "✓" if correct_annotated else "✗")
+                        st.metric("Correct (Most Probable)", "✓" if correct_most_probable else "✗")
     
     with tab7:
         st.header("Export Results for Paper")
@@ -1316,10 +1646,13 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                     all_summary_data.append({
                         'Experiment': exp['name'],
                         'Emotion': row['emotion'],
-                        'Accuracy': row['accuracy'],
+                        'Accuracy_Annotated': exp['accuracy_annotated'],
+                        'Accuracy_Most_Probable': exp['accuracy_most_probable'],
                         'Precision': row['precision'],
                         'Recall': row['recall'],
                         'F1_Score': row['f1_score'],
+                        'KL_Divergence': row['kl_div_mean'],
+                        'Pearson_Correlation': row['pearson_correlation_mean'],
                         'Samples': row['samples']
                     })
             
@@ -1337,11 +1670,20 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
         with col_exp2:
             st.subheader("📈 Publication Figures")
             
-            # Generate and export key figures
+            # Figure format selection
+            fig_format = st.selectbox(
+                "Figure Format:",
+                ["PNG (High-Res)", "SVG (Vector)", "PDF (Vector)"],
+                key="fig_format_select"
+            )
+            
+            # Figure selection
             fig_options = {
                 'performance_comparison': 'Performance Comparison Bar Chart',
+                'kl_js_comparison': 'KL vs JS Divergence Scatter Plot',
                 'emotion_heatmap': 'Emotion Performance Heatmap',
-                'model_ranking': 'Model Ranking Chart'
+                'model_ranking': 'Model Ranking Chart',
+                'metric_distributions': 'Metric Distributions Violin Plot'
             }
             
             selected_fig = st.selectbox(
@@ -1352,10 +1694,83 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
             )
             
             if st.button("Generate Figure for Export", key="generate_fig_button"):
-                # Here you would generate the selected figure
-                # For now, we'll create a placeholder
-                st.info("Figure generation would be implemented here")
-                st.write("In a full implementation, this would generate high-resolution figures in PNG/SVG/PDF format")
+                # Generate the selected figure
+                if selected_fig == 'performance_comparison':
+                    # Generate performance comparison figure
+                    fig = go.Figure()
+                    for i, exp in enumerate(experiments):
+                        fig.add_trace(go.Bar(
+                            name=exp['name'],
+                            x=['Accuracy (Ann)', 'Accuracy (Prob)', 'F1-Score', 'Cosine Sim', 'Pearson Corr'],
+                            y=[
+                                exp['accuracy_annotated'],
+                                exp['accuracy_most_probable'] if exp['accuracy_most_probable'] is not None else 0,
+                                exp['summary_metrics']['f1_macro'],
+                                exp['summary_metrics']['cosine_mean'],
+                                exp['summary_metrics']['pearson_correlation_mean']
+                            ],
+                            marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)]
+                        ))
+                    
+                    fig.update_layout(
+                        barmode='group',
+                        title='Performance Comparison',
+                        yaxis_title='Score',
+                        height=500
+                    )
+                    
+                elif selected_fig == 'kl_js_comparison':
+                    # Generate KL vs JS divergence figure
+                    kl_js_data = []
+                    for exp in experiments:
+                        kl_js_data.append({
+                            'Experiment': exp['name'],
+                            'KL Divergence': exp['summary_metrics']['kl_div_mean'],
+                            'JS Divergence': exp['summary_metrics']['js_div_mean'],
+                            'Accuracy (Annotated)': exp['accuracy_annotated']
+                        })
+                    
+                    kl_js_df = pd.DataFrame(kl_js_data)
+                    fig = px.scatter(
+                        kl_js_df,
+                        x='KL Divergence',
+                        y='JS Divergence',
+                        color='Experiment',
+                        size='Accuracy (Annotated)',
+                        title='KL Divergence vs JS Divergence'
+                    )
+                    
+                elif selected_fig == 'emotion_heatmap':
+                    # Generate emotion heatmap
+                    emotion_acc_data = []
+                    for exp in experiments:
+                        for _, row in exp['emotion_metrics'].iterrows():
+                            emotion_acc_data.append({
+                                'Experiment': exp['name'],
+                                'Emotion': row['emotion'],
+                                'Accuracy': row['accuracy']
+                            })
+                    
+                    emotion_acc_df = pd.DataFrame(emotion_acc_data)
+                    pivot_data = emotion_acc_df.pivot_table(
+                        index='Experiment', 
+                        columns='Emotion', 
+                        values='Accuracy',
+                        aggfunc='mean'
+                    )
+                    
+                    fig = go.Figure(data=go.Heatmap(
+                        z=pivot_data.values,
+                        x=pivot_data.columns,
+                        y=pivot_data.index,
+                        colorscale='Viridis',
+                        colorbar_title="Accuracy"
+                    ))
+                    fig.update_layout(title='Emotion Accuracy Heatmap')
+                
+                st.success(f"Figure '{fig_options[selected_fig]}' generated!")
+                st.plotly_chart(fig, use_container_width=True)
+                st.info(f"In a full implementation, this would export as {fig_format}")
         
         with col_exp3:
             st.subheader("📋 LaTeX Tables")
@@ -1367,16 +1782,18 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                 latex_table += r"\centering"
                 latex_table += r"\caption{Performance Comparison of FER Models}"
                 latex_table += r"\label{tab:performance_comparison}"
-                latex_table += r"\begin{tabular}{lcccc}"
+                latex_table += r"\begin{tabular}{lcccccc}"
                 latex_table += r"\hline"
-                latex_table += r"Model & Accuracy & F1-Score & Cosine Sim. & JS Div. \\"
+                latex_table += r"Model & Acc. (Ann.) & Acc. (Prob.) & F1-Score & Cosine Sim. & Pearson Corr. & JS Div. \\"
                 latex_table += r"\hline"
                 
                 for exp in experiments:
                     latex_table += f"{exp['name']} & "
-                    latex_table += f"{exp['accuracy']:.2%} & "
+                    latex_table += f"{exp['accuracy_annotated']:.2%} & "
+                    latex_table += f"{exp['accuracy_most_probable']:.2% if exp['accuracy_most_probable'] is not None else 'N/A'} & "
                     latex_table += f"{exp['summary_metrics']['f1_macro']:.3f} & "
                     latex_table += f"{exp['summary_metrics']['cosine_mean']:.3f} & "
+                    latex_table += f"{exp['summary_metrics']['pearson_correlation_mean']:.3f} & "
                     latex_table += f"{exp['summary_metrics']['js_div_mean']:.4f} \\\\"
                 
                 latex_table += r"\hline"
@@ -1402,21 +1819,24 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                     
                     # Add detailed reports for each experiment
                     for exp in experiments:
+                        # Experiment summary
                         exp_summary = pd.DataFrame({
                             'Metric': [
-                                'Accuracy', 'F1-Score (Macro)', 'Precision (Macro)', 'Recall (Macro)',
-                                'JS Divergence', 'Cosine Similarity', 'Pearson Correlation',
-                                'KL Divergence', 'Euclidean Distance'
+                                'Accuracy (Annotated)', 'Accuracy (Most Probable)', 'F1-Score (Macro)', 
+                                'Precision (Macro)', 'Recall (Macro)',
+                                'JS Divergence', 'KL Divergence', 'Cosine Similarity', 'Pearson Correlation',
+                                'Euclidean Distance'
                             ],
                             'Value': [
-                                exp['accuracy'],
+                                exp['accuracy_annotated'],
+                                exp['accuracy_most_probable'] if exp['accuracy_most_probable'] is not None else 'N/A',
                                 exp['summary_metrics']['f1_macro'],
                                 exp['summary_metrics']['precision_macro'],
                                 exp['summary_metrics']['recall_macro'],
                                 exp['summary_metrics']['js_div_mean'],
-                                exp['summary_metrics']['cosine_mean'],
-                                exp['summary_metrics']['correlation_mean'],
                                 exp['summary_metrics']['kl_div_mean'],
+                                exp['summary_metrics']['cosine_mean'],
+                                exp['summary_metrics']['pearson_correlation_mean'],
                                 exp['summary_metrics']['euclidean_mean']
                             ]
                         })
@@ -1429,6 +1849,11 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                         emo_path = os.path.join(tmpdir, f"{exp['name']}_emotion_metrics.csv")
                         exp['emotion_metrics'].to_csv(emo_path, index=False)
                         zipf.write(emo_path, f"{exp['name']}_emotion_metrics.csv")
+                        
+                        # Add classification report
+                        class_report_path = os.path.join(tmpdir, f"{exp['name']}_classification_report.csv")
+                        pd.DataFrame(exp['classification_report']).T.to_csv(class_report_path)
+                        zipf.write(class_report_path, f"{exp['name']}_classification_report.csv")
                 
                 # Read ZIP file for download
                 with open(zip_path, 'rb') as f:
@@ -1441,6 +1866,8 @@ if 'processed_experiments' in st.session_state and st.session_state.processed_ex
                     mime="application/zip",
                     key="download_zip_package"
                 )
+                
+                st.success("Package created successfully! Download using the button above.")
 
 else:
     # Initial state - show instructions
@@ -1458,7 +1885,7 @@ else:
            - **Ground Truth CSV**: Corresponding ground truth labels
         
         ### **Step 2: Configure Analysis**
-        - Select which metrics to compare
+        - Select which metrics to compare (including new KL Divergence and Pearson Correlation)
         - Choose visualization style ("Publication" for paper-ready plots)
         - Select color palette for consistent visuals
         
@@ -1483,6 +1910,11 @@ else:
         Columns: happy, contempt, surprised, angry, disgusted, fearful, sad, neutral, file
         Optional: emotion_label, valence, arousal, dominance
         ```
+        
+        ### **🎯 New Features:**
+        - **Two Accuracy Metrics**:
+          1. **Accuracy (Annotated)**: Uses the manually annotated label from ground truth
+          2. **Accuracy (Most Probable)**: Uses the most probable class calculated from ground truth probabilities
         
         ### **🎯 Perfect for Paper Writing:**
         - Publication-ready visualizations

@@ -29,7 +29,7 @@ class DDAMNet(nn.Module):
                 
         if pretrained:
             print("Loading weights for MSCELEB")
-            net = torch.load(os.path.join('/home/joaocardia/Documents/Projects/DDAMFN/pretrained/', "MFN_msceleb.pth"))       
+            net = torch.load(pretrained,weights_only=False)
       
         self.features = nn.Sequential(*list(net.children())[:-4])
         self.num_head = num_head

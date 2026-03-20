@@ -32,6 +32,7 @@ def parse_args():
     parser.add_argument('--model_path', default = './checkpoints_ver2.0/affecnet8_epoch25_acc0.6469.pth')
     parser.add_argument('--dataset', required=True)
     parser.add_argument('--csv_path', required=True)
+    parser.add_argument('--pretrained', required=True)
     return parser.parse_args()
 
 
@@ -79,7 +80,7 @@ def run_test():
     args = parse_args()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    model = DDAMNet(num_class=args.num_class, num_head=args.num_head, pretrained=False)
+    model = DDAMNet(num_class=args.num_class, num_head=args.num_head, pretrained=args.pretrained)
     
     checkpoint = torch.load(args.model_path, map_location=device)
     key = 'model_state_dict' if 'model_state_dict' in checkpoint.keys() else 'state_dict'

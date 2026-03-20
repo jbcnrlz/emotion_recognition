@@ -44,10 +44,11 @@ def train():
     parser.add_argument('--optimizer', help='Optimizer', required=False, default="adam")
     parser.add_argument('--freeze', help='Freeze weights', required=False, type=int, default=0)
     parser.add_argument('--model_path', help='Freeze weights', required=False, default=0)
+    parser.add_argument('--pretrained', help='Freeze weights', required=False, default=0)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading model -- Using " + str(device))
-    model = DDAMNet(num_class=8,num_head=2,pretrained=True)
+    model = DDAMNet(num_class=8,num_head=2,pretrained=args.pretrained)
 
     data_transforms = {
         'train': transforms.Compose([
@@ -87,16 +88,16 @@ def train():
     print("Model loaded")
     #print(model)
     print("Loading trainig set")
-    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='EXP',exchangeLabel=None)
+    dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='UNIVERSAL',exchangeLabel=None)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
 
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='EXP',exchangeLabel=None)
+    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='UNIVERSAL',exchangeLabel=None)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
     optimizer = SAM(model.parameters(),torch.optim.Adam,lr=args.learningRate,rho=0.05,adaptive=False)
 
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.BCEWithLogitsLoss().to(device)
     criterion_at = AttentionLoss()
 
     os.system('cls' if os.name == 'nt' else 'clear')
