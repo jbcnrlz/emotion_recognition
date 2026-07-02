@@ -6,7 +6,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar, overlay_attention_maps
-from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithAttentionLikelihoodNoVA
+
+# ATUALIZADO: Importação da nova classe ResNet50WithCrossAttention
+from networks.EmotionResnetVA import ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithCrossAttention, ResNet50WithAttentionLikelihoodNoVA, Glint360kResNetWithCrossAttention
+
 from torch import nn, optim
 import torch.distributions as dist, random
 from torch.nn import functional as F
@@ -14,6 +17,32 @@ from loss.FocalLoss import FocalLoss
 from loss.FocalConsistencyLoss import FocalConsistencyLoss, RegularizedLearnedConsistencyLoss, FocalConsistencyLoss14Emotions, RegularizedLearnedConsistencyLoss14Emotions
 from loss.KnowledgeGuidedConsistencyLoss import KnowledgeGuidedConsistencyLoss, create_enhanced_consistency_loss
 from helper.function import visualize_conflict_matrix
+
+# NOVO: Função para calcular a divergência Jensen-Shannon (JSD)
+def js_divergence(p_logits, q_target):
+    """
+    Calcula a divergência Jensen-Shannon entre os logits preditos e os alvos reais.
+    JSD(P || Q) = 0.5 * KL(P || M) + 0.5 * KL(Q || M), onde M = 0.5 * (P + Q)
+    """
+    # Converter logits em probabilidades
+    p_probs = F.softmax(p_logits, dim=1)
+    
+    # Garantir que q_target seja uma distribuição de probabilidade (soma 1)
+    # Útil caso currTargetBatch seja um vetor com valores que não somam exatamente 1
+    q_probs = torch.clamp(q_target, min=0.0)
+    q_probs = q_probs / (q_probs.sum(dim=1, keepdim=True) + 1e-8)
+    
+    # Calcular a distribuição M
+    m_probs = 0.5 * (p_probs + q_probs)
+    # Adicionar epsilon para evitar log(0)
+    m_log_probs = torch.log(m_probs + 1e-8)
+    
+    # O F.kl_div do PyTorch espera log-probs como input e probs como target
+    kl_p_m = F.kl_div(m_log_probs, p_probs, reduction='batchmean')
+    kl_q_m = F.kl_div(m_log_probs, q_probs, reduction='batchmean')
+    
+    jsd = 0.5 * (kl_p_m + kl_q_m)
+    return jsd
 
 def regularized_gmm_loss(y_pred, y_true, components, n_components, alpha=0.1):
     """
@@ -114,14 +143,20 @@ def train():
                     required=False, default=5.0, type=float)
     parser.add_argument('--emotionMapping', help='Order of the emotions in the dataset', 
                     required=False, default="7,0,6,2,5,4,3,1")
+    parser.add_argument('--imageSize', type=int, default=256,
+                       help='Size of the image')
+    # --- NOVO: Argumento para o Early Stopping ---
+    parser.add_argument('--patience', type=int, default=10,
+                       help='Número de épocas sem melhora na Validation Loss antes de parar o treino')
+    # ---------------------------------------------
     
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     emotionsOrder = np.array(list(map(int, args.emotionMapping.split(','))))
 
-    if args.pretrainedResnet is not None:
-        checkpoint = torch.load(args.pretrainedResnet,weights_only=False)
+    #if args.pretrainedResnet is not None:
+    #    checkpoint = torch.load(args.pretrainedResnet,weights_only=False)
 
     if not os.path.exists(args.output):
         os.makedirs(args.output)
@@ -148,28 +183,33 @@ def train():
         model = ResNet50WithAttentionLikelihood(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none',bayesianHeadType='VA' if outVA == 2 else 'VAD')
     elif args.model == 'simpleNetwork':
         model = ResNet50WithAttentionLikelihoodNoVA(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none')
+    elif args.model == 'simpleNetworkCrossAtt':
+        # ATUALIZADO: Instanciação da classe com o novo nome
+        model = ResNet50WithCrossAttention(num_classes=args.numberOfClasses,pretrained=args.pretrainedResnet,bottleneck='none',num_sectors=8)
+    elif args.model == 'glint360ksimpleNetworkCrossAtt':
+        model = Glint360kResNetWithCrossAttention(num_classes=args.numberOfClasses, pretrained_path=args.pretrainedResnet, num_sectors=7)
+        
     model.to(device)    
     print("Model loaded")
     print(model)
     data_transforms = {
         'train': transforms.Compose([
-            transforms.Resize((256, 256)),
-            #transforms.RandomHorizontalFlip(),
-            #transforms.RandomCrop(224),
-            #transforms.ColorJitter(brightness=0.2,contrast=0.2, saturation=0.2, hue=0.1),
+            transforms.Resize((args.imageSize, args.imageSize)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomAffine(degrees=10, translate=(0.05, 0.05)),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+            transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), value=0),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ]),
     'test' : transforms.Compose([
-        transforms.Resize((256,256)),
+        transforms.Resize((args.imageSize, args.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     ])}
     print("Loading trainig set")
-    #dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
     dataset = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms['train'],typeExperiment=args.typeExperiment)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batchSize, shuffle=True)
-    #datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment='PROBS_VA' if outVA == 2 else 'PROBS_VAD')
     datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'val_set'),transform=data_transforms['test'],typeExperiment=args.typeExperiment)
     val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
     
@@ -220,12 +260,11 @@ def train():
             num_classes=args.numberOfClasses,
             gamma=2.0,
             alpha=0.25,
-            prior_strength=0.5,  # Forte influência do conhecimento prévio
+            prior_strength=0.5,
             learnable_scale=True,
-            reduction='mean'  # Adicione esta linha
+            reduction='mean'
         ).to(device)
     
-
     elif args.mainLossFunc == "ENHANCEDKNOWLEDGE":
         print("Using Enhanced Knowledge Consistency Loss")
         criterion, loss_optimizer_params = create_enhanced_consistency_loss(args, device)
@@ -238,15 +277,14 @@ def train():
     if args.mainLossFunc == "KNOWLEDGEGUIDEDCONSISTENCY":
         optimizer = optim.AdamW([
             {'params': model.parameters(), 'lr': args.learningRate},
-            {'params': criterion.parameters(), 'lr': args.learningRate * 10},  # LR maior
+            {'params': criterion.parameters(), 'lr': args.learningRate * 10},
         ], weight_decay=1e-2)
     elif args.mainLossFunc == "ENHANCEDKNOWLEDGE":
-        model_params = [{'params': model.parameters(), 'lr': args.learningRate}]
+        model_params = [{'params': filter(lambda p: p.requires_grad, model.parameters()), 'lr': args.learningRate}]
         all_params = model_params + loss_optimizer_params        
         optimizer = optim.AdamW(all_params, weight_decay=1e-4)
 
     else:
-
         optimizer = optim.AdamW(model.parameters(), lr=args.learningRate, weight_decay=1e-2)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, args.epochs // 5, gamma=0.1)        
@@ -272,24 +310,58 @@ def train():
     bestForFold = bestForFoldTLoss = 500000
     bestRank = -np.inf
     
+    # --- NOVO: Variável do Early Stopping ---
+    epochs_no_improve = 0
+    # ----------------------------------------
+    
     for ep in range(start_epoch,args.epochs):
+        # --- NOVO: Lógica de Descongelamento ---
+        # Se chegarmos na época 5 (ou o valor que você desejar), liberamos o backbone
+        if args.model == 'glint360ksimpleNetworkCrossAtt' and ep == 5:
+            model.set_backbone_freeze(freeze=False)
+            
+            # Recriamos o otimizador para incluir os novos parâmetros com LRs diferentes
+            # O backbone usa um LR muito menor (1e-5 ou 1e-6) para não destruir os pesos do Glint
+            backbone_lr = args.learningRate * 0.1 # Ex: 1e-5 se o base for 1e-4
+            
+            if args.mainLossFunc == "ENHANCEDKNOWLEDGE":
+                # Parâmetros da cabeça e atenção (lr normal) + backbone (lr baixo) + loss params
+                new_params = [
+                    {'params': model.backbone.parameters(), 'lr': backbone_lr},
+                    {'params': model.attention_fusion.parameters(), 'lr': args.learningRate},
+                    {'params': model.likelihood_head.parameters(), 'lr': args.learningRate}
+                ]
+                all_params = new_params + loss_optimizer_params
+                optimizer = optim.AdamW(all_params, weight_decay=1e-4)
+            else:
+                optimizer = optim.AdamW([
+                    {'params': model.backbone.parameters(), 'lr': backbone_lr},
+                    {'params': model.attention_fusion.parameters(), 'lr': args.learningRate},
+                    {'params': model.likelihood_head.parameters(), 'lr': args.learningRate}
+                ], weight_decay=1e-2)
+                
+            
+            scheduler = optim.lr_scheduler.StepLR(optimizer, (args.epochs - ep) // 3, gamma=0.1)
+        # ---------------------------------------
         rankT = rankA = None
         ibl = ibr = ibtl = ' '
         model.train()
         lossAcc = []
         elboLoss = []
         ceLoss = []
+        jsdTrainAcc = [] # NOVO: Acumulador de JSD para Treino
         totalImages = 0
         iteration = 0
         accPercentage = None
+        
         for currBatch, currTargetBatch, _ in train_loader:
             printProgressBar(iteration,math.ceil(len(dataset.filesPath)/args.batchSize),length=50,prefix='Procesing face - training')
             totalImages += currBatch.shape[0]
             labels = None if len(currTargetBatch) < 3 else currTargetBatch[2].to(device)
             currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)
                         
-
-            if isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+            # ATUALIZADO: Type Check
+            if isinstance(model, ResNet50WithAttentionLikelihoodNoVA) or isinstance(model, ResNet50WithCrossAttention) or isinstance(model, Glint360kResNetWithCrossAttention):
                 classification = model(currBatch)
                 loss = criterion(classification, currTargetBatch)
             else:                                
@@ -311,7 +383,13 @@ def train():
             optimizer.step()
 
             lossAcc.append(loss.item())
-            if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+            
+            # NOVO: Calcular e acumular JSD
+            jsd_val = js_divergence(classification.detach(), currTargetBatch.detach())
+            jsdTrainAcc.append(jsd_val.item())
+            
+            # ATUALIZADO: Type Check
+            if not isinstance(model, ResNet50WithAttentionLikelihoodNoVA) and not isinstance(model, ResNet50WithCrossAttention) and not isinstance(model, Glint360kResNetWithCrossAttention):
                 elboLoss.append(elboVal.item())            
                 ceLoss.append(ceVal.item())
 
@@ -322,14 +400,18 @@ def train():
             iteration += 1
 
         lossAvg = sum(lossAcc) / len(lossAcc)
+        jsdTrainAvg = sum(jsdTrainAcc) / len(jsdTrainAcc) # NOVO: Média da época para JSD Treino
+        
         writer.add_scalar('RESNETAtt/Loss/train', lossAvg, ep)
+        writer.add_scalar('RESNETAtt/JSD/train', jsdTrainAvg, ep) # NOVO: JSD Treino no Tensorboard
 
         if labels is not None:
             accPercentage = accPercentage / totalImages
             writer.add_scalar('RESNETAtt/Accuracy/train', accPercentage, ep)
             rankT = accPercentage
 
-        if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+        # ATUALIZADO: Type Check
+        if not isinstance(model, ResNet50WithAttentionLikelihoodNoVA) and not isinstance(model, ResNet50WithCrossAttention) and not isinstance(model, Glint360kResNetWithCrossAttention):
             elboLoss = sum(elboLoss) / len(elboLoss)
             ceLoss = sum(ceLoss) / len(ceLoss)
             writer.add_scalar(f'RESNETAtt/{lossFuncName}/train',ceLoss, ep)
@@ -338,7 +420,6 @@ def train():
         if args.mainLossFunc == "ENHANCEDKNOWLEDGE":            
             conflict_matrix = criterion.analyze_conflict_learning(threshold=0.3)
             
-            # Visualizar no TensorBoard
             if args.visualizeConflict:
                 try:
                     fig = criterion.visualize_conflict_matrix(
@@ -349,12 +430,10 @@ def train():
                 except Exception as e:
                     print(f"Erro ao visualizar matriz: {e}")
             
-            # Registrar métricas
             if conflict_matrix is not None:
                 writer.add_scalar('EnhancedLoss/MeanConflict', conflict_matrix.mean(), ep)
                 writer.add_scalar('EnhancedLoss/StdConflict', conflict_matrix.std(), ep)
                 
-                # Contar conflitos fortes
                 strong_conflicts = (conflict_matrix > 0.5).sum()
                 writer.add_scalar('EnhancedLoss/StrongConflicts', strong_conflicts, ep)
 
@@ -363,6 +442,7 @@ def train():
         elboLoss = []
         ceLoss = []
         loss_val = []
+        jsdValAcc = [] # NOVO: Acumulador de JSD para Validação
         iteration = 0
         imageAttention = None
         accPercentage = None
@@ -378,11 +458,11 @@ def train():
                 if (random.randint(0, 100) < 5) or (imageAttention is None):
                     imageAttention = currBatch[random.randint(0,currBatch.shape[0]-1)].cpu().detach().numpy()
 
-                if isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+                # ATUALIZADO: Type Check
+                if isinstance(model, ResNet50WithAttentionLikelihoodNoVA) or isinstance(model, ResNet50WithCrossAttention) or isinstance(model, Glint360kResNetWithCrossAttention):
                     classification = model(currBatch)
                     loss = criterion(classification, currTargetBatch)
                 else:
-
                     classification, parameters, vaValueEstim = model(currBatch)
                     ceVal = criterion(classification, currTargetBatch)
                     if args.secondaryLossFunction == "ELBO":
@@ -395,6 +475,10 @@ def train():
                     ceLoss.append(ceVal.item())
 
                 loss_val.append(loss.item())
+                
+                # NOVO: Calcular e acumular JSD na Validação
+                jsd_val = js_divergence(classification.detach(), currTargetBatch.detach())
+                jsdValAcc.append(jsd_val.item())
 
                 if labels is not None:
                     _, preds = torch.max(classification, 1)
@@ -404,14 +488,18 @@ def train():
                 iteration += 1
 
         tLoss = sum(loss_val) / len(loss_val)
+        jsdValAvg = sum(jsdValAcc) / len(jsdValAcc) # NOVO: Média da época para JSD Validação
+        
         writer.add_scalar('RESNETAtt/Loss/val', tLoss, ep)
+        writer.add_scalar('RESNETAtt/JSD/val', jsdValAvg, ep) # NOVO: JSD Validação no Tensorboard
 
         if labels is not None:
             accPercentage = accPercentage / totalImages
             writer.add_scalar('RESNETAtt/Accuracy/val', accPercentage, ep)
             rankA = accPercentage
 
-        if not isinstance(model,ResNet50WithAttentionLikelihoodNoVA):
+        # ATUALIZADO: Type Check
+        if not isinstance(model, ResNet50WithAttentionLikelihoodNoVA) and not isinstance(model, ResNet50WithCrossAttention) and not isinstance(model, Glint360kResNetWithCrossAttention):
             elboLoss = sum(elboLoss) / len(elboLoss)
             ceLoss = sum(ceLoss) / len(ceLoss)
             writer.add_scalar(f'RESNETAtt/{lossFuncName}/val',ceLoss, ep)
@@ -423,7 +511,6 @@ def train():
             for idx, at in enumerate(attMapsOv):
                 writer.add_image(f'RESNETAtt/AttentionMaps_{idx}', at, ep, dataformats='HWC')
         
-        # Visualizar matriz de conflito se habilitado e usando a loss regularizada
         if args.visualizeConflict and hasattr(criterion, 'visualize_conflict_matrix'):
             try:
                 fig = criterion.visualize_conflict_matrix()
@@ -431,28 +518,23 @@ def train():
                 plt.close(fig)
             except Exception as e:
                 pass
-                #print(f"Warning: Could not visualize conflict matrix: {e}")
         
         if args.visualizeConflict and hasattr(criterion, 'analyze_conflicts'):
             conflict_matrix = criterion.analyze_conflicts(threshold=0.2)
     
-            # Salvar visualização se possível
             if args.visualizeConflict:
                 fig, _ = visualize_conflict_matrix(conflict_matrix, criterion.loss_module.class_names)
                 writer.add_figure('ConflictMatrix/Heatmap', fig, ep)
                 plt.close(fig)
 
-        # Registrar pares de conflito significativos
         if hasattr(criterion, 'get_conflict_pairs'):
             conflict_pairs = criterion.get_conflict_pairs(threshold=args.conflictThreshold)
             if conflict_pairs:
-                # Registrar como texto no TensorBoard
                 pairs_text = "Significant conflict pairs:\n"
-                for i, j, weight in conflict_pairs[:10]:  # Limitar a 10 pares
+                for i, j, weight in conflict_pairs[:10]:
                     pairs_text += f"({i},{j}): {weight:.3f}\n"
                 writer.add_text('RESNETAtt/ConflictPairs', pairs_text, ep)
                 
-                # Registrar histograma dos pesos
                 weights = [w for _, _, w in conflict_pairs]
                 writer.add_histogram('RESNETAtt/ConflictWeights', torch.tensor(weights), ep)
         
@@ -465,6 +547,11 @@ def train():
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)
             bestForFoldTLoss = tLoss
+            # NOVO: Reseta a contagem se a loss melhorar
+            epochs_no_improve = 0  
+        else:
+            # NOVO: Incrementa a contagem se a loss não melhorar
+            epochs_no_improve += 1 
 
         if bestForFold > lossAvg:
             ibl = 'X'
@@ -480,10 +567,16 @@ def train():
             fName = os.path.join(args.output, fName)
             saveStatePytorch(fName, state_dict, opt_dict, ep + 1)        
 
+        # NOVO: Print final atualizado com informações do Early Stopping (Patience)
         if rankT is not None:
-            print(f"[EPOCH {ep:03d}] T. Loss {lossAvg:.5f} T. Rank {rankT:.4f} V. Loss {tLoss:.5f} V. Rank: {rankA:.5f} [{ibl}] [{ibtl}] [{ibr}]")
+            print(f"[EPOCH {ep:03d}] T. Loss {lossAvg:.5f} T. Rank {rankT:.4f} T. JSD {jsdTrainAvg:.4f} V. Loss {tLoss:.5f} V. Rank: {rankA:.5f} V. JSD {jsdValAvg:.4f} [{ibl}] [{ibtl}] [{ibr}] | Patience: {epochs_no_improve}/{args.patience}")
         else:
-            print('[EPOCH %03d] T. Loss %.5f V. Loss %.5f [%c] [%c]' % (ep, lossAvg, tLoss, ibl,ibtl))
+            print(f"[EPOCH {ep:03d}] T. Loss {lossAvg:.5f} T. JSD {jsdTrainAvg:.4f} V. Loss {tLoss:.5f} V. JSD {jsdValAvg:.4f} [{ibl}] [{ibtl}] | Patience: {epochs_no_improve}/{args.patience}")
+
+        # NOVO: Gatilho que interrompe o treinamento
+        if epochs_no_improve >= args.patience:
+            print(f"\n[Early Stopping] Treinamento interrompido na época {ep:03d}. Sem melhora na Validation Loss (tLoss) por {args.patience} épocas consecutivas.")
+            break
 
 if __name__ == '__main__':
     train()

@@ -8,7 +8,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.AffectNet import AffectNet
 from torch import nn
-from networks.EmotionResnetVA import ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithAttentionLikelihoodNoVA
+from networks.EmotionResnetVA import ResNet50WithCrossAttention,ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithAttentionLikelihoodNoVA, Glint360kResNetWithCrossAttention
 from helper.function import visualizeAttentionMaps, printProgressBar
 
 def saveToCSV(preds, files, pathCSV, vad=None, emoLabels=None, mapping=None, num_classes=None, emoHeaders=None):
@@ -510,6 +510,8 @@ def train():
                        help='Custom emotion labels (comma-separated)')
     parser.add_argument('--typeExperiment', type=str, default='ORIGINAL_VAD_EXP',
                        help='Type of experiment')
+    parser.add_argument('--imageSize', type=int, default=256,
+                       help='Size of the image')
     args = parser.parse_args()
 
     checkpoint = torch.load(args.weights)
@@ -525,6 +527,12 @@ def train():
         model = ResNet50WithAttentionLikelihood(num_classes=args.classQuantity, bottleneck='none', bayesianHeadType='VAD')
     elif args.emotionModel == "simpleNetwork":
         model = ResNet50WithAttentionLikelihoodNoVA(num_classes=args.classQuantity, bottleneck='none')
+    elif args.emotionModel == 'simpleNetworkCrossAtt':
+        # ATUALIZADO: Instanciação da classe com o novo nome
+        model = ResNet50WithCrossAttention(num_classes=args.classQuantity,bottleneck='none',num_sectors=8)
+    elif args.emotionModel == 'glint360ksimpleNetworkCrossAtt':
+        model = Glint360kResNetWithCrossAttention(num_classes=args.classQuantity, pretrained_path=None, num_sectors=7)
+
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(args.weights)
@@ -544,7 +552,7 @@ def train():
     
     # Configurar transformações
     data_transforms = transforms.Compose([
-        transforms.Resize((256, 256)),
+        transforms.Resize((args.imageSize, args.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
@@ -571,7 +579,7 @@ def train():
             images, (labels, vadLabels, emotion), pathsForFiles = data
             
             # Forward pass normal (sem gradientes)
-            if not isinstance(model, ResNet50WithAttentionLikelihoodNoVA):
+            if (not isinstance(model, ResNet50WithAttentionLikelihoodNoVA) and not isinstance(model, ResNet50WithCrossAttention) and not isinstance(model, Glint360kResNetWithCrossAttention)):
                 outputs, _, vad = model(images.to(device))
             else:
                 outputs = model(images.to(device))

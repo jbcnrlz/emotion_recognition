@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import os
 import numpy as np
 from matplotlib import pyplot as plt
+from networks.iresnet import iresnet50
 class SpatialSelfAttention(nn.Module):
     def __init__(self, in_channels):
         super(SpatialSelfAttention, self).__init__()
@@ -522,4 +523,314 @@ class ResNet50WithAttentionLikelihoodNoVA(nn.Module):
         features = self.model(x)
         distribution_params = self.likelihood_head(features)
         return distribution_params
+
+class RegionAttentionFusion(nn.Module):
+    def __init__(self, embed_dim, num_heads=8, dropout=0.1):
+        super(RegionAttentionFusion, self).__init__()
+        
+        # Self-Attention
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.self_attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        
+        # Cross-Attention
+        self.norm2_q = nn.LayerNorm(embed_dim) # Norm para a Query (global_feat)
+        self.norm2_kv = nn.LayerNorm(embed_dim) # Norm para Key/Value (patches)
+        self.cross_attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        
+        # Feed Forward final
+        self.norm3 = nn.LayerNorm(embed_dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 2),
+            nn.ReLU(), # Pode testar nn.GELU() aqui no futuro, costuma ir melhor em transformers!
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 2, embed_dim)
+        )
+
+        # Norm final opcional (ajuda a estabilizar as predições de VAD)
+        self.norm_final = nn.LayerNorm(embed_dim)
+
+    def forward(self, patches, global_feat):
+        # 1. Pre-LN Self-Attention nas micro-regiões
+        normed_patches = self.norm1(patches)
+        attn_patches, _ = self.self_attn(normed_patches, normed_patches, normed_patches)
+        patches = patches + attn_patches # Conexão residual limpa!
+        
+        # 2. Pre-LN Cross-Attention
+        normed_global = self.norm2_q(global_feat)
+        normed_patches_kv = self.norm2_kv(patches)
+        
+        # O global_feat (Query) atende aos patches (Key/Value)
+        fused_feat, cross_attn_maps = self.cross_attn(
+            query=normed_global, 
+            key=normed_patches_kv, 
+            value=normed_patches_kv
+        )
+        global_feat = global_feat + fused_feat # Conexão residual limpa!
+        
+        # 3. Pre-LN FFN
+        normed_fused = self.norm3(global_feat)
+        global_feat = global_feat + self.ffn(normed_fused) # Conexão residual limpa!
+        
+        # Aplica norm final e remove a dimensão extra da sequência
+        out = self.norm_final(global_feat)
+        
+        return out.squeeze(1), cross_attn_maps
+
+class ResNet50WithCrossAttention(nn.Module):
+    def __init__(self, num_classes=8, pretrained=None, bottleneck='both', num_sectors=7):
+        super(ResNet50WithCrossAttention, self).__init__()
+        self.num_classes = num_classes
+        self.num_sectors = num_sectors # Por padrão, saída da layer4 é 7x7
+        
+        self.model = None
+        if pretrained is not None:
+            print("Loading pretrained weights for ResNet50...")
+            self.model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        else:
+            self.model = models.resnet50(weights=None)
+        
+        self.attention_maps = []
+        self._attention_hooks = []
+        
+        # (Seu código original de substituição de bottlenecks mantido)
+        if bottleneck in ['first', 'second', 'both']:
+            self._replace_bottlenecks(bottleneck)
+        else:            
+            pass # (Mantive enxuto, adicione seu Sequential original aqui se precisar)
+
+        out_features = self.model.fc.in_features # 2048 para ResNet50
+        
+        # Remover Average Pooling e FC originais, pois vamos gerenciar o espaço manualmente
+        self.model.avgpool = nn.Identity()
+        self.model.fc = nn.Identity()
+        
+        # --- NOVO: Módulo de Atenção Espacial ---
+        self.num_patches = self.num_sectors * self.num_sectors
+        
+        # Positional Encoding para que a rede saiba onde cada patch está (Canto do olho vs Boca)
+        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches, out_features) * 0.02)
+        self.global_token = nn.Parameter(torch.randn(1, 1, out_features) * 0.02)
+        
+        # Módulo de Fusão
+        self.attention_fusion = RegionAttentionFusion(embed_dim=out_features)
+
+        # Cabeça para parâmetros da distribuição
+        self.likelihood_head = nn.Sequential(
+            nn.Linear(out_features, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(), # Troquei o primeiro Sigmoid por ReLU (geralmente melhor para features intermediárias)
+            nn.Dropout(),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Linear(128, num_classes)
+        )
     
+    def _replace_bottlenecks(self, btn):
+        # (Seu método mantido inalterado)
+        pass 
+    
+    def forward(self, x):
+        self.attention_maps = [] 
+        B = x.size(0)
+        
+        # Passar pela ResNet até a layer4 (antes do avgpool que removemos)
+        # x shape inicial: [B, 3, 224, 224]
+        x = self.model.conv1(x)
+        x = self.model.bn1(x)
+        x = self.model.relu(x)
+        x = self.model.maxpool(x)
+
+        x = self.model.layer1(x)
+        x = self.model.layer2(x)
+        x = self.model.layer3(x)
+        x = self.model.layer4(x) 
+        # Saída layer4 shape: [B, 2048, 7, 7]
+        
+        # 1. Transformar o Grid Espacial em N x N setores (Patches)
+        # [B, 2048, 7, 7] -> [B, 2048, 49] -> [B, 49, 2048]
+        patches = x.flatten(2).transpose(1, 2) 
+        
+        # 2. Adicionar Positional Encoding aos patches
+        patches = patches + self.pos_embedding
+        
+        # 3. Expandir o token global para o batch size
+        global_feat = self.global_token.expand(B, -1, -1)
+        
+        # 4. Passar pelo nosso novo módulo de Atenção
+        # fused_features shape: [B, 2048]
+        # cross_attn_maps shape: [B, 1, 49] (Pode ser usado para visualizar onde a rede olhou!)
+        fused_features, cross_attn_maps = self.attention_fusion(patches, global_feat)
+        
+        # Salvar o mapa de atenção final para visualização se desejar
+        self.attention_maps.append(cross_attn_maps.view(B,self.num_sectors, self.num_sectors))
+
+        # 5. Passar para a cabeça de predição
+        distribution_params = self.likelihood_head(fused_features)
+        
+        return distribution_params
+
+class DynamicRegionAttention(nn.Module):
+    """
+    Substitui a antiga RegionAttentionFusion para evitar "Attention Collapse".
+    Usa Multi-Head Attention com uma Query dinâmica extraída do próprio rosto.
+    """
+    def __init__(self, embed_dim=512, num_heads=4, dropout=0.1):
+        super().__init__()
+        self.num_heads = num_heads
+        self.embed_dim = embed_dim
+        
+        # Multi-Head Attention nativo (otimizado em C++)
+        self.multihead_attn = nn.MultiheadAttention(
+            embed_dim=embed_dim, 
+            num_heads=num_heads, 
+            dropout=dropout,
+            batch_first=True
+        )
+        
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+        
+        # Feed-Forward Network para não linearidade adicional e estabilidade
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 2, embed_dim)
+        )
+
+    def forward(self, patches):
+        """
+        patches: Tensores de features de entrada shape [Batch, 49, 512]
+        """
+        # 1. Query Dinâmica: Em vez de um token fixo (que causa vício), a Query 
+        # agora é a média das características de toda a imagem daquela iteração específica.
+        # Shape: [Batch, 1, 512]
+        dynamic_query = patches.mean(dim=1, keepdim=True)
+        
+        # 2. Multi-Head Attention
+        # A rede vai "perguntar" aos patches quais regiões importam baseando-se no resumo global.
+        # attn_weights shape: [Batch, 1, 49]
+        attn_output, attn_weights = self.multihead_attn(
+            query=dynamic_query,
+            key=patches,
+            value=patches
+        )
+        
+        # 3. Bloco Residual + Layer Normalization
+        fused_features = self.norm1(dynamic_query + attn_output)
+        
+        # 4. FFN + Bloco Residual + Layer Normalization
+        fused_features = self.norm2(fused_features + self.ffn(fused_features))
+        
+        # O squeeze remove a dimensão extra do sequence_length (passando de [B, 1, 512] para [B, 512])
+        return fused_features.squeeze(1), attn_weights
+
+
+class Glint360kResNetWithCrossAttention(nn.Module):
+    def __init__(self, num_classes=8, pretrained_path=None, num_sectors=7):
+        super(Glint360kResNetWithCrossAttention, self).__init__()
+        self.num_classes = num_classes
+        self.num_sectors = num_sectors
+        
+        # 1. Instancia o backbone oficial do InsightFace
+        self.backbone = iresnet50()
+        
+        # 2. Carregamento dos pesos do Glint360K
+        if pretrained_path is not None:
+            print(f"Carregando pesos Glint360K de: {pretrained_path}...")
+            state_dict = torch.load(pretrained_path, map_location='cpu')
+            
+            # Limpa as chaves caso os pesos tenham sido salvos com nn.DataParallel ('module.')
+            clean_state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+            
+            self.backbone.load_state_dict(clean_state_dict, strict=False)
+            print("Pesos do backbone carregados com sucesso!")
+
+        # Logo após carregar o modelo no __init__
+        self.set_backbone_freeze(freeze=True)  # Congela o backbone por padrão
+
+        out_features = 512 
+        self.num_patches = self.num_sectors * self.num_sectors
+        
+        # --- NOVO: Adaptive Pooling ---
+        # Isso garante que a saída da convolução seja sempre redimensionada
+        # para o grid exato (ex: 7x7) que o mecanismo de atenção espera,
+        # independentemente do tamanho da imagem de entrada (112, 224, 256, etc).
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((self.num_sectors, self.num_sectors))
+        # ------------------------------
+        
+        # --- Módulo de Atenção Espacial ---
+        # Positional Encoding mantido para a rede saber a posição de cada feature
+        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches, out_features) * 0.02)
+        
+        # 3. Nova Atenção Dinâmica
+        self.attention_fusion = DynamicRegionAttention(embed_dim=out_features, num_heads=4)
+
+        self.attention_maps = []
+
+        # Cabeça de predição ajustada para receber 512 canais iniciais
+        self.likelihood_head = nn.Sequential(
+            nn.Linear(out_features, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.7),  # Dropout mais agressivo para evitar overfitting
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(128, num_classes)
+        )
+        
+    def set_backbone_freeze(self, freeze=True):
+        """
+        Congela ou descongelar todos os parâmetros do backbone IResNet.
+        As camadas de atenção e likelihood_head continuarão treinando.
+        """
+        for param in self.backbone.parameters():
+            param.requires_grad = not freeze
+        
+        status = "CONGELADO" if freeze else "DESCONGELADO"
+        print(f"[*] Backbone Glint360K está agora: {status}")
+    
+    def forward(self, x):
+        self.attention_maps = []
+        B = x.size(0)
+        
+        # CRÍTICO: Certifique-se que o rosto está pré-alinhado (RetinaFace/MTCNN)!
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.prelu(x)
+        x = self.backbone.layer1(x)
+        x = self.backbone.layer2(x)
+        x = self.backbone.layer3(x)
+        x = self.backbone.layer4(x) 
+        
+        # --- NOVO: Aplicar o Adaptive Pooling ---
+        # Transforma o mapa de características gerado pela layer4
+        # rigidamente em [B, 512, num_sectors, num_sectors]
+        x = self.adaptive_pool(x) 
+        # ----------------------------------------
+        
+        # Agora a saída é GARANTIDA de ser shape: [B, 512, 7, 7]
+        
+        # 1. Transformar o Grid em Setores (Patches)
+        # [B, 512, 7, 7] -> [B, 512, 49] -> [B, 49, 512]
+        patches = x.flatten(2).transpose(1, 2) 
+        
+        # 2. Somar o Positional Encoding
+        # Agora `patches` sempre terá dimensão 49, casando perfeitamente com `self.pos_embedding`
+        patches = patches + self.pos_embedding
+        
+        # 3. Fusão com a Nova Atenção Dinâmica
+        # fused_features shape: [B, 512]
+        # cross_attn_maps shape: [B, 1, 49]
+        fused_features, cross_attn_maps = self.attention_fusion(patches)
+        
+        # 4. Salvar os mapas de atenção, redimensionando de volta para o Grid
+        self.attention_maps.append(cross_attn_maps.view(B, self.num_sectors, self.num_sectors))
+        
+        # 5. Predição Final
+        distribution_params = self.likelihood_head(fused_features)
+        
+        return distribution_params

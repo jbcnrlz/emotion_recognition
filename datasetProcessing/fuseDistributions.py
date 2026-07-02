@@ -1,264 +1,121 @@
-import numpy as np, argparse, pandas as pd
-from scipy.spatial import KDTree
-from scipy.stats import multivariate_normal
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import cpu_count
-from tqdm import tqdm
+import numpy as np
+import pandas as pd
+import argparse
+from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import squareform
 
-def calculate_intersection(args):
+# Emoções base que queremos preservar nos nomes
+UNIVERSAL_EMOTIONS = {'happy', 'sad', 'surprised', 'contempt', 'fearful', 'angry', 'disgusted', 'neutral'}
+
+def bhattacharyya_distance(mu1, var1, mu2, var2):
     """
-    Calculate intersection volume between two 3D Gaussian distributions
-    with proper error handling and numpy operations
+    Calcula a distância analítica de Bhattacharyya entre duas distribuições Gaussianas
+    com matriz de covariância diagonal.
     """
-    i, j, dist1, dist2 = args
+    var_pool = (var1 + var2) / 2.0
+    term1 = (1/8) * np.sum((mu1 - mu2)**2 / var_pool)
+    term2 = (1/2) * np.sum(np.log(var_pool / np.sqrt(var1 * var2)))
+    return term1 + term2
+
+def fuse_emotions_hac(emotions_data, n_clusters=14):
+    """
+    Realiza a fusão de emoções usando Clusterização Hierárquica e Moment Matching Analítico.
+    """
+    classes = emotions_data['class'].values
     
-    try:
-        # Define integration bounds (3D)
-        bounds = [(-1, 1), (-1, 1), (-1, 1)]
-        
-        # Create grid for numerical integration
-        grid_resolution = 30  # Reduced for better performance
-        x = np.linspace(bounds[0][0], bounds[0][1], grid_resolution)
-        y = np.linspace(bounds[1][0], bounds[1][1], grid_resolution)
-        z = np.linspace(bounds[2][0], bounds[2][1], grid_resolution)
-        X, Y, Z = np.meshgrid(x, y, z)
-        points = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
-        
-        # Vectorized PDF calculation with clipping for stability
-        pdf1 = np.clip(dist1.pdf(points), 1e-10, 1e10)
-        pdf2 = np.clip(dist2.pdf(points), 1e-10, 1e10)
-        min_pdf = np.minimum(pdf1, pdf2)
-        
-        # Numerical integration using numpy
-        dx = (bounds[0][1] - bounds[0][0]) / grid_resolution
-        dy = (bounds[1][1] - bounds[1][0]) / grid_resolution
-        dz = (bounds[2][1] - bounds[2][0]) / grid_resolution
-        intersection_volume = np.sum(min_pdf) * dx * dy * dz
-        
-        # Calculate normalization factors safely
-        vol1 = np.sum(pdf1) * dx * dy * dz
-        vol2 = np.sum(pdf2) * dx * dy * dz
-        
-        # Avoid division by zero
-        normalization = min(vol1, vol2)
-        if normalization <= 0:
-            return i, j, 0.0
+    # Extrair médias e variâncias (std^2) garantindo estabilidade numérica
+    means = emotions_data[['valence mean', 'arousal mean', 'dominance mean']].values
+    stds = emotions_data[['valence std', 'arousal std', 'dominance std']].values
+    stds = np.clip(stds, 1e-6, None) # Evita divisão por zero
+    vars_ = stds ** 2
+    
+    n_samples = len(classes)
+    
+    # 1. Construir matriz de distância condensada para o HAC
+    dist_matrix = np.zeros((n_samples, n_samples))
+    for i in range(n_samples):
+        for j in range(i + 1, n_samples):
+            dist = bhattacharyya_distance(means[i], vars_[i], means[j], vars_[j])
+            dist_matrix[i, j] = dist
+            dist_matrix[j, i] = dist
             
-        return i, j, intersection_volume / normalization
+    condensed_dist = squareform(dist_matrix)
     
-    except Exception as e:
-        print(f"Error calculating intersection between {i} and {j}: {str(e)}")
-        return i, j, 0.0
-
-def generateDistributions(mean, covMatrix, points=1000):
-    """Generate 3D Gaussian distributions"""
-    return np.random.multivariate_normal(mean=mean, cov=covMatrix, size=points)
-
-def fuse_distributions(emotions_data, max_workers=None):
-    """
-    Optimized fusion algorithm with proper numpy numeric operations
-    """
-    # Prepare 3D points for KDTree
-    points_3d = emotions_data[['valence mean', 'arousal mean', 'dominance mean']].values
+    # 2. Aplicar Clusterização Hierárquica (Critério Ward ou Complete limitam o espalhamento)
+    Z = linkage(condensed_dist, method='complete')
     
-    maxValence = emotions_data['valence std'].max()
-    arousalMax = emotions_data['arousal std'].max()
-    dominanceMax = emotions_data['dominance std'].max()
-
-    # Build KDTree for fast nearest neighbor queries
-    kdtree = KDTree(points_3d)
+    # 3. Cortar o dendrograma para obter o número exato de clusters desejados
+    labels = fcluster(Z, t=n_clusters, criterion='maxclust')
     
-    # Create multivariate normal distributions with validation
-    distributions = []
-    for idx, row in emotions_data.iterrows():
-        try:
-            mean = [row['valence mean'], row['arousal mean'], row['dominance mean']]
-            cov = np.diag([
-                max(row['valence std'], 1e-6)**2,  # Ensure positive
-                max(row['arousal std'], 1e-6)**2,
-                max(row['dominance std'], 1e-6)**2
-            ])
-            distributions.append(multivariate_normal(mean=mean, cov=cov))
-        except Exception as e:
-            print(f"Error creating distribution for row {idx}: {str(e)}")
-            distributions.append(None)
-    
-    # Find 5 nearest neighbors for each emotion
-    n_neighbors = 6  # 5 neighbors + itself
-    _, indices = kdtree.query(points_3d, k=n_neighbors)
-    
-    # Prepare tasks for parallel processing
-    tasks = []
-    for i in range(len(distributions)):
-        if distributions[i] is None:
-            continue
-            
-        for j in indices[i][1:]:  # Skip self
-            if j >= len(distributions) or distributions[j] is None:
-                continue
-            tasks.append((i, j, distributions[i], distributions[j]))
-    
-    # Parallel computation of intersections
-    intersection_matrix = np.zeros((len(distributions), len(distributions)))
-    max_workers = max_workers or min(cpu_count(), 32)
-    
-    try:
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            results = list(tqdm(executor.map(calculate_intersection, tasks), 
-                              total=len(tasks), 
-                              desc="Calculating intersections"))
-        
-        for i, j, value in results:
-            if i < len(intersection_matrix) and j < len(intersection_matrix):
-                intersection_matrix[i, j] = value
-                intersection_matrix[j, i] = value  # Symmetric matrix
-    except Exception as e:
-        print(f"Error during parallel processing: {str(e)}")
-    
-    # Fusion process with numpy math operations
     fused_emotions = []
-    used_indices = set()
     
-    for i in range(len(distributions)):
-        if i in used_indices or distributions[i] is None:
-            continue
+    # 4. Fazer o Moment Matching para cada cluster formado
+    for cluster_id in np.unique(labels):
+        idx = np.where(labels == cluster_id)[0]
         
-        name1 = emotions_data.iloc[i]['class']
-        if name1 in ['happy', 'sad','surprised','contempt','fearful','angry','disgusted']:
-            fused_emotions.append({
-                'class': emotions_data.iloc[i]['class'],
-                **emotions_data.iloc[i][['valence mean', 'valence std', 
-                                       'arousal mean', 'arousal std',
-                                       'dominance mean', 'dominance std']].astype(float).to_dict()
-            })
-            used_indices.add(i)
-            continue
-        # Find most overlapping neighbor among top 5
-        neighbors = indices[i][1:]  # Exclude self
-        max_overlap = 0
-        best_j = -1
+        cluster_classes = classes[idx]
+        cluster_means = means[idx]
+        cluster_vars = vars_[idx]
         
-        for j in neighbors:
-            if (j < len(intersection_matrix) and 
-                intersection_matrix[i, j] > max_overlap and 
-                j not in used_indices):
-                max_overlap = intersection_matrix[i, j]
-                best_j = j
+        # --- A. Lógica de Nomenclatura ---
+        universals_in_cluster = [c for c in cluster_classes if c in UNIVERSAL_EMOTIONS]
         
-        if max_overlap > 0.5 and best_j != -1:
-            try:
-                
-                name2 = emotions_data.iloc[best_j]['class']
-                if name2 in ['happy', 'sad','surprised','contempt','fearful','angry','disgusted']:
-                    fused_emotions.append({
-                        'class': emotions_data.iloc[best_j]['class'],
-                        **emotions_data.iloc[best_j][['valence mean', 'valence std', 
-                                            'arousal mean', 'arousal std',
-                                            'dominance mean', 'dominance std']].astype(float).to_dict()
-                    })
-                    used_indices.add(best_j)
-                    continue
-
-                # Merge distributions using numpy properly
-                mean1 = points_3d[i]
-                cov1 = np.diag([
-                    max(emotions_data.iloc[i]['valence std'], 1e-6)**2,  # Ensure positive
-                    max(emotions_data.iloc[i]['arousal std'], 1e-6)**2,
-                    max(emotions_data.iloc[i]['dominance std'], 1e-6)**2
-                ])
-                mean2 = points_3d[best_j]
-                cov2 = np.diag([
-                    max(emotions_data.iloc[best_j]['valence std'], 1e-6)**2,
-                    max(emotions_data.iloc[best_j]['arousal std'], 1e-6)**2,
-                    max(emotions_data.iloc[best_j]['dominance std'], 1e-6)**2
-                ])
-
-                pts1 = generateDistributions(mean1, cov1, points=1000)
-                pts2 = generateDistributions(mean2, cov2, points=1000)
-                pts = np.concatenate((pts1, pts2), axis=0)
-                meanND = np.mean(pts, axis=0)
-                stdND = np.std(pts, axis=0)
-                
-                # Check all three std deviations
-                '''
-                if (stdND[0] > maxValence or stdND[1] > arousalMax or stdND[2] > dominanceMax):
-                    print(f"Skipping {i} and {best_j} due to high std deviation.")
-                    continue
-                '''
-
-                corrMatrixND = np.corrcoef(pts, rowvar=False)
-
-                # Create combined name
-                new_name = f"{name1} + {name2}"
-                
-                fused_emotions.append({
-                    'class': new_name,
-                    'valence mean': float(meanND[0]),
-                    'valence std': float(stdND[0]),
-                    'arousal mean': float(meanND[1]),
-                    'arousal std': float(stdND[1]),
-                    'dominance mean': float(meanND[2]),
-                    'dominance std': float(stdND[2])
-                })
-
-                used_indices.update([i, best_j])
-            except Exception as e:
-                print(f"Error fusing {i} and {best_j}: {str(e)}")
-                fused_emotions.append({
-                    'class': emotions_data.iloc[i]['class'],
-                    **emotions_data.iloc[i][['valence mean', 'valence std', 
-                                           'arousal mean', 'arousal std',
-                                           'dominance mean', 'dominance std']].astype(float).to_dict()
-                })
-                used_indices.add(i)
+        if universals_in_cluster:
+            # Se houver emoção universal, ela domina o nome. Se houver mais de uma, junta.
+            new_name = " + ".join(universals_in_cluster)
         else:
-            # Keep original distribution
-            fused_emotions.append({
-                'class': emotions_data.iloc[i]['class'],
-                **emotions_data.iloc[i][['valence mean', 'valence std', 
-                                       'arousal mean', 'arousal std',
-                                       'dominance mean', 'dominance std']].astype(float).to_dict()
-            })
-            used_indices.add(i)
-    
+            # Pega até os 2 primeiros nomes para não ficar gigante
+            new_name = " + ".join(cluster_classes[:2])
+            if len(cluster_classes) > 2:
+                 new_name += " (etc)"
+                 
+        # --- B. Moment Matching (Cálculo Analítico) ---
+        N = len(idx)
+        # Nova média é a média das médias
+        new_mean = np.sum(cluster_means, axis=0) / N
+        
+        # Nova variância leva em conta a variância de cada um MAIS o distanciamento da nova média
+        new_var = np.zeros(3)
+        for i in range(N):
+            new_var += cluster_vars[i] + (cluster_means[i] - new_mean)**2
+        new_var = new_var / N
+        
+        new_std = np.sqrt(new_var)
+        
+        fused_emotions.append({
+            'class': new_name,
+            'valence mean': new_mean[0],
+            'valence std': new_std[0],
+            'arousal mean': new_mean[1],
+            'arousal std': new_std[1],
+            'dominance mean': new_mean[2],
+            'dominance std': new_std[2]
+        })
+        
     return pd.DataFrame(fused_emotions)
 
 def main():
-    try:
-        parser = argparse.ArgumentParser(description='Fuse distributions')
-        parser.add_argument('--distFile', help='Path to emotion distribution file', required=True)    
-        parser.add_argument('--outputDistFile', help='Path to emotion distribution file', required=True)    
-        args = parser.parse_args()
-        # Load data with proper numeric columns
-        emotions_data = pd.read_csv(args.distFile)
-        
-        # Ensure numeric columns
-        for col in ['valence mean', 'valence std', 'arousal mean', 'arousal std', 'dominance mean', 'dominance std']:
-            emotions_data[col] = pd.to_numeric(emotions_data[col], errors='coerce')
-        
-        # Remove rows with missing values
-        emotions_data = emotions_data.dropna(subset=['valence mean', 'arousal mean', 'dominance mean'])
-        
-        # Run fusion algorithm
-        idx = 1
-        before = 0
-        while len(emotions_data) > 13 and before != len(emotions_data):
-            before = len(emotions_data)
-            print(f"Fusing {len(emotions_data)} distributions...")
-            emotions_data = fuse_distributions(emotions_data, max_workers=8)
-            emotions_data.to_csv(f"{args.outputDistFile}_{idx}.csv", index=False)
-            idx += 1            
-        #fused_df = fuse_distributions(emotions_data)
-        
-        # Save results
-        emotions_data.to_csv(f"{args.outputDistFile}.csv", index=False)
-        print(f"Fusion complete. Results saved to {args.outputDistFile}.csv")
-        
-        return 0
-    except Exception as e:
-        print(f"Error in main execution: {str(e)}")
-        return 1
+    parser = argparse.ArgumentParser(description='Fuse emotion distributions analytically via HAC')
+    parser.add_argument('--distFile', help='Path to input CSV', required=True)    
+    parser.add_argument('--outputDistFile', help='Path to output CSV', required=True)
+    parser.add_argument('--clusters', help='Number of final emotions (default: 14)', type=int, default=14)
+    args = parser.parse_args()
+    
+    print("Carregando dados...")
+    emotions_data = pd.read_csv(args.distFile)
+    
+    # Tratamento básico
+    cols = ['valence mean', 'valence std', 'arousal mean', 'arousal std', 'dominance mean', 'dominance std']
+    for col in cols:
+        emotions_data[col] = pd.to_numeric(emotions_data[col], errors='coerce')
+    emotions_data = emotions_data.dropna(subset=['valence mean', 'arousal mean', 'dominance mean'])
+    
+    print(f"Iniciando clusterização para {args.clusters} emoções macro...")
+    # Uma única chamada resolve o problema inteiro de uma vez
+    fused_df = fuse_emotions_hac(emotions_data, n_clusters=args.clusters)
+    
+    fused_df.to_csv(f"{args.outputDistFile}.csv", index=False)
+    print(f"Fusão completa! Salvo em {args.outputDistFile}.csv")
 
 if __name__ == "__main__":
-    import sys
-    sys.exit(main())
+    main()

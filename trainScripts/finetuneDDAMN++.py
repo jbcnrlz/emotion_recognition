@@ -157,7 +157,7 @@ def train():
                 loss_val.append(loss)
                 ceLossHist.append(clValue.item())
                 total += labels.size(0)
-                correct += (predicted == labels.to(device)).sum().item()
+                correct += (predicted == torch.max(labels.to(device), 1)[1]).sum().item()
                 iteration += 1
 
         cResult = correct / total

@@ -1,310 +1,247 @@
-import numpy as np, argparse, torch, os, sys
-import pandas as pd
+import numpy as np, argparse, torch, os, sys, pandas as pd
+from tqdm import tqdm
 from torchvision import transforms
-import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
-from matplotlib.patches import Ellipse
-from PIL import Image 
 from scipy.special import logsumexp
+from scipy.stats import multivariate_normal
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from DatasetClasses.AffectNet import AffectNet, OPTAffectNet
+from DatasetClasses.AffectNet import AffectNet
 
+# Essa lista serve APENAS para traduzir o label numérico original do AffectNet (Ground Truth)
+# Ela NÃO dita mais a ordem das colunas no CSV final.
+AFFECTNET_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
 
-def normal_pdf(x, mu, sigma):
+# Correlações empíricas. Buscadas por chave (nome), então a ordem não importa.
+EMPIRICAL_CORRELATIONS = {
+    'neutral':   {'VD': 0.10, 'AD': 0.10, 'VA': 0.05},
+    'happy':     {'VD': 0.75, 'AD': 0.25, 'VA': 0.15},
+    'sad':       {'VD': 0.65, 'AD': 0.55, 'VA': 0.75},
+    'surprised': {'VD': 0.05, 'AD': 0.65, 'VA': 0.35},
+    'fear':      {'VD': -0.25, 'AD': 0.85, 'VA': 0.65}, 
+    'disgust':   {'VD': -0.55, 'AD': 0.35, 'VA': 0.25}, 
+    'angry':     {'VD': -0.45, 'AD': 0.75, 'VA': 0.55},
+    'contempt':  {'VD': 0.35, 'AD': 0.45, 'VA': 0.25}
+}
+
+def calculate_empirical_priors(data_loader, affectnet_emotion_names):
     """
-    Calcula o valor da PDF para um ponto x, dada a média mu e o desvio-padrão sigma.
-    f(x) = (1 / (sigma * sqrt(2*pi))) * exp(-0.5 * ((x - mu) / sigma)^2)
+    Varre o dataset e retorna um DICIONÁRIO mapeando o NOME da emoção 
+    à sua probabilidade a priori, garantindo que a ordem não importe.
     """
-    # Evita divisão por zero
-    if sigma == 0:
-        return np.inf if x == mu else 0.0
-
-    exponent = -0.5 * ((x - mu) / sigma) ** 2
-    return (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(exponent)
-
-
-def normal_pdf_stable(x, mu, sigma):
-    """
-    Versão estável da PDF normal que evita underflow
-    """
-    epsilon = 1e-8
-    sigma = max(sigma, epsilon)
+    print("[*] Calculando Priors empíricos diretamente do dataset...")
+    num_classes = len(affectnet_emotion_names)
+    counts = np.zeros(num_classes)
+    total_valid = 0
     
-    # Para valores muito distantes, retorna probabilidade muito baixa
-    z = (x - mu) / sigma
-    if np.abs(z) > 10:  # Mais de 10 desvios padrão
-        return epsilon
-    
-    exponent = -0.5 * z ** 2
-    normalization = 1.0 / (sigma * np.sqrt(2 * np.pi))
-    
-    return normalization * np.exp(exponent)
-
-
-def calculate_likelihood_probabilities(vaBatch, classesDist, use_log_space=True):
-    """
-    Calcula probabilidades usando likelihood de forma numericamente estável
-    
-    Args:
-        vaBatch: Tensor com valores VAD [batch_size, 3]
-        classesDist: Distribuições das classes [n_classes, 6] - [mu_v, std_v, mu_a, std_a, mu_d, std_d]
-        use_log_space: Se True, usa espaço logarítmico para evitar underflow
-    
-    Returns:
-        Probabilidades normalizadas [batch_size, n_classes]
-    """
-    batch_size = vaBatch.shape[0]
-    n_classes = classesDist.shape[0]
-    
-    if use_log_space:
-        # Cálculo em espaço logarítmico (mais estável)
-        log_probs = np.zeros((batch_size, n_classes))
-        
-        for c in range(n_classes):
-            mu_v, std_v, mu_a, std_a, mu_d, std_d = classesDist[c]
-            
-            # Evitar std zero adicionando epsilon
-            epsilon = 1e-8
-            std_v = max(std_v, epsilon)
-            std_a = max(std_a, epsilon)
-            std_d = max(std_d, epsilon)
-            
-            # PDF normal em espaço log
-            log_pdf_v = -0.5 * ((vaBatch[:, 0] - mu_v) / std_v) ** 2 - np.log(std_v * np.sqrt(2 * np.pi))
-            log_pdf_a = -0.5 * ((vaBatch[:, 1] - mu_a) / std_a) ** 2 - np.log(std_a * np.sqrt(2 * np.pi))
-            log_pdf_d = -0.5 * ((vaBatch[:, 2] - mu_d) / std_d) ** 2 - np.log(std_d * np.sqrt(2 * np.pi))
-            
-            # Soma das log-probabilidades (equivalente a multiplicação em espaço normal)
-            log_probs[:, c] = log_pdf_v + log_pdf_a + log_pdf_d
-        
-        # Normalizar usando logsumexp para evitar underflow/overflow
-        log_probs_normalized = log_probs - logsumexp(log_probs, axis=1, keepdims=True)
-        
-        # Converter de volta para probabilidades
-        probs = np.exp(log_probs_normalized)
-        
+    for _, vaBatch, _ in data_loader:
+        emotions = vaBatch[:, -1].numpy().astype(int)
+        for emo in emotions:
+            if emo != 255 and emo < num_classes:
+                counts[emo] += 1
+                total_valid += 1
+                
+    if total_valid == 0:
+        print("[!] Aviso: Nenhuma label válida encontrada. Usando distribuição uniforme.")
+        priors_array = np.ones(num_classes) / num_classes
     else:
-        # Versão em espaço normal (menos estável, mas mais direta)
-        probs = np.ones((batch_size, n_classes))
+        priors_array = counts / total_valid
         
-        for c in range(n_classes):
-            mu_v, std_v, mu_a, std_a, mu_d, std_d = classesDist[c]
-            
-            # Evitar std zero
-            epsilon = 1e-8
-            std_v = max(std_v, epsilon)
-            std_a = max(std_a, epsilon)
-            std_d = max(std_d, epsilon)
-            
-            # Calcular probabilidades
-            prob_v = normal_pdf_stable(vaBatch[:, 0], mu_v, std_v)
-            prob_a = normal_pdf_stable(vaBatch[:, 1], mu_a, std_a)
-            prob_d = normal_pdf_stable(vaBatch[:, 2], mu_d, std_d)
-            
-            probs[:, c] = prob_v * prob_a * prob_d
-        
-        # Normalizar as probabilidades
-        probs = probs / (probs.sum(axis=1, keepdims=True) + 1e-8)
+    priors_array = np.maximum(priors_array, 1e-6)
+    priors_array = priors_array / np.sum(priors_array) 
     
-    return probs
+    # Mapeia o nome da emoção para a probabilidade
+    priors_dict = {affectnet_emotion_names[i]: priors_array[i] for i in range(num_classes)}
+    
+    print("--- Priors Empíricos Calculados ---")
+    for emo_name, p in priors_dict.items():
+        print(f"Classe {emo_name}: {p*100:.2f}%")
+    print("-----------------------------------")
+    
+    return priors_dict
 
-
-def calculate_likelihood_vectorized(vaBatch, classesDist):
+def build_full_covariance_matrix(std_v, std_a, std_d, emotion_name):
     """
-    Versão vetorizada para melhor performance
+    Constrói a matriz de covariância 3x3 incluindo as correlações (Covariância Completa)
+    e garante matematicamente que ela seja Positiva Semidefinida (PSD).
+    """
+    eps = 1e-4
+    std_v, std_a, std_d = max(std_v, eps), max(std_a, eps), max(std_d, eps)
+    
+    corrs = EMPIRICAL_CORRELATIONS.get(emotion_name, {'VD': 0.0, 'AD': 0.0, 'VA': 0.0})
+    rho_va, rho_vd, rho_ad = corrs['VA'], corrs['VD'], corrs['AD']
+    
+    cov_va = rho_va * std_v * std_a
+    cov_vd = rho_vd * std_v * std_d
+    cov_ad = rho_ad * std_a * std_d
+    
+    cov_matrix = np.array([
+        [std_v**2, cov_va,   cov_vd],
+        [cov_va,   std_a**2, cov_ad],
+        [cov_vd,   cov_ad,   std_d**2]
+    ], dtype=np.float64)
+    
+    # Projeção para PSD (Evita Erro de Matriz Singular)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+    eigenvalues = np.maximum(eigenvalues, 1e-6)
+    cov_matrix_valid = eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
+    cov_matrix_valid = (cov_matrix_valid + cov_matrix_valid.T) / 2.0
+    
+    return cov_matrix_valid
+
+def calculate_multivariate_likelihood(vaBatch, means, cov_matrices, emotion_names, priors_dict):
+    """
+    Calcula as probabilidades combinando a Distribuição Normal Multivariada 
+    com as Priors empíricas mapeadas por nome.
     """
     batch_size = vaBatch.shape[0]
-    n_classes = classesDist.shape[0]
+    n_classes = len(means)
+    log_probs = np.zeros((batch_size, n_classes))
     
-    # Expandir dimensões para broadcasting
-    va_expanded = vaBatch[:, np.newaxis, :]  # [batch_size, 1, 3]
-    means = classesDist[:, [0, 2, 4]]  # [n_classes, 3]
-    stds = classesDist[:, [1, 3, 5]]  # [n_classes, 3]
-    
-    # Evitar std zero
-    stds = np.maximum(stds, 1e-8)
-    
-    # Calcular log-probabilidades de forma vetorizada
-    z = (va_expanded - means) / stds  # [batch_size, n_classes, 3]
-    log_probs = -0.5 * z ** 2 - np.log(stds * np.sqrt(2 * np.pi))  # [batch_size, n_classes, 3]
-    
-    # Somar log-probs ao longo das dimensões VAD
-    log_probs_sum = np.sum(log_probs, axis=2)  # [batch_size, n_classes]
-    
-    # Normalizar
-    log_probs_normalized = log_probs_sum - logsumexp(log_probs_sum, axis=1, keepdims=True)
+    for c in range(n_classes):
+        emo_name = emotion_names[c]
+        
+        # Busca a prior exata pelo nome. Se for uma emoção "fundida" que não existe
+        # no AffectNet original, assume um valor ínfimo para não enviesar.
+        prior = priors_dict.get(emo_name, 1e-6)
+        
+        try:
+            rv = multivariate_normal(mean=means[c], cov=cov_matrices[c], allow_singular=True)
+            # TEOREMA DE BAYES COMPLETO
+            log_probs[:, c] = rv.logpdf(vaBatch) + np.log(prior)
+        except Exception as e:
+            print(f"Aviso: Matriz singular ou erro na classe {c} ({emo_name}): {e}")
+            log_probs[:, c] = -1e10 
+            
+    # Normalização
+    log_probs_normalized = log_probs - logsumexp(log_probs, axis=1, keepdims=True)
     probs = np.exp(log_probs_normalized)
     
     return probs
 
-
 def validate_probabilities(probs):
-    """
-    Valida se as probabilidades estão corretas
-    """
-    print("Validação das Probabilidades:")
+    print("\n--- Validação das Probabilidades ---")
     print(f"Shape: {probs.shape}")
-    print(f"Soma por linha (deve ser ~1.0): Min={probs.sum(axis=1).min():.6f}, Max={probs.sum(axis=1).max():.6f}")
-    print(f"Valores NaN: {np.isnan(probs).sum()}")
-    print(f"Valores infinitos: {np.isinf(probs).sum()}")
-    print(f"Range das probabilidades: Min={probs.min():.6f}, Max={probs.max():.6f}")
-    
-    # Verificar se alguma probabilidade é zero para todas as classes
-    zero_probs = (probs == 0).all(axis=1).sum()
-    print(f"Linhas com todas probabilidades zero: {zero_probs}")
+    row_sums = probs.sum(axis=1)
+    print(f"Soma por linha (deve ser ~1.0): Min={row_sums.min():.6f}, Max={row_sums.max():.6f}")
+    print(f"Valores NaN/Inf: {np.isnan(probs).sum()} / {np.isinf(probs).sum()}")
+    print("-" * 36)
 
-
-# Lista de emoções corrigida (14 emoções na ordem correta do GMM)
-# Ordem: 13 do CSV + 1 (neutral) adicionado no final
-#CORRECT_EMOTIONS = ["happy", "contempt", "elated", "hopeful", "surprised", "proud", "loved", "angry", "astonished", "disgusted", "fearful", "sad", "fatigued", "neutral"]
-CORRECT_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
-AFFECTNET_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
-
-
-def outputCSV(probs, vads, path, emos, outputFile):
+# NOVO: A função agora recebe "emotion_names" (a ordem exata lida do seu arquivo)
+def outputCSV(probs, vads, path, emos, emotion_names, outputFile):
     new_data = []
-    
-    # Processar cada linha
     for index, row in enumerate(probs):
-        # Projetar distribuição de emoções        
-        
-        # Criar nova linha com a distribuição projetada
-        newRow = {}
-        for c in range(len(CORRECT_EMOTIONS)):
-            newRow[CORRECT_EMOTIONS[c]] = row[c]
-
-        newRow['valence'] = vads[index][0]
-        newRow['arousal'] = vads[index][1]
-        newRow['dominance'] = vads[index][2]
-        newRow['emotion'] = emos[index]
-        newRow['path'] = path[index]
-
+        # Mapeia dinamicamente usando a ordem real lida do distroFile
+        newRow = {emotion_names[c]: row[c] for c in range(len(emotion_names))}
+        newRow.update({
+            'valence': vads[index][0],
+            'arousal': vads[index][1],
+            'dominance': vads[index][2],
+            'emotion': emos[index], # Rótulo original Ground Truth
+            'path': path[index]
+        })
         new_data.append(newRow)
     
-    # Criar novo DataFrame
     new_df = pd.DataFrame(new_data)
-    
-    # Salvar novo CSV
     new_df.to_csv(outputFile, index=False)
-    
-    print(f"Arquivo salvo com sucesso: {outputFile}")
-    print(f"Total de registros processados: {len(new_df)}")
-    
-    return new_df
+    print(f"Arquivo CSV salvo com sucesso: {outputFile}")
 
-
-def saveRankFile(probs,paths,extensionNameFile=""):
+def saveRankFile(probs, paths, extensionNameFile=""):
     for idx, p in enumerate(probs):
         splitedPath = paths[idx].split(os.path.sep)
         fileName = splitedPath[-1].split(".")[0]
-        annotationsFolder = os.path.join(os.path.sep.join(splitedPath[0:-2]),'annotations')
-        with open(os.path.join(annotationsFolder,f"{fileName}_prob_rank{extensionNameFile}.txt"),'w') as f:
-            joinedProbs = ','.join([str(x) for x in p])
-            f.write(joinedProbs+'\n')
-
+        annotationsFolder = os.path.join(os.path.sep.join(splitedPath[0:-2]), 'annotations')
+        
+        os.makedirs(annotationsFolder, exist_ok=True)
+        
+        with open(os.path.join(annotationsFolder, f"{fileName}_prob_rank_{extensionNameFile}.txt"), 'w') as f:
+            f.write(','.join([f"{x:.6f}" for x in p]) + '\n')
 
 def main():
     parser = argparse.ArgumentParser(description='Generate Emotion Ranks')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
     parser.add_argument('--batchSize', type=int, help='Size of the batch', required=True)
-    parser.add_argument('--distroFile', help='Size of the batch', required=True)
-    parser.add_argument('--typeEstimation', help='Type estimation',default="GMM", required=True)
-    parser.add_argument('--use_log_space', action='store_true', help='Use log space for stability')
-    parser.add_argument('--vectorized', action='store_true', help='Use vectorized computation')
+    parser.add_argument('--distroFile', help='Emotion distributions CSV file', required=True)
+    parser.add_argument('--typeEstimation', choices=['GMM', 'LIKELIHOOD'], default="LIKELIHOOD")
     parser.add_argument('--validate_probs', action='store_true', help='Validate probability outputs')
     parser.add_argument('--extensionForAnnotations', default="", help='Extension for annotation files')
     args = parser.parse_args()
 
-    classesDist = pd.read_csv(args.distroFile).drop(columns=['class']).to_numpy()
-    # Adiciona o componente 'neutral' no final (13 + 1 = 14)
-    classesDist = np.vstack( (classesDist, np.array([[0,0.1,0,0.1,0,0.1]])) )
+    # 1. Carregar as distribuições e extrair A ORDEM EXATA das emoções
+    df_distro = pd.read_csv(args.distroFile)
+    emotion_names_csv = df_distro['class'].tolist()
+    classesDist = df_distro.drop(columns=['class']).to_numpy()
+    
+    if 'neutral' not in emotion_names_csv:
+        classesDist = np.vstack((classesDist, np.array([[0.1, 0.05, 0.1, 0.05, 0.1, 0.05]]))) 
+        emotion_names_csv.append('neutral')
 
+    print(f"[*] Ordem das emoções detectada no arquivo: {emotion_names_csv}")
+
+    # 2. Construir Médias e Matrizes
+    means = []
+    cov_matrices = []
+    for idx, row in enumerate(classesDist):
+        mu_v, std_v, mu_a, std_a, mu_d, std_d = row
+        means.append([mu_v, mu_a, mu_d])
+        emotion_name = emotion_names_csv[idx]
+        cov_matrix = build_full_covariance_matrix(std_v, std_a, std_d, emotion_name)
+        cov_matrices.append(cov_matrix)
+        
+    means = np.array(means)
+    cov_matrices = np.array(cov_matrices)
+
+    # Transformações e DataLoader
     data_transforms = transforms.Compose([
-        transforms.Resize((256,256)),
+        transforms.Resize((256, 256)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    datasetVal = AffectNet(afectdata=os.path.join(args.pathBase,'train_set'),transform=data_transforms,typeExperiment='VAD_EXP',exchangeLabel=None)
+    for s in ["train_set", "val_set"]:
+        datasetVal = AffectNet(afectdata=os.path.join(args.pathBase, s), transform=data_transforms, typeExperiment='VAD_EXP', exchangeLabel=None)
+        val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
 
-    if args.typeEstimation == "GMM":
-        idx = -1
-        covm = []
-        means = []
-        for k in classesDist:
-            idx += 1
-            covm.append([
-                [k[1]**2,0,0],
-                [0,k[3]**2,0],
-                [0,0,k[5]**2]
-            ])
-            means.append([k[0],k[2],k[4]])
-
-        X = []
-        labels = []
-        for i in range(len(means)):
-            samples = np.random.multivariate_normal(means[i], covm[i], 1000)
-            X.append(samples)
-            labels.extend([i] * len(samples))
-
-        X = np.vstack(X)
-        n_components = len(means) # Número de estados emocionais (14)
-        gmm = GaussianMixture(n_components=n_components, covariance_type='full', random_state=42)
-        gmm.fit(X)
-        gmm.covariances_ = np.array(covm)
-        gmm.means_ = np.array(means)
-
-    val_loader = torch.utils.data.DataLoader(datasetVal, batch_size=args.batchSize, shuffle=False)
-    outputData = None
-    probs = None
-    vas = None
-    pts = None
-    lbls = []
-    
-    print(f"Usando método: {args.typeEstimation}")
-    if args.typeEstimation == "LIKELIHOOD":
-        print(f"Log space: {args.use_log_space}")
-        print(f"Vectorized: {args.vectorized}")
-    
-    for data in val_loader:
-        #_, labels, paths, vaBatch = data
-        _, vaBatch, paths = data
-        emotionsLabel = vaBatch[:,-1].numpy().astype(np.uint8)
-        vaBatch = vaBatch[:,:-1]
-        
         if args.typeEstimation == "GMM":
-            probs = np.concatenate((probs,gmm.predict_proba(vaBatch.numpy()))) if probs is not None else gmm.predict_proba(vaBatch.numpy())
+            X, labels = [], []
+            for i in range(len(means)):
+                samples = np.random.multivariate_normal(means[i], cov_matrices[i], 1000)
+                X.append(samples)
+                labels.extend([i] * len(samples))
+
+            X = np.vstack(X)
+            gmm = GaussianMixture(n_components=len(means), covariance_type='full', random_state=42)
+            gmm.fit(X)
+            gmm.covariances_ = cov_matrices
+            gmm.means_ = means
+
+        priors_dict = calculate_empirical_priors(val_loader, AFFECTNET_EMOTIONS)
+        outputData, probs, vas, pts, lbls = None, None, None, None, []
+        print(f"Iniciando inferência usando método: {args.typeEstimation} com Priors Empíricos")
         
-        elif args.typeEstimation == "LIKELIHOOD":
-            if args.vectorized:
-                # Usar versão vetorizada
-                batch_probs = calculate_likelihood_vectorized(vaBatch.numpy(), classesDist)
-            else:
-                # Usar a nova implementação
-                batch_probs = calculate_likelihood_probabilities(
-                    vaBatch.numpy(), 
-                    classesDist, 
-                    use_log_space=args.use_log_space
-                )
+        for data in tqdm(val_loader, desc='Generating Emotion Ranks'):
+            _, vaBatch, paths = data
+            emotionsLabel = vaBatch[:, -1].numpy().astype(np.uint8)
+            vaBatch = vaBatch[:, :-1].numpy() 
             
+            if args.typeEstimation == "GMM":
+                batch_probs = gmm.predict_proba(vaBatch)
+            elif args.typeEstimation == "LIKELIHOOD":
+                # 2. Passamos a ordem do CSV (emotion_names_csv) e o Dicionário de Priors (priors_dict)
+                batch_probs = calculate_multivariate_likelihood(
+                    vaBatch, means, cov_matrices, emotion_names_csv, priors_dict
+                )
+                
             probs = np.concatenate((probs, batch_probs)) if probs is not None else batch_probs
-        
-        #lbls = np.concatenate((lbls,labels.numpy())) if lbls is not None else labels.numpy()
-        outputData = np.concatenate((outputData,vaBatch.numpy())) if outputData is not None else vaBatch.numpy()
-        vas = np.concatenate((vas,vaBatch.numpy())) if vas is not None else vaBatch.numpy()
-        pts = np.concatenate((pts,paths)) if pts is not None else paths
-        lbls = lbls + [AFFECTNET_EMOTIONS[int(x)] if int(x) != 255 else 'affwild' for x in emotionsLabel.tolist()]
+            vas = np.concatenate((vas, vaBatch)) if vas is not None else vaBatch
+            pts = np.concatenate((pts, paths)) if pts is not None else paths
+            lbls.extend([AFFECTNET_EMOTIONS[int(x)] if int(x) != 255 else 'affwild' for x in emotionsLabel.tolist()])
 
-    # Validar probabilidades se solicitado
-    if args.validate_probs and probs is not None:
-        validate_probabilities(probs)
+        if args.validate_probs and probs is not None:
+            validate_probabilities(probs)
 
-    saveRankFile(probs,pts,args.extensionForAnnotations)
-    outputCSV(probs, vas, pts, lbls, 'val_set_emotion_distribution.csv')
-
-    print("Processamento concluído com sucesso!")
-
+        saveRankFile(probs,pts,args.extensionForAnnotations)
+        outputCSV(probs, vas, pts, lbls, emotion_names_csv, f'{s}_emotion_distribution.csv')
 
 if __name__ == '__main__':
     main()
