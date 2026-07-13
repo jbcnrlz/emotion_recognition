@@ -146,7 +146,7 @@ def train():
     parser.add_argument('--imageSize', type=int, default=256,
                        help='Size of the image')
     # --- NOVO: Argumento para o Early Stopping ---
-    parser.add_argument('--patience', type=int, default=10,
+    parser.add_argument('--patience', type=int, default=4,
                        help='Número de épocas sem melhora na Validation Loss antes de parar o treino')
     # ---------------------------------------------
     
