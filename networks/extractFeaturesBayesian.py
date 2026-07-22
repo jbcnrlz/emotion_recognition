@@ -10,6 +10,7 @@ from DatasetClasses.AffectNet import AffectNet
 from torch import nn
 from networks.EmotionResnetVA import ResNet50WithCrossAttention,ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithAttentionLikelihoodNoVA, Glint360kResNetWithCrossAttention
 from helper.function import visualizeAttentionMaps, printProgressBar
+from DAN.networks.dan import DAN
 
 def saveToCSV(preds, files, pathCSV, vad=None, emoLabels=None, mapping=None, num_classes=None, emoHeaders=None):
     # Se num_classes não for fornecido, tenta inferir do shape de preds
@@ -532,11 +533,16 @@ def train():
         model = ResNet50WithCrossAttention(num_classes=args.classQuantity,bottleneck='none',num_sectors=8)
     elif args.emotionModel == 'glint360ksimpleNetworkCrossAtt':
         model = Glint360kResNetWithCrossAttention(num_classes=args.classQuantity, pretrained_path=None, num_sectors=7)
+    elif args.emotionModel == 'DAN':
+        model = DAN(num_head=4, num_class=args.classQuantity, pretrained=True)
 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = torch.load(args.weights)
-    model.load_state_dict(checkpoint['state_dict'], strict=True)
+    dataKey = 'state_dict'
+    if args.emotionModel == 'DAN':
+        dataKey = 'model_state_dict'
+    model.load_state_dict(checkpoint[dataKey], strict=True)
     model.to(device)
     
     print("Model loaded")
@@ -581,6 +587,8 @@ def train():
             # Forward pass normal (sem gradientes)
             if (not isinstance(model, ResNet50WithAttentionLikelihoodNoVA) and not isinstance(model, ResNet50WithCrossAttention) and not isinstance(model, Glint360kResNetWithCrossAttention)):
                 outputs, _, vad = model(images.to(device))
+                if isinstance(model, DAN):
+                    vad = None
             else:
                 outputs = model(images.to(device))
                 vad = None

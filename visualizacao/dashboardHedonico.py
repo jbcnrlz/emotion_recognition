@@ -31,6 +31,19 @@ st.set_page_config(page_title="Plataforma Integrada Sensorial e de Emoções", l
 st.title("Plataforma Unificada de Análise Sensorial e Biométrica 🎭📊")
 st.markdown("---")
 
+# Configuração Padrão do Plotly para Edição Fácil (Textos clicáveis e Download em SVG)
+PLOTLY_CONFIG = {
+    'editable': True,
+    'edits': {'titleText': True, 'axisTitleText': True, 'legendText': True},
+    'toImageButtonOptions': {
+        'format': 'svg', 
+        'filename': 'grafico_editavel',
+        'height': 600,
+        'width': 800,
+        'scale': 1
+    }
+}
+
 STOPWORDS_PT = set([
     "a", "o", "e", "é", "de", "do", "da", "dos", "das", "em", "no", "na",
     "nos", "nas", "para", "com", "um", "uma", "uns", "umas", "que", "eu",
@@ -43,14 +56,7 @@ STOPWORDS_PT = set([
 
 EMO_COLS = ['happy', 'contempt', 'surprised', 'angry', 'disgusted', 'fearful', 'sad', 'neutral']
 
-def fig_to_bytes(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
-    buf.seek(0)
-    return buf.getvalue()
-
 def remover_acentos(txt):
-    """Sanitiza strings para evitar erros de encoding no FPDF."""
     return unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('ASCII')
 
 def formatar_texto_celula(texto, max_len=20):
@@ -77,7 +83,7 @@ def load_and_parse_emocoes(file):
     elif 'path' in df.columns: df = df.rename(columns={'path': 'file'})
         
     if 'file' not in df.columns:
-        st.error(f"🚨 A coluna de caminhos de imagem (file/path) não foi encontrada! Colunas lidas: {list(df.columns)}")
+        st.error(f"🚨 A coluna de caminhos de imagem não foi encontrada! Colunas lidas: {list(df.columns)}")
         st.stop()
     
     def extract_from_path(path_str):
@@ -169,7 +175,6 @@ def calcular_metricas_confianca(df_emocoes, df_consolidado, limiar_neutro, v_max
         df_final['Confianca_Final_%'] = (df_final['Confianca_Final'] * 100).round(2)
         df_final['Certeza_Media_Rede_%'] = (df_final['Certeza_Media_Rede'] * 100).round(2)
         
-        # Agregação global de emoções por TOKEN para a Análise Qualitativa
         df_emo_token = df_merged.groupby('Token')[EMO_COLS].mean().reset_index()
         
         return df_final, df_merged, df_emo_token
@@ -181,8 +186,7 @@ def calcular_metricas_confianca(df_emocoes, df_consolidado, limiar_neutro, v_max
 # MOTOR DE GERAÇÃO DE PDF (DESIGN PREMIUM)
 # ==========================================
 def header_tabela(pdf, colunas, larguras):
-    """Cria um cabeçalho de tabela estilizado (Fundo Azul, Letra Branca)."""
-    pdf.set_fill_color(41, 128, 185) # Azul Profissional
+    pdf.set_fill_color(41, 128, 185)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Arial", "B", 9)
     for col, w in zip(colunas, larguras):
@@ -242,7 +246,7 @@ def gerar_pdf_academico(melted_df_academico, df_confianca_academico, df_frames, 
             pdf.cell(30, 8, f"{row['median']:.1f}", border=1, align="C", fill=fill)
             pdf.cell(30, 8, f"{row['min']:.1f} - {row['max']:.1f}", border=1, align="C", fill=fill)
             pdf.ln()
-            fill = not fill # Intercala a cor
+            fill = not fill
     pdf.ln(5)
 
     if not melted_df_academico.empty:
@@ -378,7 +382,6 @@ def gerar_pdf_academico(melted_df_academico, df_confianca_academico, df_frames, 
                 pdf.set_font("Arial", "", 9)
                 pdf.multi_cell(0, 6, remover_acentos(f"> Principais termos citados: {termos_str}"))
                 
-                # Média Emocional dos que responderam o texto
                 if not df_emo_token.empty and 'Token' in df_s_filtered.columns:
                     df_tokens_q = df_s_filtered[['Token', col]].dropna()
                     df_emo_text = pd.merge(df_tokens_q, df_emo_token, on='Token', how='inner')
@@ -461,17 +464,8 @@ file_emocoes = st.sidebar.file_uploader("2. Distribuição de Emoções (Frames)
 st.sidebar.divider()
 st.sidebar.header("⚙️ Calibragem do Algoritmo")
 
-limiar_neutro = st.sidebar.slider(
-    "⏳ Descarte de Face Neutra",
-    min_value=0.50, max_value=0.95, value=0.80, step=0.05,
-    help="Frames com probabilidade de Neutro acima deste valor serão tratados como tempo de leitura/operação e ignorados."
-)
-
-v_max = st.sidebar.slider(
-    "🎚️ Teto Fisiológico (V_max)",
-    min_value=0.10, max_value=1.00, value=0.50, step=0.05,
-    help="Define a intensidade facial necessária para validar a nota máxima."
-)
+limiar_neutro = st.sidebar.slider("⏳ Descarte de Face Neutra", 0.50, 0.95, 0.80, 0.05)
+v_max = st.sidebar.slider("🎚️ Teto Fisiológico (V_max)", 0.10, 1.00, 0.50, 0.05)
 
 if file_sensorial is None:
     st.info("💡 Carregue o arquivo CSV Sensorial (Consolidado) para desbloquear as análises estatísticas.")
@@ -550,26 +544,83 @@ with tab_fusao:
         )
 
 # ------------------------------------------
-# ABA 2: CARACTERÍSTICAS (ESCALAS HEDÔNICAS)
+# ABA 2: CARACTERÍSTICAS (ESCALAS HEDÔNICAS E ATITUDE DE COMPRA)
 # ------------------------------------------
 with tab_carac:
-    st.header("Análise de Atributos Sensoriais")
+    st.header("Análise de Atributos Sensoriais e Intenção de Compra")
+    st.info("💡 **Dica:** Clique no título do gráfico ou nos nomes dos eixos para editá-los. Para levar ao PowerPoint, clique no ícone da câmera (Download) e arraste a imagem SVG gerada para o seu slide!")
+    
+    # 1. GRÁFICOS HEDÔNICOS (CARAC_)
     if not melted_df.empty:
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Média de Avaliação")
-            fig1, ax1 = plt.subplots(figsize=(8, 5))
-            sns.barplot(data=melted_df, x='Aspect', y='Score', hue='Experimento', errorbar=None, palette='viridis', ax=ax1)
-            ax1.set_ylim(0, 9)
-            plt.xticks(rotation=45, ha='right')
-            st.pyplot(fig1)
+            st.subheader("Média de Avaliação (Hedônica)")
+            df_mean = melted_df.groupby(['Aspect', 'Experimento'])['Score'].mean().reset_index()
+            fig1 = px.bar(df_mean, x='Aspect', y='Score', color='Experimento', barmode='group', 
+                          title='Média Hedônica por Aspecto Sensorial')
+            fig1.update_yaxes(range=[0, 9])
+            st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
+            
         with c2:
-            st.subheader("Distribuição das Notas")
-            fig2, ax2 = plt.subplots(figsize=(8, 5))
-            sns.boxplot(data=melted_df, x='Aspect', y='Score', hue='Experimento', palette='Set2', ax=ax2)
-            ax2.set_ylim(0, 9)
-            plt.xticks(rotation=45, ha='right')
-            st.pyplot(fig2)
+            st.subheader("Distribuição das Notas (Hedônica)")
+            fig2 = px.box(melted_df, x='Aspect', y='Score', color='Experimento', 
+                          title='Boxplot: Distribuição de Notas por Aspecto')
+            fig2.update_yaxes(range=[0, 9])
+            st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
+
+    # 2. GRÁFICOS DE ATITUDE DE COMPRA
+    if df_s is not None and not df_s_filtered.empty:
+        # Busca especificamente a coluna de Atitude de Compra
+        compra_cols = [c for c in df_s_filtered.columns if 'atitude de comp' in c.lower() or 'compra' in c.lower()]
+        
+        if compra_cols:
+            st.markdown("---")
+            st.subheader("🛒 Atitude de Compra")
+            
+            # Derrete o dataframe para pegar as respostas
+            melted_compra = df_s_filtered.melt(id_vars=['Experimento'], value_vars=compra_cols, var_name='Pergunta', value_name='Score')
+            
+            # Conversor Exato para a Escala de 5 pontos
+            def mapear_escala_compra(val):
+                if pd.isna(val): return np.nan
+                val_str = str(val).lower().strip()
+                
+                if "certamente não compraria" in val_str or "certamente nao compraria" in val_str:
+                    return 1.0
+                elif "provavelmente não compraria" in val_str or "provavelmente nao compraria" in val_str:
+                    return 2.0
+                elif "dúvida" in val_str or "duvida" in val_str or "dúvidas" in val_str:
+                    return 3.0
+                elif "provavelmente compraria" in val_str:
+                    return 4.0
+                elif "certamente compraria" in val_str:
+                    return 5.0
+                else:
+                    match = re.search(r'\d+', val_str)
+                    if match: return float(match.group())
+                    return np.nan
+                
+            melted_compra['Score_Num'] = melted_compra['Score'].apply(mapear_escala_compra)
+            melted_compra = melted_compra.dropna(subset=['Score_Num'])
+            
+            if not melted_compra.empty:
+                melted_compra['Pergunta_Curta'] = "Intenção de Compra"
+                
+                c3, c4 = st.columns(2)
+                with c3:
+                    df_mean_compra = melted_compra.groupby(['Pergunta_Curta', 'Experimento'])['Score_Num'].mean().reset_index()
+                    fig3 = px.bar(df_mean_compra, x='Pergunta_Curta', y='Score_Num', color='Experimento', barmode='group', 
+                                  title='Média: Atitude de Compra (1 a 5)')
+                    fig3.update_yaxes(range=[0, 5], dtick=1) 
+                    st.plotly_chart(fig3, use_container_width=True, config=PLOTLY_CONFIG)
+                    
+                with c4:
+                    fig4 = px.box(melted_compra, x='Pergunta_Curta', y='Score_Num', color='Experimento', 
+                                  title='Boxplot: Distribuição da Atitude de Compra')
+                    fig4.update_yaxes(range=[0, 5.5], dtick=1)
+                    st.plotly_chart(fig4, use_container_width=True, config=PLOTLY_CONFIG)
+            else:
+                st.warning("⚠️ Não foi possível converter as respostas de compra para números (1 a 5). Verifique se a coluna está preenchida corretamente.")
 
 # ------------------------------------------
 # ABA 3: PERGUNTAS DO QUESTIONÁRIO
@@ -606,7 +657,6 @@ with tab_perg:
             if not df_perg.empty:
                 qtd_opcoes = df_perg['Resposta'].nunique()
                 
-                # TEXTO LIVRE
                 if qtd_opcoes > 15: 
                     exps_p = df_perg['Experimento'].unique().tolist()
                     tabs_p = st.tabs(exps_p)
@@ -620,7 +670,6 @@ with tab_perg:
                             freq = Counter(palavras)
                             df_freq = pd.DataFrame(freq.most_common(10), columns=['Palavra', 'Ocorrências'])
                             
-                            # Mostrar Prevalência Emocional do Grupo
                             if not df_emo_token.empty and 'Token' in df_exp.columns:
                                 df_emo_text = pd.merge(df_exp[['Token']].drop_duplicates(), df_emo_token, on='Token', how='inner')
                                 if not df_emo_text.empty:
@@ -653,12 +702,16 @@ with tab_perg:
                                 } if 'Confiança_Fisiológica(%)' in df_exp.columns else None
                             )
                 
-                # CATEGÓRICA
                 else: 
-                    fig_c, ax_c = plt.subplots(figsize=(10, 5))
                     df_perg['Resp_Format'] = df_perg['Resposta'].astype(str).apply(lambda x: textwrap.fill(x, width=35))
-                    sns.countplot(data=df_perg, y='Resp_Format', hue='Experimento', palette='magma', ax=ax_c)
-                    st.pyplot(fig_c)
+                    
+                    df_counts = df_perg.groupby(['Resp_Format', 'Experimento']).size().reset_index(name='Votos')
+                    fig_c = px.bar(df_counts, y='Resp_Format', x='Votos', color='Experimento', barmode='group', 
+                                   orientation='h', title='Frequência de Escolhas por Categoria')
+                    fig_c.update_layout(yaxis={'categoryorder':'total ascending'})
+                    
+                    st.info("💡 **Gráfico Editável:** Clique no título ou eixo para alterar.")
+                    st.plotly_chart(fig_c, use_container_width=True, config=PLOTLY_CONFIG)
                     
                     if 'Confiança_Fisiológica(%)' in df_perg.columns:
                         st.markdown("##### 🎭 Validação Biométrica por Categoria Escolhida")
@@ -716,12 +769,12 @@ with tab_biometria:
                 st.subheader("Distribuição Média")
                 df_m = df_vid[emocoes_presentes].mean().reset_index()
                 df_m.columns = ['Emoção', 'Média']
-                fig_m = px.bar(df_m, x='Emoção', y='Média', color='Emoção', range_y=[0,1], text_auto='.1%')
-                st.plotly_chart(fig_m, use_container_width=True)
+                fig_m = px.bar(df_m, x='Emoção', y='Média', color='Emoção', range_y=[0,1], text_auto='.1%', title='Média Emocional da Sessão')
+                st.plotly_chart(fig_m, use_container_width=True, config=PLOTLY_CONFIG)
             with b2:
                 st.subheader("Série Temporal")
-                fig_l = px.line(df_vid, x='frame_num', y=emocoes_presentes, labels={'frame_num': 'Frame'})
-                st.plotly_chart(fig_l, use_container_width=True)
+                fig_l = px.line(df_vid, x='frame_num', y=emocoes_presentes, labels={'frame_num': 'Frame'}, title='Variação Emocional ao Longo do Tempo')
+                st.plotly_chart(fig_l, use_container_width=True, config=PLOTLY_CONFIG)
 
 # ------------------------------------------
 # ABA 6: LINHA DO TEMPO DE FRAMES
@@ -742,8 +795,8 @@ with tab_frames:
         with f2:
             if emocoes_presentes:
                 df_f = pd.DataFrame(list({e: row[e] for e in emocoes_presentes}.items()), columns=['Emoção', 'Probabilidade'])
-                fig_f = px.bar(df_f, x='Emoção', y='Probabilidade', color='Emoção', range_y=[0,1], text_auto='.1%')
-                st.plotly_chart(fig_f, use_container_width=True)
+                fig_f = px.bar(df_f, x='Emoção', y='Probabilidade', color='Emoção', range_y=[0,1], text_auto='.1%', title=f'Expressão Facial (Frame {int(row["frame_num"])})')
+                st.plotly_chart(fig_f, use_container_width=True, config=PLOTLY_CONFIG)
 
 # ------------------------------------------
 # ABA 7: EXPORTAÇÃO PARA ARTIGO CIENTÍFICO

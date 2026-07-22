@@ -275,7 +275,6 @@ class AffectNet(data.Dataset):
         return val, aro, dom
     
     def _load_exp(self, annotations_dir, image_number):
-        """Carrega expressão."""
         exp_paths = [
             os.path.join(annotations_dir, f'{image_number}_exp.npy'),
             os.path.join(annotations_dir, f'{int(image_number)}_exp.npy') if image_number.isdigit() else None
