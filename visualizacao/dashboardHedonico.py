@@ -548,53 +548,86 @@ with tab_fusao:
 # ------------------------------------------
 with tab_carac:
     st.header("Análise de Atributos Sensoriais e Intenção de Compra")
-    st.info("💡 **Dica:** Clique no título do gráfico ou nos nomes dos eixos para editá-los. Para levar ao PowerPoint, clique no ícone da câmera (Download) e arraste a imagem SVG gerada para o seu slide!")
+    st.info("💡 **Dica Acadêmica:** As tabelas podem ser copiadas direto para o Word. Os gráficos possuem barras de erro (Desvio Padrão) e podem ser baixados em SVG para edição no PowerPoint!")
     
+    # ==========================================
     # 1. GRÁFICOS HEDÔNICOS (CARAC_)
+    # ==========================================
     if not melted_df.empty:
+        st.subheader("1. Escala Hedônica (Média e Desvio Padrão)")
+        
+        # Preparando a Tabela de Estatísticas nos moldes da imagem
+        stats_hedonica = melted_df.groupby(['Aspect', 'Experimento'])['Score'].agg(
+            N='count',
+            Média='mean',
+            DP='std',
+            Mediana='median',
+            Mínimo='min',
+            Máximo='max'
+        ).reset_index()
+        
+        # Criando a coluna formatada "Média +/- DP" para a tabela
+        stats_hedonica_display = stats_hedonica.copy()
+        stats_hedonica_display['Média +/- DP'] = stats_hedonica_display.apply(lambda x: f"{x['Média']:.2f} ± {x['DP']:.2f}", axis=1)
+        stats_hedonica_display['Min - Max'] = stats_hedonica_display.apply(lambda x: f"{x['Mínimo']:.1f} - {x['Máximo']:.1f}", axis=1)
+        
+        # Tabela formatada igual à imagem
+        st.dataframe(
+            stats_hedonica_display[['Aspect', 'Experimento', 'N', 'Média +/- DP', 'Mediana', 'Min - Max']],
+            hide_index=True, use_container_width=True
+        )
+
+        # Gráficos Hedônicos
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Média de Avaliação (Hedônica)")
-            df_mean = melted_df.groupby(['Aspect', 'Experimento'])['Score'].mean().reset_index()
-            fig1 = px.bar(df_mean, x='Aspect', y='Score', color='Experimento', barmode='group', 
-                          title='Média Hedônica por Aspecto Sensorial')
+            # Gráfico de Barras COM BARRA DE ERRO (DP)
+            fig1 = px.bar(
+                stats_hedonica, 
+                x='Aspect', 
+                y='Média', 
+                error_y='DP', # Adiciona as linhas de erro padrão da imagem
+                color='Experimento', 
+                barmode='group', 
+                title='Média Hedônica por Aspecto (com Desvio Padrão)',
+                labels={'Aspect': 'Atributo Sensorial', 'Média': 'Média Hedônica'}
+            )
             fig1.update_yaxes(range=[0, 9])
             st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
             
         with c2:
-            st.subheader("Distribuição das Notas (Hedônica)")
-            fig2 = px.box(melted_df, x='Aspect', y='Score', color='Experimento', 
-                          title='Boxplot: Distribuição de Notas por Aspecto')
+            fig2 = px.box(
+                melted_df, 
+                x='Aspect', 
+                y='Score', 
+                color='Experimento', 
+                title='Boxplot: Distribuição de Notas (Hedônica)',
+                labels={'Aspect': 'Atributo Sensorial', 'Score': 'Nota'}
+            )
             fig2.update_yaxes(range=[0, 9])
             st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
 
+    # ==========================================
     # 2. GRÁFICOS DE ATITUDE DE COMPRA
+    # ==========================================
     if df_s is not None and not df_s_filtered.empty:
-        # Busca especificamente a coluna de Atitude de Compra
         compra_cols = [c for c in df_s_filtered.columns if 'atitude de comp' in c.lower() or 'compra' in c.lower()]
         
         if compra_cols:
             st.markdown("---")
-            st.subheader("🛒 Atitude de Compra")
+            st.subheader("🛒 2. Atitude / Intenção de Compra (Escala de 5 Pontos)")
             
-            # Derrete o dataframe para pegar as respostas
             melted_compra = df_s_filtered.melt(id_vars=['Experimento'], value_vars=compra_cols, var_name='Pergunta', value_name='Score')
             
-            # Conversor Exato para a Escala de 5 pontos
+            # Conversor de texto para escala de 5 pontos
             def mapear_escala_compra(val):
                 if pd.isna(val): return np.nan
                 val_str = str(val).lower().strip()
                 
-                if "certamente não compraria" in val_str or "certamente nao compraria" in val_str:
-                    return 1.0
-                elif "provavelmente não compraria" in val_str or "provavelmente nao compraria" in val_str:
-                    return 2.0
-                elif "dúvida" in val_str or "duvida" in val_str or "dúvidas" in val_str:
-                    return 3.0
-                elif "provavelmente compraria" in val_str:
-                    return 4.0
-                elif "certamente compraria" in val_str:
-                    return 5.0
+                if "certamente não compraria" in val_str or "certamente nao compraria" in val_str: return 1.0
+                elif "provavelmente não compraria" in val_str or "provavelmente nao compraria" in val_str: return 2.0
+                elif "dúvida" in val_str or "duvida" in val_str or "dúvidas" in val_str: return 3.0
+                elif "provavelmente compraria" in val_str: return 4.0
+                elif "certamente compraria" in val_str: return 5.0
                 else:
                     match = re.search(r'\d+', val_str)
                     if match: return float(match.group())
@@ -606,22 +639,55 @@ with tab_carac:
             if not melted_compra.empty:
                 melted_compra['Pergunta_Curta'] = "Intenção de Compra"
                 
+                # Tabela de Estatísticas da Atitude de Compra
+                stats_compra = melted_compra.groupby(['Pergunta_Curta', 'Experimento'])['Score_Num'].agg(
+                    N='count',
+                    Média='mean',
+                    DP='std',
+                    Mediana='median',
+                    Mínimo='min',
+                    Máximo='max'
+                ).reset_index()
+                
+                stats_compra_display = stats_compra.copy()
+                stats_compra_display['Média +/- DP'] = stats_compra_display.apply(lambda x: f"{x['Média']:.2f} ± {x['DP']:.2f}", axis=1)
+                stats_compra_display['Min - Max'] = stats_compra_display.apply(lambda x: f"{x['Mínimo']:.1f} - {x['Máximo']:.1f}", axis=1)
+                
+                st.dataframe(
+                    stats_compra_display[['Pergunta_Curta', 'Experimento', 'N', 'Média +/- DP', 'Mediana', 'Min - Max']],
+                    hide_index=True, use_container_width=True
+                )
+                
+                # Gráficos da Atitude de Compra
                 c3, c4 = st.columns(2)
                 with c3:
-                    df_mean_compra = melted_compra.groupby(['Pergunta_Curta', 'Experimento'])['Score_Num'].mean().reset_index()
-                    fig3 = px.bar(df_mean_compra, x='Pergunta_Curta', y='Score_Num', color='Experimento', barmode='group', 
-                                  title='Média: Atitude de Compra (1 a 5)')
+                    # Gráfico COM BARRA DE ERRO (DP)
+                    fig3 = px.bar(
+                        stats_compra, 
+                        x='Pergunta_Curta', 
+                        y='Média', 
+                        error_y='DP', # Adiciona as linhas de erro padrão
+                        color='Experimento', 
+                        barmode='group', 
+                        title='Média: Atitude de Compra (com Desvio Padrão)',
+                        labels={'Pergunta_Curta': 'Atributo'}
+                    )
                     fig3.update_yaxes(range=[0, 5], dtick=1) 
                     st.plotly_chart(fig3, use_container_width=True, config=PLOTLY_CONFIG)
                     
                 with c4:
-                    fig4 = px.box(melted_compra, x='Pergunta_Curta', y='Score_Num', color='Experimento', 
-                                  title='Boxplot: Distribuição da Atitude de Compra')
+                    fig4 = px.box(
+                        melted_compra, 
+                        x='Pergunta_Curta', 
+                        y='Score_Num', 
+                        color='Experimento', 
+                        title='Boxplot: Distribuição da Atitude de Compra',
+                        labels={'Pergunta_Curta': 'Atributo', 'Score_Num': 'Nota (1 a 5)'}
+                    )
                     fig4.update_yaxes(range=[0, 5.5], dtick=1)
                     st.plotly_chart(fig4, use_container_width=True, config=PLOTLY_CONFIG)
             else:
-                st.warning("⚠️ Não foi possível converter as respostas de compra para números (1 a 5). Verifique se a coluna está preenchida corretamente.")
-
+                st.warning("⚠️ Não foi possível converter as respostas de compra para números (1 a 5).")
 # ------------------------------------------
 # ABA 3: PERGUNTAS DO QUESTIONÁRIO
 # ------------------------------------------
