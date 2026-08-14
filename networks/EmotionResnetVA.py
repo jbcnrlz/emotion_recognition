@@ -834,3 +834,71 @@ class Glint360kResNetWithCrossAttention(nn.Module):
         distribution_params = self.likelihood_head(fused_features)
         
         return distribution_params
+
+class PainIndexCrossAttention(nn.Module):
+    def __init__(self, input_dim=8, d_model=64, window_size=30, dropout_rate=0.3):
+        super(PainIndexCrossAttention, self).__init__()
+        self.d_model = d_model
+        self.window_size = window_size
+        
+        # Projeções Lineares para o espaço latente
+        self.proj_q = nn.Linear(input_dim, d_model)
+        self.proj_k = nn.Linear(input_dim, d_model)
+        self.proj_v = nn.Linear(input_dim, d_model)
+        
+        # Matriz de Embedding Posicional Relativo (T, d_model)
+        # É inicializada aleatoriamente e otimizada via backpropagation
+        self.rel_pos_emb = nn.Parameter(torch.randn(window_size, d_model))
+        
+        # Head de Regressão Não-Linear (MLP)
+        self.regressor = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.GELU(), # GELU costuma performar melhor que ReLU em transformers
+            nn.Dropout(dropout_rate),
+            nn.Linear(d_model // 2, 1) # Saída contínua: Índice de Dor
+        )
+
+    def forward(self, x):
+        """
+        x shape: (Batch, Sequence_Length, Features) -> (B, T, 8)
+        """
+        B, T, _ = x.shape
+        
+        # 1. Roteamento Q, K, V
+        # A Query é sempre o estado atual (o último frame causal da janela)
+        x_query = x[:, -1:, :]  # (B, 1, 8)
+        
+        # O Contexto histórico (Keys e Values) é a janela inteira, incluindo o atual
+        x_context = x           # (B, T, 8)
+        
+        Q = self.proj_q(x_query)   # (B, 1, d_model)
+        K = self.proj_k(x_context) # (B, T, d_model)
+        V = self.proj_v(x_context) # (B, T, d_model)
+        
+        # 2. Produto Escalar Base (Similaridade das Expressões)
+        # Q * K^T -> resultando em shape (B, 1, T)
+        scores = torch.bmm(Q, K.transpose(1, 2))
+        
+        # 3. Injeção de Posição Relativa (O Fator Temporal)
+        # Q * R^T (Onde R é a matriz de posições relativas)
+        # Q shape: (B, 1, d_model) @ R^T shape: (d_model, T) -> (B, 1, T)
+        S_rel = torch.matmul(Q, self.rel_pos_emb.transpose(0, 1))
+        
+        # 4. Modificação dos Logits e Escalonamento
+        attn_logits = (scores + S_rel) / (self.d_model ** 0.5)
+        
+        # Softmax atuando como filtro dinâmico de onset/apex
+        attn_weights = F.softmax(attn_logits, dim=-1) # (B, 1, T)
+        
+        # 5. Extração do Vetor de Contexto (Aplicação da Atenção em V)
+        # (B, 1, T) @ (B, T, d_model) -> (B, 1, d_model)
+        context_vector = torch.bmm(attn_weights, V)
+        
+        # Removemos a dimensão de sequência excedente -> (B, d_model)
+        context_vector = context_vector.squeeze(1)
+        
+        # 6. Regressão para o Índice de Dor
+        pain_index = self.regressor(context_vector) # (B, 1)
+        
+        # Retornamos os pesos de atenção também para explicabilidade (análise visual de frames)
+        return pain_index.squeeze(-1), attn_weights.squeeze(1)
