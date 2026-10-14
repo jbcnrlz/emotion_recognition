@@ -1,0 +1,27 @@
+# Core Deep Learning & Computer Vision
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.5.0
+timm>=0.9.0
+
+# Scientific Computing & Data Analysis
+numpy>=1.22.0
+scipy>=1.8.0
+pandas>=1.4.0
+scikit-learn>=1.0.0
+shapely>=1.8.0
+
+# Visualization & Reporting
+matplotlib>=3.5.0
+seaborn>=0.11.0
+streamlit>=1.20.0
+tqdm>=4.64.0
+
+# Advanced / Optional Features (Transformers, LLM tests, Clustering)
+transformers>=4.30.0
+diffusers>=0.20.0
+peft>=0.4.0
+plotly>=5.15.0
+wordcloud>=1.9.0
+yellowbrick>=1.5
+

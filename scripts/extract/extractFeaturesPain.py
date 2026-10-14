@@ -9,7 +9,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from DatasetClasses.MIntPainDataset import MIntPainFrameDataset
 from torch import nn
-from networks.EmotionResnetVA import ResNet50WithCrossAttention,ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithAttentionLikelihoodNoVA, Glint360kResNetWithCrossAttention
+from networks.EmotionResnetVA import *
 from helper.function import visualizeAttentionMaps, printProgressBar
 from DAN.networks.dan import DAN
 
@@ -534,6 +534,8 @@ def train():
         model = Glint360kResNetWithCrossAttention(num_classes=args.classQuantity, pretrained_path=None, num_sectors=7)
     elif args.emotionModel == 'DAN':
         model = DAN(num_head=4, num_class=args.classQuantity, pretrained=True)
+    elif args.emotionModel == 'glint360ksimpleNetworkCrossAttVA':
+        model = Glint360kResNetWithCrossAttentionVA(pretrained_path=None, num_sectors=7)
 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

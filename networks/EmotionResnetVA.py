@@ -835,6 +835,95 @@ class Glint360kResNetWithCrossAttention(nn.Module):
         
         return distribution_params
 
+class Glint360kResNetWithCrossAttentionVA(nn.Module):
+    def __init__(self, pretrained_path=None, num_sectors=7):
+        super(Glint360kResNetWithCrossAttentionVA, self).__init__()
+        
+        # Não precisamos mais de num_classes, o output será sempre 2 (V e A)
+        self.num_sectors = num_sectors
+        
+        # 1. Instancia o backbone oficial do InsightFace
+        self.backbone = iresnet50()
+        
+        # 2. Carregamento dos pesos do Glint360K
+        if pretrained_path is not None:
+            print(f"Carregando pesos Glint360K de: {pretrained_path}...")
+            state_dict = torch.load(pretrained_path, map_location='cpu')
+            
+            # Limpa as chaves caso os pesos tenham sido salvos com nn.DataParallel ('module.')
+            clean_state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+            
+            self.backbone.load_state_dict(clean_state_dict, strict=False)
+            print("Pesos do backbone carregados com sucesso!")
+
+        # Congela o backbone por padrão ao inicializar
+        self.set_backbone_freeze(freeze=True)
+
+        out_features = 512 
+        self.num_patches = self.num_sectors * self.num_sectors
+        
+        # --- Adaptive Pooling ---
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((self.num_sectors, self.num_sectors))
+        
+        # --- Módulo de Atenção Espacial ---
+        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches, out_features) * 0.02)
+        self.attention_fusion = DynamicRegionAttention(embed_dim=out_features, num_heads=4)
+        self.attention_maps = []
+
+        # --- NOVO: Cabeça de Regressão para VA ---
+        self.va_head = nn.Sequential(
+            nn.Linear(out_features, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.7),  # Mantém o dropout alto, regressão é fácil de overfittar
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(128, 2), # Exatamente 2 neurônios na saída: [Valence, Arousal]
+            nn.Tanh()          # CRÍTICO PARA VA: Esmaga a saída matematicamente para o intervalo [-1.0, 1.0]
+        )
+        
+    def set_backbone_freeze(self, freeze=True):
+        """
+        Congela ou descongelar todos os parâmetros do backbone IResNet.
+        As camadas de atenção e a va_head continuarão treinando.
+        """
+        for param in self.backbone.parameters():
+            param.requires_grad = not freeze
+        
+        status = "CONGELADO" if freeze else "DESCONGELADO"
+        print(f"[*] Backbone Glint360K está agora: {status}")
+    
+    def forward(self, x):
+        self.attention_maps = []
+        B = x.size(0)
+        
+        # Passagem pelo Backbone
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.prelu(x)
+        x = self.backbone.layer1(x)
+        x = self.backbone.layer2(x)
+        x = self.backbone.layer3(x)
+        x = self.backbone.layer4(x) 
+        
+        # Pooling adaptativo e flatten
+        x = self.adaptive_pool(x) 
+        patches = x.flatten(2).transpose(1, 2) # [B, 49, 512]
+        
+        # Positional Encoding e Atenção Cross-modal
+        patches = patches + self.pos_embedding
+        fused_features, cross_attn_maps = self.attention_fusion(patches)
+        
+        # Salva o mapa de atenção
+        self.attention_maps.append(cross_attn_maps.view(B, self.num_sectors, self.num_sectors))
+        
+        # Predição de Valência e Arousal
+        va_predictions = self.va_head(fused_features)
+        
+        return va_predictions
+
 class PainIndexCrossAttention(nn.Module):
     def __init__(self, input_dim=8, d_model=64, window_size=30, dropout_rate=0.3):
         super(PainIndexCrossAttention, self).__init__()

@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(SCRIPT_DIR))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from DatasetClasses.AffectNet import AffectNet
 from helper.function import saveStatePytorch, printProgressBar, overlay_attention_maps
 
