@@ -5,10 +5,21 @@ from matplotlib import cm
 from torchvision import transforms
 from torchvision import models
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(SCRIPT_DIR))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from DatasetClasses.AffectNet import AffectNet
 from torch import nn
-from networks.EmotionResnetVA import ResNet50WithCrossAttention,ResnetWithBayesianHead, ResnetWithBayesianGMMHead, ResNet50WithAttentionGMM, ResNet50WithAttentionLikelihood, ResNet50WithAttentionLikelihoodNoVA, Glint360kResNetWithCrossAttention
+from networks.EmotionResnetVA import (
+    ResNet50WithCrossAttention,
+    ResnetWithBayesianHead,
+    ResnetWithBayesianGMMHead,
+    ResNet50WithAttentionGMM,
+    ResNet50WithAttentionLikelihood,
+    ResNet50WithAttentionLikelihoodNoVA,
+    Glint360kResNetWithCrossAttention,
+)
 from helper.function import visualizeAttentionMaps, printProgressBar
 from DAN.networks.dan import DAN
 

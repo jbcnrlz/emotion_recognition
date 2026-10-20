@@ -1,77 +1,28 @@
-# DatasetClasses package
+# DatasetClasses package (PEP 562 lazy loading)
 
-try:
-    from .AffectNet import AffectNet
-except ImportError:
-    AffectNet = None
+_dataset_modules = {
+    'AffectNet': '.AffectNet',
+    'AffWild2': '.AffWild2',
+    'AFEWVA': '.AFEWVA',
+    'CKPlus': '.CKPlus',
+    'DFEW': '.DFEW',
+    'HedonicDataset': '.HedonicDataset',
+    'JoinedDataset': '.JoinedDataset',
+    'MIntPainDataset': '.MIntPainDataset',
+    'OMG': '.OMG',
+    'SAM': '.SAM',
+    'TeachingDataset': '.TeachingDataset',
+    'WFD': '.WFD'
+}
 
-try:
-    from .AffWild2 import AffWild2
-except ImportError:
-    AffWild2 = None
+def __getattr__(name):
+    if name in _dataset_modules:
+        import importlib
+        mod = importlib.import_module(_dataset_modules[name], package=__name__)
+        return getattr(mod, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-try:
-    from .AFEWVA import AFEWVA
-except ImportError:
-    AFEWVA = None
+def __dir__():
+    return sorted(list(globals().keys()) + list(_dataset_modules.keys()))
 
-try:
-    from .CKPlus import CKPlus
-except ImportError:
-    CKPlus = None
-
-try:
-    from .DFEW import DFEW
-except ImportError:
-    DFEW = None
-
-try:
-    from .HedonicDataset import HedonicDataset
-except ImportError:
-    HedonicDataset = None
-
-try:
-    from .JoinedDataset import JoinedDataset
-except ImportError:
-    JoinedDataset = None
-
-try:
-    from .MIntPainDataset import MIntPainDataset
-except ImportError:
-    MIntPainDataset = None
-
-try:
-    from .OMG import OMG
-except ImportError:
-    OMG = None
-
-try:
-    from .SAM import SAM
-except ImportError:
-    SAM = None
-
-try:
-    from .TeachingDataset import TeachingDataset
-except ImportError:
-    TeachingDataset = None
-
-try:
-    from .WFD import WFD
-except ImportError:
-    WFD = None
-
-__all__ = [
-    'AffectNet',
-    'AffWild2',
-    'AFEWVA',
-    'CKPlus',
-    'DFEW',
-    'HedonicDataset',
-    'JoinedDataset',
-    'MIntPainDataset',
-    'OMG',
-    'SAM',
-    'TeachingDataset',
-    'WFD'
-]
-
+__all__ = list(_dataset_modules.keys())

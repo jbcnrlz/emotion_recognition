@@ -1,7 +1,16 @@
-import os, torch, numpy as np, torch.nn.functional as F, matplotlib.pyplot as plt, cv2
-from shapely.geometry.polygon import Point
-from shapely import affinity
+import os, torch, numpy as np, torch.nn.functional as F, matplotlib.pyplot as plt
 from scipy.ndimage import zoom
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    from shapely.geometry.polygon import Point
+    from shapely import affinity
+except ImportError:
+    Point, affinity = None, None
 
 def saveLandmarks(ldns,filepath):
     with open(filepath,'w') as fp:

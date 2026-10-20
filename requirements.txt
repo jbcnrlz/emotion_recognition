@@ -1,27 +1,67 @@
-# Core Deep Learning & Computer Vision
+# ==============================================================================
+# Emotion Recognition & Affective Computing Framework - Requirements
+# ==============================================================================
+# Python version recommendation: Python 3.10 or 3.11
+#
+# NOTE ON PYTORCH INSTALLATION (CUDA ACCELERATION):
+# If you have an NVIDIA GPU, it is recommended to install PyTorch with CUDA support first:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#   # (or for CUDA 12.1: --index-url https://download.pytorch.org/whl/cu121)
+# ==============================================================================
+
+# --- Core Deep Learning & PyTorch Ecosystem ---
 torch>=2.0.0
 torchvision>=0.15.0
-opencv-python>=4.5.0
+torchaudio>=2.0.0
 timm>=0.9.0
+thop>=0.1.1
+torchviz>=0.0.2
 
-# Scientific Computing & Data Analysis
+# --- Computer Vision, Face Alignment & Preprocessing ---
+opencv-python>=4.5.0
+Pillow>=9.0.0
+facenet-pytorch>=2.5.2
+face-alignment>=1.3.5
+
+# --- Scientific Computing, Data Analysis & Tables ---
 numpy>=1.22.0
 scipy>=1.8.0
 pandas>=1.4.0
-scikit-learn>=1.0.0
+openpyxl>=3.0.0
 shapely>=1.8.0
 
-# Visualization & Reporting
+# --- Machine Learning, Clustering & Metrics ---
+scikit-learn>=1.0.0
+yellowbrick>=1.5
+
+# --- Visualization, Dashboards & Reporting ---
 matplotlib>=3.5.0
 seaborn>=0.11.0
+plotly>=5.15.0
 streamlit>=1.20.0
+wordcloud>=1.9.0
+fpdf2>=2.7.0
 tqdm>=4.64.0
 
-# Advanced / Optional Features (Transformers, LLM tests, Clustering)
+# --- Experiment Tracking & Monitoring ---
+tensorboard>=2.12.0
+
+# --- Transformers, Diffusion & Generative Metrics (LLM / VLM) ---
 transformers>=4.30.0
 diffusers>=0.20.0
 peft>=0.4.0
-plotly>=5.15.0
-wordcloud>=1.9.0
-yellowbrick>=1.5
+huggingface-hub>=0.16.0
+bert-score>=0.3.13
+pycocoevalcap>=1.2
 
+# --- Utilities ---
+requests>=2.28.0
+pyperclip>=1.8.0
+
+# ==============================================================================
+# Optional / Specialized Dependencies:
+# - OpenAI CLIP:
+#   pip install git+https://github.com/openai/CLIP.git
+# - Dlib (requires cmake and C++ compiler):
+#   pip install dlib
+# ==============================================================================
