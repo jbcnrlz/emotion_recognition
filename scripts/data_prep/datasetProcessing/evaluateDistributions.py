@@ -7,7 +7,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(SCRIPT_DIR))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../../.."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from DatasetClasses.AffectNet import AffectNet
 
 AFFECTNET_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
@@ -190,7 +192,7 @@ def plot_2d_predictions_with_ellipses(val_loader, means, cov_matrices, emotion_n
     ax.axvline(0, color='gray', linestyle='--', linewidth=1)
     ax.set_xlim(-1.1, 1.1)
     ax.set_ylim(-1.1, 1.1)
-    ax.set_title(f"Classificação VA com Elipses de Covariância ({n_std}$\sigma$) | Temperatura = {temperature}")
+    ax.set_title(fr"Classificação VA com Elipses de Covariância ({n_std}$\sigma$) | Temperatura = {temperature}")
     ax.set_xlabel("Valência")
     ax.set_ylabel("Arousal")
     ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1))
