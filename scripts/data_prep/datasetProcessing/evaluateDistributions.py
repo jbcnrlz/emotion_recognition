@@ -7,7 +7,13 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(SCRIPT_DIR))
+PROJECT_ROOT = SCRIPT_DIR
+while PROJECT_ROOT != os.path.dirname(PROJECT_ROOT):
+    if os.path.exists(os.path.join(PROJECT_ROOT, "DatasetClasses")) or os.path.exists(os.path.join(PROJECT_ROOT, "pyproject.toml")):
+        break
+    PROJECT_ROOT = os.path.dirname(PROJECT_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from DatasetClasses.AffectNet import AffectNet
 
 AFFECTNET_EMOTIONS = ["neutral", "happy", "sad", "surprised", "fear", "disgust", "angry", "contempt"]
