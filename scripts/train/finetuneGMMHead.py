@@ -1,5 +1,6 @@
 import argparse, torch, os, sys, numpy as np, math, random, re
 import matplotlib.pyplot as plt
+from PIL import Image
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -100,6 +101,29 @@ def elbo_loss(output, target, model, kl_weight=1.0, sigma=1.0):
     # Retornar o negativo do ELBO (para minimização) e componentes
     return -elbo
 
+def get_emotion_name(class_idx, num_classes=8, class_names=None):
+    """
+    Retorna o nome textual da emoção para um dado índice de classe.
+    Prioriza class_names da função de perda (se fornecido).
+    Suporta configurações padrão de 7, 8 e 14 emoções.
+    """
+    if class_names is not None and 0 <= class_idx < len(class_names):
+        return str(class_names[class_idx])
+    if num_classes == 14:
+        names = [
+            'happy', 'contempt', 'elated', 'hopeful', 'surprised',
+            'proud', 'loved', 'angry', 'astonished', 'disgusted',
+            'fearful', 'sad', 'fatigued', 'neutral'
+        ]
+    elif num_classes == 7:
+        names = ['happy', 'contempt', 'surprised', 'angry', 'disgusted', 'fearful', 'sad']
+    else:
+        names = ['happy', 'contempt', 'surprised', 'angry', 'disgusted', 'fearful', 'sad', 'neutral']
+
+    if 0 <= class_idx < len(names):
+        return names[class_idx]
+    return f"class_{class_idx}"
+
 def train():
     parser = argparse.ArgumentParser(description='Finetune resnet')
     parser.add_argument('--pathBase', help='Path for valence and arousal dataset', required=True)
@@ -151,6 +175,9 @@ def train():
     parser.add_argument('--patience', type=int, default=4,
                        help='Número de épocas sem melhora na Validation Loss antes de parar o treino')
     # ---------------------------------------------
+    # Argumento para salvar mapas de atenção por época
+    parser.add_argument('--save_attention_every', type=int, default=1,
+                       help='Frequência de épocas para salvar mapas atencionais (padrão: 1 = toda época)')
     
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -446,7 +473,8 @@ def train():
         loss_val = []
         jsdValAcc = [] # NOVO: Acumulador de JSD para Validação
         iteration = 0
-        imageAttention = None
+        sample_faces_by_emotion = {}
+        sample_faces_confidence = {}
         accPercentage = None
         totalImages = 0
         with torch.no_grad():
@@ -457,8 +485,28 @@ def train():
                 labels = None if len(currTargetBatch) < 3 else currTargetBatch[2].to(device)
                 currTargetBatch, currBatch, vaBatch = currTargetBatch[0].to(device), currBatch.to(device), currTargetBatch[1].to(device)                
 
-                if (random.randint(0, 100) < 5) or (imageAttention is None):
-                    imageAttention = currBatch[random.randint(0,currBatch.shape[0]-1)].cpu().detach().numpy()
+                # Coletar uma face representativa (maior probabilidade/confiança) por emoção
+                if hasattr(model, 'attention_maps'):
+                    batch_size = currBatch.shape[0]
+                    for b in range(batch_size):
+                        if labels is not None:
+                            raw_lbl = labels[b].item()
+                            emo_idx = int(emotionsOrder[raw_lbl]) if raw_lbl < len(emotionsOrder) else int(raw_lbl)
+                            if currTargetBatch.ndim >= 2 and emo_idx < currTargetBatch.shape[1]:
+                                conf = float(currTargetBatch[b, emo_idx].item())
+                            else:
+                                conf = 1.0
+                        else:
+                            if currTargetBatch.ndim >= 2:
+                                emo_idx = int(torch.argmax(currTargetBatch[b]).item())
+                                conf = float(currTargetBatch[b, emo_idx].item())
+                            else:
+                                emo_idx = int(currTargetBatch[b].item())
+                                conf = 1.0
+
+                        if (emo_idx not in sample_faces_by_emotion) or (conf > sample_faces_confidence.get(emo_idx, -1.0)):
+                            sample_faces_by_emotion[emo_idx] = currBatch[b].detach().cpu().clone()
+                            sample_faces_confidence[emo_idx] = conf
 
                 # ATUALIZADO: Type Check
                 if isinstance(model, ResNet50WithAttentionLikelihoodNoVA) or isinstance(model, ResNet50WithCrossAttention) or isinstance(model, Glint360kResNetWithCrossAttention):
@@ -507,11 +555,48 @@ def train():
             writer.add_scalar(f'RESNETAtt/{lossFuncName}/val',ceLoss, ep)
             writer.add_scalar('RESNETAtt/ELBOLoss/val',elboLoss,ep)
         
-        if imageAttention is not None:
-            attentionMaps = model.attention_maps
-            _, attMapsOv = overlay_attention_maps(imageAttention, attentionMaps)
-            for idx, at in enumerate(attMapsOv):
-                writer.add_image(f'RESNETAtt/AttentionMaps_{idx}', at, ep, dataformats='HWC')
+        # Geração e salvamento de mapas atencionais: exatamente uma face por emoção
+        current_epoch_attention_overlays = {}
+        is_best_val_loss = (tLoss < bestForFoldTLoss)
+        should_save_attention = (ep % args.save_attention_every == 0) or (ep == args.epochs - 1) or is_best_val_loss
+
+        if hasattr(model, 'attention_maps') and sample_faces_by_emotion and should_save_attention:
+            epoch_att_dir = os.path.join(args.output, "attention_maps", f"epoch_{ep+1:03d}")
+            os.makedirs(epoch_att_dir, exist_ok=True)
+            class_names_loss = getattr(criterion, 'class_names', None)
+
+            with torch.no_grad():
+                for emo_idx in sorted(sample_faces_by_emotion.keys()):
+                    face_tensor = sample_faces_by_emotion[emo_idx]  # Shape [C, H, W]
+                    face_input = face_tensor.unsqueeze(0).to(device)  # Shape [1, C, H, W]
+
+                    # Forward pass individual (B=1) para obter os mapas atencionais exatos desta face
+                    _ = model(face_input)
+
+                    if hasattr(model, 'attention_maps') and model.attention_maps:
+                        face_np = face_tensor.cpu().numpy()
+                        orig_img, attMapsOv = overlay_attention_maps(face_np, model.attention_maps)
+                        emo_name = get_emotion_name(emo_idx, num_classes=args.numberOfClasses, class_names=class_names_loss)
+
+                        orig_uint8 = np.clip(orig_img * 255.0, 0, 255).astype(np.uint8)
+                        current_epoch_attention_overlays[emo_idx] = (emo_name, orig_uint8, attMapsOv)
+
+                        # Salvar imagem original da face representativa em disco e TensorBoard
+                        orig_filename = f"{emo_idx:02d}_{emo_name}_orig.png"
+                        plt.imsave(os.path.join(epoch_att_dir, orig_filename), orig_img)
+                        writer.add_image(f'RESNETAtt/AttentionMaps/{emo_name}/Original', orig_uint8, ep, dataformats='HWC')
+
+                        for idx, at in enumerate(attMapsOv):
+                            # Salvar overlay por emoção e head no TensorBoard
+                            writer.add_image(f'RESNETAtt/AttentionMaps/{emo_name}/Head_{idx}', at, ep, dataformats='HWC')
+
+                            # Salvar overlay no disco
+                            head_filename = f"{emo_idx:02d}_{emo_name}_head_{idx}.png"
+                            plt.imsave(os.path.join(epoch_att_dir, head_filename), at)
+
+                            # Manter tag legada para a primeira classe por compatibilidade
+                            if emo_idx == 0:
+                                writer.add_image(f'RESNETAtt/AttentionMaps_{idx}', at, ep, dataformats='HWC')
         
         if args.visualizeConflict and hasattr(criterion, 'visualize_conflict_matrix'):
             try:
@@ -551,6 +636,15 @@ def train():
             bestForFoldTLoss = tLoss
             # NOVO: Reseta a contagem se a loss melhorar
             epochs_no_improve = 0  
+
+            # Salvar mapas atencionais correspondentes ao melhor modelo de validação
+            if current_epoch_attention_overlays:
+                best_att_dir = os.path.join(args.output, "attention_maps", "best_val_loss")
+                os.makedirs(best_att_dir, exist_ok=True)
+                for emo_idx, (emo_name, orig_uint8, attMapsOv) in current_epoch_attention_overlays.items():
+                    plt.imsave(os.path.join(best_att_dir, f"{emo_idx:02d}_{emo_name}_orig.png"), orig_uint8)
+                    for idx, at in enumerate(attMapsOv):
+                        plt.imsave(os.path.join(best_att_dir, f"{emo_idx:02d}_{emo_name}_head_{idx}.png"), at)
         else:
             # NOVO: Incrementa a contagem se a loss não melhorar
             epochs_no_improve += 1 
