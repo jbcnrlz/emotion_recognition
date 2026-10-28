@@ -406,6 +406,198 @@ if not q_vectors:
     st.stop()
 
 # ==============================================================================
+# Visualization Customization (Titles, Legends, Axes & Emotion Labels)
+# ==============================================================================
+with st.sidebar:
+    st.divider()
+    st.header("🎨 Gráficos & Estilização")
+    with st.expander("📝 Customizar Legendas, Títulos e Fontes", expanded=False):
+        preset_lang = st.radio(
+            "Predefinição de Idioma:",
+            options=["Inglês (Original)", "Português"],
+            index=0,
+            horizontal=True,
+            help="Altera rapidamente os valores padrão dos títulos, legendas e classes para Português ou Inglês."
+        )
+        is_pt = (preset_lang == "Português")
+        suffix = "pt" if is_pt else "en"
+
+        # Defaults based on preset
+        def_title_summary = "Desempenho Geral Comparativo entre Modelos" if is_pt else "Comparative Overall Performance Across Selected Models (Higher is Better)"
+        def_title_bar = "Distribuição de Massa de Probabilidade por Classe" if is_pt else "Probability Mass per Class (Grouped Bar Chart)"
+        def_title_radar = "Perfil Multidimensional de Consistência (Radar)" if is_pt else "Multidimensional Profile (Radar Chart)"
+        def_title_face_bar = "Distribuição de Probabilidades da Face {face_id}" if is_pt else "Emotion Probability Distributions for Face {face_id}"
+
+        def_leg_human = "Humano (Consenso)" if is_pt else "Human (P)"
+        def_axis_x = "Categoria de Emoção" if is_pt else "Emotion Category"
+        def_axis_y = "Massa de Probabilidade" if is_pt else "Probability Mass"
+        def_axis_summary_y = "Pontuação [0, 1]" if is_pt else "Score [0, 1]"
+
+        st.markdown("##### 📌 Títulos dos Gráficos")
+        title_summary_custom = st.text_input(
+            "Título - Comparativo Geral:",
+            value=def_title_summary,
+            key=f"title_summary_{suffix}"
+        )
+        title_bar_custom = st.text_input(
+            "Título - Distribuição por Classe (Barras):",
+            value=def_title_bar,
+            key=f"title_bar_{suffix}"
+        )
+        title_radar_custom = st.text_input(
+            "Título - Gráfico Radar:",
+            value=def_title_radar,
+            key=f"title_radar_{suffix}"
+        )
+        title_face_bar_custom = st.text_input(
+            "Título - Gráfico por Face (use {face_id}):",
+            value=def_title_face_bar,
+            key=f"title_face_{suffix}"
+        )
+
+        st.markdown("##### 🏷️ Legendas dos Dados")
+        human_legend_custom = st.text_input(
+            "Legenda da Anotação Humana:",
+            value=def_leg_human,
+            key=f"leg_human_{suffix}"
+        )
+
+        st.markdown("**Legenda dos Modelos:**")
+        custom_model_legends = {}
+        for m_name in q_vectors.keys():
+            def_m_label = f"Modelo: {m_name}" if is_pt else f"Model: {m_name}"
+            custom_model_legends[m_name] = st.text_input(
+                f"Legenda para '{m_name}':",
+                value=def_m_label,
+                key=f"leg_m_{m_name}_{suffix}"
+            )
+
+        st.markdown("##### 📏 Rótulos dos Eixos")
+        col_ax1, col_ax2 = st.columns(2)
+        with col_ax1:
+            axis_x_title = st.text_input("Eixo X (Classes):", value=def_axis_x, key=f"ax_x_{suffix}")
+        with col_ax2:
+            axis_y_title = st.text_input("Eixo Y (Prob.):", value=def_axis_y, key=f"ax_y_{suffix}")
+        axis_summary_y = st.text_input("Eixo Y (Comparativo):", value=def_axis_summary_y, key=f"ax_sum_y_{suffix}")
+
+        st.markdown("##### 🎭 Rótulos das Classes de Emoção")
+        emotion_naming_choice = st.selectbox(
+            "Estilo dos Nomes das Emoções:",
+            options=["Conforme idioma selecionado", "Português", "Inglês (Capitalizado)", "Inglês (Minúsculo Original)", "Personalizado"],
+            index=0,
+            key=f"emo_naming_{suffix}"
+        )
+
+        PT_EMOTIONS = {
+            'happy': 'Alegria',
+            'contempt': 'Desprezo',
+            'surprised': 'Surpresa',
+            'angry': 'Raiva',
+            'disgusted': 'Nojo',
+            'fearful': 'Medo',
+            'sad': 'Tristeza',
+            'neutral': 'Neutro'
+        }
+        CAP_EMOTIONS = {
+            'happy': 'Happy',
+            'contempt': 'Contempt',
+            'surprised': 'Surprised',
+            'angry': 'Angry',
+            'disgusted': 'Disgusted',
+            'fearful': 'Fearful',
+            'sad': 'Sad',
+            'neutral': 'Neutral'
+        }
+
+        emotion_name_map = {}
+        if emotion_naming_choice == "Personalizado":
+            st.markdown("*Edite o rótulo de cada classe individualmente:*")
+            emo_cols = st.columns(2)
+            for idx, c in enumerate(current_classes):
+                col_i = emo_cols[idx % 2]
+                with col_i:
+                    default_c_val = PT_EMOTIONS.get(c, c) if is_pt else CAP_EMOTIONS.get(c, c)
+                    emotion_name_map[c] = st.text_input(
+                        f"Classe '{c}':",
+                        value=default_c_val,
+                        key=f"custom_class_{c}_{suffix}"
+                    )
+        elif emotion_naming_choice == "Português" or (emotion_naming_choice == "Conforme idioma selecionado" and is_pt):
+            emotion_name_map = PT_EMOTIONS
+        elif emotion_naming_choice == "Inglês (Capitalizado)":
+            emotion_name_map = CAP_EMOTIONS
+        else:
+            emotion_name_map = {c: c for c in current_classes}
+
+        display_classes = [emotion_name_map.get(c, c) for c in current_classes]
+
+        st.markdown("##### 📍 Layout da Legenda")
+        legend_position_choice = st.selectbox(
+            "Posição da Legenda nos Gráficos:",
+            options=["Horizontal (Superior)", "Vertical (Direita)", "Ocultar Legenda"],
+            index=0,
+            key=f"leg_pos_{suffix}"
+        )
+
+        st.markdown("##### 🔤 Tamanho das Fontes")
+        font_adjustment_mode = st.radio(
+            "Modo de Ajuste da Fonte:",
+            options=["Geral (Escalar Tudo)", "Personalizado (Por Elemento)"],
+            index=0,
+            horizontal=True,
+            key=f"font_mode_{suffix}"
+        )
+
+        if font_adjustment_mode == "Geral (Escalar Tudo)":
+            base_font_size = st.slider(
+                "Tamanho da Fonte:",
+                min_value=8,
+                max_value=28,
+                value=13,
+                step=1,
+                help="Ajusta proporcionalmente o tamanho de todos os textos nos gráficos.",
+                key=f"base_font_{suffix}"
+            )
+            title_font_size = int(round(base_font_size * 1.25))
+            axis_title_font_size = int(round(base_font_size * 1.05))
+            tick_font_size = base_font_size
+            legend_font_size = max(8, int(round(base_font_size * 0.95)))
+            bar_text_font_size = max(8, int(round(base_font_size * 0.85)))
+        else:
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                title_font_size = st.slider("Título dos Gráficos:", 10, 32, 16, key=f"title_font_{suffix}")
+                axis_title_font_size = st.slider("Títulos dos Eixos (X/Y):", 8, 26, 14, key=f"axis_title_font_{suffix}")
+                tick_font_size = st.slider("Rótulos / Ticks / Classes:", 8, 24, 12, key=f"tick_font_{suffix}")
+            with col_f2:
+                legend_font_size = st.slider("Texto da Legenda:", 8, 24, 12, key=f"legend_font_{suffix}")
+                bar_text_font_size = st.slider("Valores nas Barras (%):", 6, 20, 10, key=f"bar_text_font_{suffix}")
+                base_font_size = tick_font_size
+
+        if legend_position_choice == "Horizontal (Superior)":
+            legend_layout = dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                title=dict(text=""),
+                font=dict(size=legend_font_size)
+            )
+        elif legend_position_choice == "Vertical (Direita)":
+            legend_layout = dict(
+                orientation="v",
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=1.02,
+                title=dict(text=""),
+                font=dict(size=legend_font_size)
+            )
+        else:
+            legend_layout = dict(visible=False)
+
+# ==============================================================================
 # 1. Primary KPI Cards & Comparative Overview (Macro Consistency)
 # ==============================================================================
 st.subheader("📈 Global Consistency Overview (Macro Level)")
@@ -435,7 +627,7 @@ else:
         st.metric(
             "Top Cosine Alignment 🏆",
             f"{model_metrics[best_cos_m]['Cosine']:.4f}",
-            delta=f"Best: {best_cos_m}",
+            delta=f"Best: {custom_model_legends.get(best_cos_m, best_cos_m)}",
             delta_color="normal",
             help="Best vector orientation alignment with human consensus (Optimal: 1.0)"
         )
@@ -443,7 +635,7 @@ else:
         st.metric(
             "Lowest Divergence (JSD) 🏆",
             f"{model_metrics[best_jsd_m]['JSD']:.4f}",
-            delta=f"Best: {best_jsd_m}",
+            delta=f"Best: {custom_model_legends.get(best_jsd_m, best_jsd_m)}",
             delta_color="inverse",
             help="Lowest relative entropy / information divergence (Optimal: 0.0)"
         )
@@ -451,7 +643,7 @@ else:
         st.metric(
             "Top Pearson Correlation 🏆",
             f"{model_metrics[best_pear_m]['Pearson']:.4f}",
-            delta=f"Best: {best_pear_m}",
+            delta=f"Best: {custom_model_legends.get(best_pear_m, best_pear_m)}",
             delta_color="normal",
             help="Highest linear correlation across emotion distribution (Optimal: 1.0)"
         )
@@ -459,7 +651,7 @@ else:
         st.metric(
             "Top Shared Overlap 🏆",
             f"{model_metrics[best_over_m]['Overlap']:.4f}",
-            delta=f"Best: {best_over_m}",
+            delta=f"Best: {custom_model_legends.get(best_over_m, best_over_m)}",
             delta_color="normal",
             help="Highest intersection / shared probability volume ∑ min(P, Q) (Optimal: 1.0)"
         )
@@ -468,7 +660,7 @@ else:
     summary_records = []
     for m_name, m in model_metrics.items():
         summary_records.append({
-            "Model": m_name,
+            "Model": custom_model_legends.get(m_name, m_name),
             "Cosine Alignment": m["Cosine"],
             "Pearson Correlation": m["Pearson"],
             "Histogram Overlap": m["Overlap"],
@@ -483,15 +675,25 @@ else:
         y="Score",
         color="Model",
         barmode="group",
-        title="Comparative Overall Performance Across Selected Models (Higher is Better)",
+        title=title_summary_custom,
         color_discrete_sequence=MODEL_PALETTE
     )
     fig_summary.update_layout(
+        font=dict(size=base_font_size),
+        title=dict(
+            text=title_summary_custom,
+            font=dict(size=title_font_size)
+        ),
         yaxis_range=[0, 1.05],
-        yaxis_title="Score [0, 1]",
-        xaxis_title=None,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=20, r=20, t=50, b=20)
+        yaxis=dict(
+            title=dict(text=axis_summary_y, font=dict(size=axis_title_font_size)),
+            tickfont=dict(size=tick_font_size)
+        ),
+        xaxis=dict(
+            tickfont=dict(size=tick_font_size)
+        ),
+        legend=legend_layout,
+        margin=dict(l=20, r=20, t=55, b=20)
     )
     st.plotly_chart(fig_summary, use_container_width=True)
 
@@ -502,52 +704,62 @@ st.divider()
 g_col1, g_col2 = st.columns(2)
 
 with g_col1:
-    st.subheader("Probability Mass per Class (Grouped Bar Chart)")
+    st.subheader(title_bar_custom)
     fig_bar = go.Figure()
 
     # Human distribution
     fig_bar.add_trace(go.Bar(
-        name='Human (P)',
-        x=current_classes,
+        name=human_legend_custom,
+        x=display_classes,
         y=p_vector,
         marker_color=HUMAN_COLOR,
         text=[f"{v*100:.1f}%" for v in p_vector],
         textposition='auto',
+        textfont=dict(size=bar_text_font_size),
         hoverinfo='x+y+name'
     ))
 
     # Model distributions
     for idx, (m_name, q_vec) in enumerate(q_vectors.items()):
         c_color = MODEL_PALETTE[idx % len(MODEL_PALETTE)]
+        m_label = custom_model_legends.get(m_name, f'Model: {m_name}')
         fig_bar.add_trace(go.Bar(
-            name=f'Model: {m_name}',
-            x=current_classes,
+            name=m_label,
+            x=display_classes,
             y=q_vec,
             marker_color=c_color,
             text=[f"{v*100:.1f}%" for v in q_vec],
             textposition='auto',
+            textfont=dict(size=bar_text_font_size),
             hoverinfo='x+y+name'
         ))
 
     fig_bar.update_layout(
+        font=dict(size=base_font_size),
         barmode='group',
-        yaxis_title="Probability Mass",
-        xaxis_title="Emotion Category",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        yaxis=dict(
+            title=dict(text=axis_y_title, font=dict(size=axis_title_font_size)),
+            tickfont=dict(size=tick_font_size)
+        ),
+        xaxis=dict(
+            title=dict(text=axis_x_title, font=dict(size=axis_title_font_size)),
+            tickfont=dict(size=tick_font_size)
+        ),
+        legend=legend_layout,
         margin=dict(l=20, r=20, t=40, b=20)
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
 with g_col2:
-    st.subheader("Multidimensional Profile (Radar Chart)")
+    st.subheader(title_radar_custom)
     fig_radar = go.Figure()
 
     # Human polar trace
     fig_radar.add_trace(go.Scatterpolar(
         r=list(p_vector) + [p_vector[0]],
-        theta=current_classes + [current_classes[0]],
+        theta=display_classes + [display_classes[0]],
         fill='toself',
-        name='Human (P)',
+        name=human_legend_custom,
         line_color=HUMAN_COLOR,
         fillcolor='rgba(79, 70, 229, 0.20)',
         line=dict(width=2.5)
@@ -557,18 +769,29 @@ with g_col2:
     for idx, (m_name, q_vec) in enumerate(q_vectors.items()):
         c_color = MODEL_PALETTE[idx % len(MODEL_PALETTE)]
         max_val = max(max_val, np.max(q_vec))
+        m_label = custom_model_legends.get(m_name, m_name)
         fig_radar.add_trace(go.Scatterpolar(
             r=list(q_vec) + [q_vec[0]],
-            theta=current_classes + [current_classes[0]],
+            theta=display_classes + [display_classes[0]],
             fill='none',
-            name=f'{m_name}',
+            name=m_label,
             line_color=c_color,
             line=dict(width=2.2)
         ))
 
     fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, max_val * 1.15])),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        font=dict(size=base_font_size),
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, max_val * 1.15],
+                tickfont=dict(size=tick_font_size)
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=tick_font_size)
+            )
+        ),
+        legend=legend_layout,
         margin=dict(l=20, r=20, t=40, b=20)
     )
     st.plotly_chart(fig_radar, use_container_width=True)
@@ -614,10 +837,11 @@ for item in metric_metadata:
             best_m = max(model_values, key=model_values.get)
         else:
             best_m = min(model_values, key=model_values.get)
-        row_dict["Best Model 🏆"] = best_m
+        row_dict["Best Model 🏆"] = custom_model_legends.get(best_m, best_m)
 
     for m_name, val in model_values.items():
-        row_dict[m_name] = f"{val:.5f}"
+        col_name = custom_model_legends.get(m_name, m_name)
+        row_dict[col_name] = f"{val:.5f}"
 
     table_rows.append(row_dict)
 
@@ -693,7 +917,7 @@ if df_map is not None and not df_map.empty:
                 "Face ID": face_id,
                 "Study File": study_filename,
                 "Dataset File": target_ds_basename,
-                "Human Top Emotion": top_human_emotion,
+                "Human Top Emotion": emotion_name_map.get(top_human_emotion, top_human_emotion),
                 "full_path": row.get('user_study_full_path', row.get('dataset_full_path', ''))
             }
 
@@ -705,6 +929,7 @@ if df_map is not None and not df_map.empty:
             face_dists = {'human': p_face, 'models': {}}
 
             for m_name, df_lookup in prepared_model_lookups.items():
+                m_label = custom_model_legends.get(m_name, m_name)
                 if target_ds_basename in df_lookup.index:
                     m_row = df_lookup.loc[target_ds_basename]
                     if isinstance(m_row, pd.DataFrame):
@@ -725,6 +950,7 @@ if df_map is not None and not df_map.empty:
 
                     top_m_idx = int(np.argmax(q_face))
                     top_m_emotion = current_classes[top_m_idx]
+                    top_m_display = emotion_name_map.get(top_m_emotion, top_m_emotion)
                     model_top_emotions[m_name] = top_m_emotion
 
                     # Compute metrics
@@ -737,18 +963,18 @@ if df_map is not None and not df_map.empty:
                     model_jsds[m_name] = jsd
                     models_matched_count += 1
 
-                    record[f"{m_name} (Top Emotion)"] = top_m_emotion
-                    record[f"{m_name} (Cosine)"] = round(cos, 4)
-                    record[f"{m_name} (JSD)"] = round(jsd, 4)
-                    record[f"{m_name} (Overlap)"] = round(over, 4)
+                    record[f"{m_label} (Top Emotion)"] = top_m_display
+                    record[f"{m_label} (Cosine)"] = round(cos, 4)
+                    record[f"{m_label} (JSD)"] = round(jsd, 4)
+                    record[f"{m_label} (Overlap)"] = round(over, 4)
                 else:
-                    record[f"{m_name} (Cosine)"] = np.nan
-                    record[f"{m_name} (JSD)"] = np.nan
+                    record[f"{m_label} (Cosine)"] = np.nan
+                    record[f"{m_label} (JSD)"] = np.nan
 
             if models_matched_count > 0:
                 # Find best model for this specific face (highest cosine)
                 best_face_m = max(model_cosines, key=model_cosines.get) if model_cosines else "N/A"
-                record["Best Model 🏆"] = best_face_m
+                record["Best Model 🏆"] = custom_model_legends.get(best_face_m, best_face_m)
                 # Check top-1 dominant agreement across models
                 agreements = [top_human_emotion == model_top_emotions[m] for m in model_top_emotions]
                 record["Dominant Consensus Agreed"] = "Yes" if any(agreements) else "No"
@@ -788,6 +1014,7 @@ if df_map is not None and not df_map.empty:
                 emotion_filter = st.selectbox(
                     "Filter by Human Dominant Emotion:",
                     options=["All Emotions"] + current_classes,
+                    format_func=lambda x: emotion_name_map.get(x, x) if x != "All Emotions" else x,
                     index=0
                 )
             with f_col2:
@@ -814,7 +1041,7 @@ if df_map is not None and not df_map.empty:
             # Apply filters
             filtered_df = df_face_results.copy()
             if emotion_filter != "All Emotions":
-                filtered_df = filtered_df[filtered_df["Human Top Emotion"] == emotion_filter]
+                filtered_df = filtered_df[filtered_df["Human Top Emotion"] == emotion_name_map.get(emotion_filter, emotion_filter)]
 
             if agreement_filter == "Agreed on Dominant Emotion":
                 filtered_df = filtered_df[filtered_df["Dominant Consensus Agreed"] == "Yes"]
@@ -911,12 +1138,15 @@ if df_map is not None and not df_map.empty:
                         face_cmp_rows = []
                         for m_name, q_val in models_inst.items():
                             f_met = compute_ldl_metrics(p_inst, q_val)
+                            m_label = custom_model_legends.get(m_name, m_name)
+                            dom_idx = int(np.argmax(q_val))
+                            dom_name = current_classes[dom_idx]
                             face_cmp_rows.append({
-                                "Model": m_name,
+                                "Model": m_label,
                                 "Cosine": f"{f_met['Cosine']:.4f}",
                                 "JSD": f"{f_met['JSD']:.4f}",
                                 "Overlap": f"{f_met['Overlap']:.4f}",
-                                "Dominant": current_classes[int(np.argmax(q_val))]
+                                "Dominant": emotion_name_map.get(dom_name, dom_name)
                             })
                         if face_cmp_rows:
                             st.dataframe(pd.DataFrame(face_cmp_rows), use_container_width=True, hide_index=True)
@@ -925,33 +1155,51 @@ if df_map is not None and not df_map.empty:
                         # Grouped Bar Chart for this specific face
                         fig_face_bar = go.Figure()
                         fig_face_bar.add_trace(go.Bar(
-                            name='Human (P)',
-                            x=current_classes,
+                            name=human_legend_custom,
+                            x=display_classes,
                             y=p_inst,
                             marker_color=HUMAN_COLOR,
                             text=[f"{v*100:.1f}%" for v in p_inst],
-                            textposition='auto'
+                            textposition='auto',
+                            textfont=dict(size=bar_text_font_size)
                         ))
 
                         for idx, (m_name, q_val) in enumerate(models_inst.items()):
                             m_color = MODEL_PALETTE[idx % len(MODEL_PALETTE)]
+                            m_label = custom_model_legends.get(m_name, f'Model: {m_name}')
                             fig_face_bar.add_trace(go.Bar(
-                                name=f'Model: {m_name}',
-                                x=current_classes,
+                                name=m_label,
+                                x=display_classes,
                                 y=q_val,
                                 marker_color=m_color,
                                 text=[f"{v*100:.1f}%" for v in q_val],
-                                textposition='auto'
+                                textposition='auto',
+                                textfont=dict(size=bar_text_font_size)
                             ))
 
+                        try:
+                            formatted_face_title = title_face_bar_custom.format(
+                                face_id=face_row['Face ID'],
+                                filename=face_row['Dataset File']
+                            )
+                        except Exception:
+                            formatted_face_title = f"{title_face_bar_custom} ({face_row['Face ID']})"
+
                         fig_face_bar.update_layout(
+                            font=dict(size=base_font_size),
                             barmode='group',
-                            height=330,
-                            title=f"Emotion Probability Distributions for Face {face_row['Face ID']}",
-                            yaxis_title="Probability Mass",
-                            xaxis_title="Emotion Category",
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                            margin=dict(l=10, r=10, t=50, b=10)
+                            height=340,
+                            title=dict(text=f"<b>{formatted_face_title}</b>", x=0.5, xanchor='center', font=dict(size=title_font_size)),
+                            yaxis=dict(
+                                title=dict(text=axis_y_title, font=dict(size=axis_title_font_size)),
+                                tickfont=dict(size=tick_font_size)
+                            ),
+                            xaxis=dict(
+                                title=dict(text=axis_x_title, font=dict(size=axis_title_font_size)),
+                                tickfont=dict(size=tick_font_size)
+                            ),
+                            legend=legend_layout,
+                            margin=dict(l=10, r=10, t=55, b=10)
                         )
                         st.plotly_chart(fig_face_bar, use_container_width=True)
             else:
