@@ -60,6 +60,8 @@ def compute_ldl_metrics(p, q, eps=1e-12):
     """Computes all 12 standard LDL comparative metrics between distributions P (Human) and Q (Model)."""
     p = normalize_distribution(p, eps)
     q = normalize_distribution(q, eps)
+    p_s = np.maximum(p, eps)
+    q_s = np.maximum(q, eps)
 
     # 1. Euclidean Distance (L2)
     l2 = float(np.linalg.norm(p - q))
@@ -70,14 +72,21 @@ def compute_ldl_metrics(p, q, eps=1e-12):
     # 3. Chebyshev Distance (L_inf)
     chebyshev = float(np.max(np.abs(p - q)))
 
-    # 4. Kullback-Leibler Divergence
-    p_s = np.maximum(p, eps)
-    q_s = np.maximum(q, eps)
-    kl = float(np.sum(p_s * np.log(p_s / q_s)))
+    # 4. Kullback-Leibler Divergence: D_KL(P || Q) = ∑_{P_i > 0} P_i * ln(P_i / Q_i)
+    # Sempre P = Anotação Humana (distribuição de referência) e Q = Output do Modelo
+    p_mask = p > 0
+    p_nz = p[p_mask]
+    q_nz = np.maximum(q[p_mask], eps)
+    kl = float(np.sum(p_nz * np.log(p_nz / q_nz)))
 
-    # 5. Jensen-Shannon Divergence (JSD)
-    m_s = 0.5 * (p_s + q_s)
-    jsd = float(0.5 * np.sum(p_s * np.log(p_s / m_s)) + 0.5 * np.sum(q_s * np.log(q_s / m_s)))
+    # 5. Jensen-Shannon Divergence: JSD(P, Q) = 0.5 * D_KL(P || M) + 0.5 * D_KL(Q || M)
+    # onde M = 0.5 * (P + Q)
+    m = 0.5 * (p + q)
+    m_p = np.maximum(m[p_mask], eps)
+    q_mask = q > 0
+    q_nz = q[q_mask]
+    m_q = np.maximum(m[q_mask], eps)
+    jsd = float(0.5 * np.sum(p_nz * np.log(p_nz / m_p)) + 0.5 * np.sum(q_nz * np.log(q_nz / m_q)))
 
     # 6. Cosine Similarity
     norm_p = np.linalg.norm(p)
@@ -94,18 +103,18 @@ def compute_ldl_metrics(p, q, eps=1e-12):
     intersection = float(np.sum(np.minimum(p, q)))
 
     # 9. Fidelity (Bhattacharyya Coefficient)
-    fidelity = float(np.sum(np.sqrt(p_s * q_s)))
+    fidelity = float(np.sum(np.sqrt(p * q)))
     fidelity = min(1.0, max(0.0, fidelity))
 
     # 10. Bhattacharyya Distance
     bhattacharyya = float(-np.log(max(fidelity, eps)))
 
     # 11. Hellinger Distance
-    hellinger = float(np.sqrt(0.5 * np.sum((np.sqrt(p_s) - np.sqrt(q_s)) ** 2)))
+    hellinger = float(np.sqrt(max(0.0, 0.5 * np.sum((np.sqrt(p) - np.sqrt(q)) ** 2))))
 
     # 12. Chi-Square Distance (χ²)
     denom = p + q
-    chi2 = float(np.sum(np.where(denom > eps, ((p - q) ** 2) / denom, 0.0)))
+    chi2 = float(np.sum(np.divide((p - q) ** 2, denom, out=np.zeros_like(p, dtype=np.float64), where=denom > eps)))
 
     return {
         "Cosine": cosine,
@@ -424,6 +433,7 @@ with st.sidebar:
 
         # Defaults based on preset
         def_title_summary = "Desempenho Geral Comparativo entre Modelos" if is_pt else "Comparative Overall Performance Across Selected Models (Higher is Better)"
+        def_title_divergence = "Divergências de Informação (JS e KL) entre Humano e Modelos" if is_pt else "Information Divergences (JS & KL) between Human and Models (Lower is Better)"
         def_title_bar = "Distribuição de Massa de Probabilidade por Classe" if is_pt else "Probability Mass per Class (Grouped Bar Chart)"
         def_title_radar = "Perfil Multidimensional de Consistência (Radar)" if is_pt else "Multidimensional Profile (Radar Chart)"
         def_title_face_bar = "Distribuição de Probabilidades da Face {face_id}" if is_pt else "Emotion Probability Distributions for Face {face_id}"
@@ -432,12 +442,18 @@ with st.sidebar:
         def_axis_x = "Categoria de Emoção" if is_pt else "Emotion Category"
         def_axis_y = "Massa de Probabilidade" if is_pt else "Probability Mass"
         def_axis_summary_y = "Pontuação [0, 1]" if is_pt else "Score [0, 1]"
+        def_axis_div_y = "Divergência (Menor é Melhor)" if is_pt else "Divergence (Lower is Better)"
 
         st.markdown("##### 📌 Títulos dos Gráficos")
         title_summary_custom = st.text_input(
             "Título - Comparativo Geral:",
             value=def_title_summary,
             key=f"title_summary_{suffix}"
+        )
+        title_divergence_custom = st.text_input(
+            "Título - Divergências (JS e KL):",
+            value=def_title_divergence,
+            key=f"title_div_{suffix}"
         )
         title_bar_custom = st.text_input(
             "Título - Distribuição por Classe (Barras):",
@@ -606,23 +622,26 @@ num_models = len(q_vectors)
 if num_models == 1:
     m_name = list(q_vectors.keys())[0]
     metrics = model_metrics[m_name]
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Cosine Similarity", f"{metrics['Cosine']:.4f}", help="Vector orientation alignment (Optimal: 1.0)")
     with col2:
-        st.metric("Jensen-Shannon Divergence", f"{metrics['JSD']:.4f}", help="Symmetric, bounded relative entropy [0, 1] (Optimal: 0.0)")
+        st.metric("Jensen-Shannon (JS)", f"{metrics['JSD']:.4f}", help="Symmetric, bounded relative entropy D_JS(Human, Model) [0, 1] (Optimal: 0.0)")
     with col3:
-        st.metric("Pearson Correlation", f"{metrics['Pearson']:.4f}", help="Linear correlation across emotional class prevalences (Optimal: 1.0)")
+        st.metric("Kullback-Leibler (KL)", f"{metrics['KL_Divergence']:.4f}", help="Relative entropy D_KL(Human || Model) (Optimal: 0.0)")
     with col4:
+        st.metric("Pearson Correlation", f"{metrics['Pearson']:.4f}", help="Linear correlation across emotional class prevalences (Optimal: 1.0)")
+    with col5:
         st.metric("Probability Overlap", f"{metrics['Overlap']:.4f}", help="Shared probability volume ∑ min(P_i, Q_i) (Optimal: 1.0)")
 else:
     # Multi-model leadership highlights
     best_cos_m = max(model_metrics, key=lambda k: model_metrics[k]['Cosine'])
     best_jsd_m = min(model_metrics, key=lambda k: model_metrics[k]['JSD'])
+    best_kl_m = min(model_metrics, key=lambda k: model_metrics[k]['KL_Divergence'])
     best_pear_m = max(model_metrics, key=lambda k: model_metrics[k]['Pearson'])
     best_over_m = max(model_metrics, key=lambda k: model_metrics[k]['Overlap'])
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric(
             "Top Cosine Alignment 🏆",
@@ -633,13 +652,21 @@ else:
         )
     with col2:
         st.metric(
-            "Lowest Divergence (JSD) 🏆",
+            "Lowest JS Divergence 🏆",
             f"{model_metrics[best_jsd_m]['JSD']:.4f}",
             delta=f"Best: {custom_model_legends.get(best_jsd_m, best_jsd_m)}",
             delta_color="inverse",
-            help="Lowest relative entropy / information divergence (Optimal: 0.0)"
+            help="Lowest relative entropy / Jensen-Shannon Divergence D_JS(Human, Model) (Optimal: 0.0)"
         )
     with col3:
+        st.metric(
+            "Lowest KL Divergence 🏆",
+            f"{model_metrics[best_kl_m]['KL_Divergence']:.4f}",
+            delta=f"Best: {custom_model_legends.get(best_kl_m, best_kl_m)}",
+            delta_color="inverse",
+            help="Lowest Kullback-Leibler Divergence D_KL(Human || Model) (Optimal: 0.0)"
+        )
+    with col4:
         st.metric(
             "Top Pearson Correlation 🏆",
             f"{model_metrics[best_pear_m]['Pearson']:.4f}",
@@ -647,7 +674,7 @@ else:
             delta_color="normal",
             help="Highest linear correlation across emotion distribution (Optimal: 1.0)"
         )
-    with col4:
+    with col5:
         st.metric(
             "Top Shared Overlap 🏆",
             f"{model_metrics[best_over_m]['Overlap']:.4f}",
@@ -656,7 +683,10 @@ else:
             help="Highest intersection / shared probability volume ∑ min(P, Q) (Optimal: 1.0)"
         )
 
-    # Comparative Metric Summary Bar Chart
+# Comparative Metric Summary & Information Divergences Bar Charts
+c_s1, c_s2 = st.columns(2)
+
+with c_s1:
     summary_records = []
     for m_name, m in model_metrics.items():
         summary_records.append({
@@ -696,6 +726,50 @@ else:
         margin=dict(l=20, r=20, t=55, b=20)
     )
     st.plotly_chart(fig_summary, use_container_width=True)
+
+with c_s2:
+    # Information Divergences Bar Chart (JS and KL Divergences: Human vs Models)
+    divergence_records = []
+    for m_name, m in model_metrics.items():
+        m_label = custom_model_legends.get(m_name, m_name)
+        divergence_records.append({
+            "Model": m_label,
+            "Metric": "JS Divergence (JSD)" if not is_pt else "Divergência JS (JSD)",
+            "Divergence": m["JSD"]
+        })
+        divergence_records.append({
+            "Model": m_label,
+            "Metric": "KL Divergence (KL)" if not is_pt else "Divergência KL (KL)",
+            "Divergence": m["KL_Divergence"]
+        })
+    df_div = pd.DataFrame(divergence_records)
+
+    fig_div = px.bar(
+        df_div,
+        x="Metric",
+        y="Divergence",
+        color="Model",
+        barmode="group",
+        title=title_divergence_custom,
+        color_discrete_sequence=MODEL_PALETTE
+    )
+    fig_div.update_layout(
+        font=dict(size=base_font_size),
+        title=dict(
+            text=title_divergence_custom,
+            font=dict(size=title_font_size)
+        ),
+        yaxis=dict(
+            title=dict(text=def_axis_div_y, font=dict(size=axis_title_font_size)),
+            tickfont=dict(size=tick_font_size)
+        ),
+        xaxis=dict(
+            tickfont=dict(size=tick_font_size)
+        ),
+        legend=legend_layout,
+        margin=dict(l=20, r=20, t=55, b=20)
+    )
+    st.plotly_chart(fig_div, use_container_width=True)
 
 # ==============================================================================
 # 2. Detailed Distribution Visualizations
@@ -807,8 +881,8 @@ metric_metadata = [
     {"Category": "Similarities (Optimal → 1.0)", "Metric": "Pearson Correlation (r)", "key": "Pearson", "Goal": "Higher (max 1.0)", "Formula": "Cov(P, Q) / (σP · σQ)", "direction": "max"},
     {"Category": "Similarities (Optimal → 1.0)", "Metric": "Histogram Overlap / Intersection", "key": "Overlap", "Goal": "Higher (max 1.0)", "Formula": "∑ min(P_i, Q_i)", "direction": "max"},
     {"Category": "Similarities (Optimal → 1.0)", "Metric": "Fidelity (Bhattacharyya Coeff.)", "key": "Fidelity", "Goal": "Higher (max 1.0)", "Formula": "∑ √(P_i · Q_i)", "direction": "max"},
-    {"Category": "Divergences (Optimal → 0.0)", "Metric": "Jensen-Shannon Divergence (JSD)", "key": "JSD", "Goal": "Lower (min 0.0)", "Formula": "0.5·KL(P||M) + 0.5·KL(Q||M)", "direction": "min"},
-    {"Category": "Divergences (Optimal → 0.0)", "Metric": "Kullback-Leibler Divergence (KL)", "key": "KL_Divergence", "Goal": "Lower (min 0.0)", "Formula": "∑ P_i · ln(P_i / Q_i)", "direction": "min"},
+    {"Category": "Divergences (Optimal → 0.0)", "Metric": "Jensen-Shannon Divergence (JSD)", "key": "JSD", "Goal": "Lower (min 0.0)", "Formula": "0.5·D_KL(Human||M) + 0.5·D_KL(Model||M)", "direction": "min"},
+    {"Category": "Divergences (Optimal → 0.0)", "Metric": "Kullback-Leibler Divergence (KL)", "key": "KL_Divergence", "Goal": "Lower (min 0.0)", "Formula": "∑ P_human · ln(P_human / Q_model)", "direction": "min"},
     {"Category": "Divergences (Optimal → 0.0)", "Metric": "Total Variation (L1)", "key": "Total_Variation", "Goal": "Lower (min 0.0)", "Formula": "0.5 · ∑ |P_i - Q_i|", "direction": "min"},
     {"Category": "Distances (Optimal → 0.0)", "Metric": "Euclidean Distance (L2)", "key": "Euclidean_L2", "Goal": "Lower (min 0.0)", "Formula": "√(∑ (P_i - Q_i)²)", "direction": "min"},
     {"Category": "Distances (Optimal → 0.0)", "Metric": "Chebyshev Distance (L∞)", "key": "Chebyshev_Linf", "Goal": "Lower (min 0.0)", "Formula": "max |P_i - Q_i|", "direction": "min"},
@@ -923,6 +997,7 @@ if df_map is not None and not df_map.empty:
 
             model_cosines = {}
             model_jsds = {}
+            model_kls = {}
             model_top_emotions = {}
             models_matched_count = 0
 
@@ -953,23 +1028,27 @@ if df_map is not None and not df_map.empty:
                     top_m_display = emotion_name_map.get(top_m_emotion, top_m_emotion)
                     model_top_emotions[m_name] = top_m_emotion
 
-                    # Compute metrics
+                    # Compute metrics (Human = P, Model = Q)
                     f_metrics = compute_ldl_metrics(p_face, q_face)
                     cos = f_metrics["Cosine"]
                     jsd = f_metrics["JSD"]
+                    kl = f_metrics["KL_Divergence"]
                     over = f_metrics["Overlap"]
 
                     model_cosines[m_name] = cos
                     model_jsds[m_name] = jsd
+                    model_kls[m_name] = kl
                     models_matched_count += 1
 
                     record[f"{m_label} (Top Emotion)"] = top_m_display
                     record[f"{m_label} (Cosine)"] = round(cos, 4)
                     record[f"{m_label} (JSD)"] = round(jsd, 4)
+                    record[f"{m_label} (KL)"] = round(kl, 4)
                     record[f"{m_label} (Overlap)"] = round(over, 4)
                 else:
                     record[f"{m_label} (Cosine)"] = np.nan
                     record[f"{m_label} (JSD)"] = np.nan
+                    record[f"{m_label} (KL)"] = np.nan
 
             if models_matched_count > 0:
                 # Find best model for this specific face (highest cosine)
@@ -980,6 +1059,7 @@ if df_map is not None and not df_map.empty:
                 record["Dominant Consensus Agreed"] = "Yes" if any(agreements) else "No"
                 record["Average Cosine"] = round(float(np.mean(list(model_cosines.values()))), 4)
                 record["Average JSD"] = round(float(np.mean(list(model_jsds.values()))), 4)
+                record["Average KL"] = round(float(np.mean(list(model_kls.values()))), 4)
 
                 face_records.append(record)
                 face_distributions[face_id] = face_dists
@@ -991,7 +1071,7 @@ if df_map is not None and not df_map.empty:
             # Banner with Aggregate Face-by-Face KPIs
             # ------------------------------------------------------------------
             st.markdown("#### 📊 Aggregate Face-by-Face Consistency Scores")
-            kpi_cols = st.columns(4)
+            kpi_cols = st.columns(5)
             with kpi_cols[0]:
                 st.metric("Total Faces Linked", f"{len(df_face_results)} faces", help="Faces successfully cross-referenced with model inferences.")
             with kpi_cols[1]:
@@ -999,8 +1079,11 @@ if df_map is not None and not df_map.empty:
                 st.metric("Mean Cosine per Face", f"{mean_cos:.4f}", help="Average Cosine Similarity across all evaluated faces.")
             with kpi_cols[2]:
                 mean_jsd = df_face_results["Average JSD"].mean()
-                st.metric("Mean JSD per Face", f"{mean_jsd:.4f}", help="Average JSD Divergence across all evaluated faces.")
+                st.metric("Mean JS Divergence", f"{mean_jsd:.4f}", help="Average Jensen-Shannon Divergence D_JS(Human, Model) across all evaluated faces.")
             with kpi_cols[3]:
+                mean_kl = df_face_results["Average KL"].mean()
+                st.metric("Mean KL Divergence", f"{mean_kl:.4f}", help="Average Kullback-Leibler Divergence D_KL(Human || Model) across all evaluated faces.")
+            with kpi_cols[4]:
                 agree_rate = (df_face_results["Dominant Consensus Agreed"] == "Yes").mean() * 100
                 st.metric("Top-1 Agreement Rate", f"{agree_rate:.1f}%", help="Percentage of faces where at least one model matched the human dominant emotion.")
 
@@ -1029,8 +1112,10 @@ if df_map is not None and not df_map.empty:
                     options=[
                         "Highest Cosine (Most Consistent)",
                         "Lowest Cosine (Most Divergent)",
-                        "Lowest JSD (Closest Match)",
-                        "Highest JSD (Ambiguous / Conflicting)",
+                        "Lowest JS Divergence (Closest Match)",
+                        "Highest JS Divergence (Most Divergent)",
+                        "Lowest KL Divergence (Closest Match)",
+                        "Highest KL Divergence (Most Divergent)",
                         "Face ID"
                     ],
                     index=0
@@ -1061,10 +1146,14 @@ if df_map is not None and not df_map.empty:
                 filtered_df = filtered_df.sort_values(by="Average Cosine", ascending=False)
             elif sort_order == "Lowest Cosine (Most Divergent)":
                 filtered_df = filtered_df.sort_values(by="Average Cosine", ascending=True)
-            elif sort_order == "Lowest JSD (Closest Match)":
+            elif sort_order == "Lowest JS Divergence (Closest Match)":
                 filtered_df = filtered_df.sort_values(by="Average JSD", ascending=True)
-            elif sort_order == "Highest JSD (Ambiguous / Conflicting)":
+            elif sort_order == "Highest JS Divergence (Most Divergent)":
                 filtered_df = filtered_df.sort_values(by="Average JSD", ascending=False)
+            elif sort_order == "Lowest KL Divergence (Closest Match)":
+                filtered_df = filtered_df.sort_values(by="Average KL", ascending=True)
+            elif sort_order == "Highest KL Divergence (Most Divergent)":
+                filtered_df = filtered_df.sort_values(by="Average KL", ascending=False)
             else:
                 filtered_df = filtered_df.sort_values(by="Face ID", ascending=True)
 
@@ -1145,6 +1234,7 @@ if df_map is not None and not df_map.empty:
                                 "Model": m_label,
                                 "Cosine": f"{f_met['Cosine']:.4f}",
                                 "JSD": f"{f_met['JSD']:.4f}",
+                                "KL": f"{f_met['KL_Divergence']:.4f}",
                                 "Overlap": f"{f_met['Overlap']:.4f}",
                                 "Dominant": emotion_name_map.get(dom_name, dom_name)
                             })
