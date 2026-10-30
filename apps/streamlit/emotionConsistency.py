@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -46,6 +47,21 @@ MODEL_PALETTE = [
     '#a855f7',  # Purple
     '#d97706',  # Dark Amber
 ]
+
+# URL Helpers
+def is_url(path_or_url: str) -> bool:
+    """Checks whether the provided string represents an HTTP/HTTPS URL."""
+    if not path_or_url:
+        return False
+    s = str(path_or_url).strip().lower()
+    return s.startswith(("http://", "https://", "ftp://", "localhost:", "127.0.0.1:"))
+
+def normalize_url(path_or_url: str) -> str:
+    """Normalizes URL string ensuring proper scheme."""
+    s = str(path_or_url).strip()
+    if s.lower().startswith(("localhost:", "127.0.0.1:")):
+        return f"http://{s}"
+    return s
 
 # Label Distribution Learning (LDL) Core Mathematical Functions
 def normalize_distribution(arr, eps=1e-12):
@@ -270,13 +286,14 @@ with st.sidebar:
         help="CSV cross-referencing user study faces with dataset files (match_and_map.py output)."
     )
 
-    # Optional local faces directory to render actual face pictures
+    # Optional local faces directory or URL to render actual face pictures
     default_faces_dir = "amostras_selecionadas" if os.path.exists("amostras_selecionadas") else ""
     faces_image_dir = st.text_input(
-        "Face Images Folder (Optional - to view images):",
+        "Face Images Folder or URL (Optional):",
         value=default_faces_dir,
-        help="Folder containing the face images (e.g. amostras_selecionadas) to render thumbnails."
+        help="Local folder (e.g. amostras_selecionadas) or base URL (e.g. http://server/faces/). When a URL is provided, the image is resolved by its experiment/user study filename."
     )
+    is_image_url = is_url(faces_image_dir)
 
     st.divider()
     alignment_mode = st.radio(
@@ -972,8 +989,25 @@ if df_map is not None and not df_map.empty:
 
         for _, row in merged_faces.iterrows():
             face_id = str(row.get('image_code', row.get('image_filename', row.get('join_key'))))
-            study_filename = str(row.get('image_filename', ''))
-            dataset_filename = str(row.get('affectnet_file', row.get('dataset_file', study_filename)))
+            
+            # Resolve experiment/user-study image filename robustly
+            study_filename = ""
+            for c_name in [
+                'user_study_rel_path', 'image_filename', 'image_filename_map',
+                'user_study_filename', 'study_filename', 'filename', 'image'
+            ]:
+                val = row.get(c_name)
+                if pd.notna(val) and str(val).strip() and str(val).strip().lower() != 'nan':
+                    study_filename = os.path.basename(str(val).strip())
+                    break
+            if not study_filename:
+                code_val = row.get('image_code', row.get('join_key', ''))
+                if pd.notna(code_val) and str(code_val).strip() and str(code_val).strip().lower() != 'nan':
+                    study_filename = str(code_val).strip()
+
+            dataset_filename = str(row.get('affectnet_file', row.get('dataset_file', ''))).strip()
+            if not dataset_filename or dataset_filename.lower() == 'nan':
+                dataset_filename = study_filename
             target_ds_basename = os.path.basename(dataset_filename)
 
             # Human distribution for this face
@@ -1177,10 +1211,15 @@ if df_map is not None and not df_map.empty:
             available_face_ids = filtered_df["Face ID"].tolist()
 
             if available_face_ids:
+                face_format_func = (
+                    (lambda x: f"Face: {x} | Exp: {filtered_df.loc[filtered_df['Face ID'] == x, 'Study File'].iloc[0]} (Human: {filtered_df.loc[filtered_df['Face ID'] == x, 'Human Top Emotion'].iloc[0]})")
+                    if is_image_url else
+                    (lambda x: f"Face: {x} | File: {filtered_df.loc[filtered_df['Face ID'] == x, 'Dataset File'].iloc[0]} (Human: {filtered_df.loc[filtered_df['Face ID'] == x, 'Human Top Emotion'].iloc[0]})")
+                )
                 selected_face_id = st.selectbox(
                     "Choose face instance to inspect:",
                     options=available_face_ids,
-                    format_func=lambda x: f"Face: {x} | File: {filtered_df.loc[filtered_df['Face ID'] == x, 'Dataset File'].iloc[0]} (Human: {filtered_df.loc[filtered_df['Face ID'] == x, 'Human Top Emotion'].iloc[0]})"
+                    format_func=face_format_func
                 )
 
                 face_row = filtered_df[filtered_df["Face ID"] == selected_face_id].iloc[0]
@@ -1195,33 +1234,66 @@ if df_map is not None and not df_map.empty:
                     with ins_col1:
                         # Attempt to find and display face image
                         img_rendered = False
-                        candidate_img_paths = [
-                            face_row.get('full_path', ''),
-                            os.path.join(faces_image_dir, face_row['Study File']) if faces_image_dir else '',
-                            os.path.join(faces_image_dir, face_row['Dataset File']) if faces_image_dir else '',
-                            os.path.join(faces_image_dir, face_row['Human Top Emotion'], face_row['Study File']) if faces_image_dir else '',
-                            os.path.join("amostras_selecionadas", face_row['Human Top Emotion'], face_row['Study File']),
-                            os.path.join("amostras_selecionadas", face_row['Study File'])
-                        ]
 
-                        for c_path in candidate_img_paths:
-                            if c_path and os.path.isfile(c_path):
-                                try:
-                                    img = Image.open(c_path)
-                                    st.image(img, caption=f"Face: {face_row['Dataset File']}", width=230)
-                                    img_rendered = True
-                                    break
-                                except Exception:
-                                    pass
+                        if is_image_url:
+                            # Quando for uma URL: utiliza estritamente o nome da imagem no experimento
+                            base_url = normalize_url(faces_image_dir).rstrip('/')
+                            exp_file = str(face_row.get('Study File', '')).strip()
+                            if not exp_file or exp_file.lower() == 'nan':
+                                exp_file = str(face_row.get('Face ID', '')).strip()
+
+                            # Se não tiver extensão, verifica a extensão do Dataset File ou assume .jpg
+                            if '.' not in exp_file:
+                                ds_ext = os.path.splitext(str(face_row.get('Dataset File', '')))[1]
+                                exp_file_with_ext = f"{exp_file}{ds_ext}" if ds_ext else f"{exp_file}.jpg"
+                            else:
+                                exp_file_with_ext = exp_file
+
+                            exp_basename = os.path.basename(exp_file_with_ext)
+                            target_url = f"{base_url}/{urllib.parse.quote(exp_basename, safe='/')}"
+
+                            try:
+                                st.image(target_url, caption=f"Face (Experimento): {exp_basename}", width=230)
+                                st.caption(f"[🔗 Abrir imagem original]({target_url})")
+                                img_rendered = True
+                            except Exception as e:
+                                st.warning(f"Erro ao carregar imagem via URL: {e}")
+                                img_rendered = False
+                        else:
+                            # Quando for pasta local: mantém busca nos caminhos locais
+                            candidate_img_paths = [
+                                face_row.get('full_path', ''),
+                                os.path.join(faces_image_dir, face_row['Study File']) if faces_image_dir else '',
+                                os.path.join(faces_image_dir, face_row['Dataset File']) if faces_image_dir else '',
+                                os.path.join(faces_image_dir, face_row['Human Top Emotion'], face_row['Study File']) if faces_image_dir else '',
+                                os.path.join("amostras_selecionadas", face_row['Human Top Emotion'], face_row['Study File']),
+                                os.path.join("amostras_selecionadas", face_row['Study File']),
+                                os.path.join("amostras_selecionadas", face_row['Dataset File'])
+                            ]
+
+                            for c_path in candidate_img_paths:
+                                if c_path and os.path.isfile(c_path):
+                                    try:
+                                        img = Image.open(c_path)
+                                        st.image(img, caption=f"Face: {face_row['Dataset File']}", width=230)
+                                        img_rendered = True
+                                        break
+                                    except Exception:
+                                        pass
 
                         if not img_rendered:
-                            st.info(f"📷 Image `{face_row['Dataset File']}` (Provide folder in sidebar to render)")
+                            if is_image_url:
+                                st.info(f"📷 Imagem do Experimento: `{face_row['Study File']}` (URL: {target_url})")
+                            else:
+                                st.info(f"📷 Imagem `{face_row['Dataset File']}` (Informe pasta ou URL na barra lateral para visualizar)")
 
                         st.markdown(f"**Face ID / Code:** `{face_row['Face ID']}`")
-                        st.markdown(f"**Study Filename:** `{face_row['Study File']}`")
+                        st.markdown(f"**Study Filename (Experimento):** `{face_row['Study File']}`")
                         st.markdown(f"**Dataset Reference:** `{face_row['Dataset File']}`")
                         st.markdown(f"**Dominant Human Emotion:** **{face_row['Human Top Emotion']}**")
                         st.markdown(f"**Best Performing Model:** 🏆 **{face_row.get('Best Model 🏆', 'N/A')}**")
+                        if is_image_url and img_rendered:
+                            st.markdown(f"**URL:** `{target_url}`")
 
                         # Small comparison table for this individual face
                         face_cmp_rows = []
@@ -1268,9 +1340,10 @@ if df_map is not None and not df_map.empty:
                             ))
 
                         try:
+                            display_filename = face_row['Study File'] if (is_image_url and face_row.get('Study File')) else face_row['Dataset File']
                             formatted_face_title = title_face_bar_custom.format(
                                 face_id=face_row['Face ID'],
-                                filename=face_row['Dataset File']
+                                filename=display_filename
                             )
                         except Exception:
                             formatted_face_title = f"{title_face_bar_custom} ({face_row['Face ID']})"
